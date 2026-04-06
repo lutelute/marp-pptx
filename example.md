@@ -55,28 +55,43 @@ Conference on Machine Learning 2026 &ensp;|&ensp; 2026年 9月 15日
 <div class="tl-h-container">
 
 <div class="tl-h-item">
-  <span class="tl-h-year">2017</span>
-  <span class="tl-h-text">Transformer<br>$O(n^2)$ attention</span>
+  <div class="tl-h-block">
+    <span class="tl-h-year">2017</span>
+    <span class="tl-h-text">Transformer</span>
+    <div class="tl-h-detail">Self-attention<br>計算量 $O(n^2)$<br>Vaswani et al.</div>
+  </div>
 </div>
 
 <div class="tl-h-item">
-  <span class="tl-h-year">2020</span>
-  <span class="tl-h-text">Linformer<br>線形近似</span>
+  <div class="tl-h-block">
+    <span class="tl-h-year">2020</span>
+    <span class="tl-h-text">Linformer</span>
+    <div class="tl-h-detail">線形近似<br>$O(n)$ に削減<br>Wang et al.</div>
+  </div>
 </div>
 
 <div class="tl-h-item">
-  <span class="tl-h-year">2021</span>
-  <span class="tl-h-text">Flash Attention<br>IO最適化</span>
+  <div class="tl-h-block">
+    <span class="tl-h-year">2021</span>
+    <span class="tl-h-text">Flash Attention</span>
+    <div class="tl-h-detail">IO最適化<br>メモリ効率化<br>Dao et al.</div>
+  </div>
 </div>
 
 <div class="tl-h-item">
-  <span class="tl-h-year">2023</span>
-  <span class="tl-h-text">Ring Attention<br>分散処理</span>
+  <div class="tl-h-block">
+    <span class="tl-h-year">2023</span>
+    <span class="tl-h-text">Ring Attention</span>
+    <div class="tl-h-detail">分散処理<br>無限長コンテキスト<br>Liu et al.</div>
+  </div>
 </div>
 
 <div class="tl-h-item highlight">
-  <span class="tl-h-year">2026</span>
-  <span class="tl-h-text bold">本研究<br>Sparse + 収束保証</span>
+  <div class="tl-h-block">
+    <span class="tl-h-year">2026</span>
+    <span class="tl-h-text bold">本研究</span>
+    <div class="tl-h-detail">Sparse Attention<br>$O(n^{3/2})$ + 収束保証<br>精度維持で60%削減</div>
+  </div>
 </div>
 
 </div>
@@ -98,7 +113,7 @@ Conference on Machine Learning 2026 &ensp;|&ensp; 2026年 9月 15日
 
 <div class="eq-main">
 
-$$\text{SparseAttn}(Q,K,V) = \text{softmax}\!\left(\frac{\colorbox{#fff3cd}{$Q K^\top \odot M$}}{\colorbox{#cce5ff}{$\sqrt{d_k}$}}\right)V$$
+$$\text{SparseAttn}(Q,K,V) = \text{softmax}\!\left(\frac{QK^\top \odot M}{\sqrt{d_k}}\right)V$$
 
 </div>
 
@@ -138,13 +153,23 @@ $$T(n) = \underbrace{O(n \cdot k)}_{\text{スパース注意}} + \underbrace{O(n
 
 ---
 
-<!-- _class: sandwich -->
+<!-- _class: figure -->
 
 # 提案手法のアーキテクチャ
 
+![w:750](assets/architecture.svg)
+
+<div class="caption"><span class="fig-num">Fig. 1.</span> 提案手法の全体構成。入力を Embedding 後、N 層の Sparse Attention Block で処理し、タスクヘッドから出力を生成する。各ブロック内で Sparse Mask の動的生成・適用・更新を行う。</div>
+
+---
+
+<!-- _class: sandwich -->
+
+# 提案手法の各モジュール
+
 <div class="top">
 
-入力系列 → Embedding → N 層の Sparse Attention Block → タスクヘッド
+<p class="lead">Fig. 1 に示した Sparse Attention Block の内部は、3つのモジュールから構成される。マスク生成→注意計算→マスク更新のサイクルを繰り返すことで、精度と効率のバランスを自動調整する。</p>
 
 </div>
 
@@ -180,9 +205,9 @@ $$T(n) = \underbrace{O(n \cdot k)}_{\text{スパース注意}} + \underbrace{O(n
 
 <div class="bottom">
 
-<div class="box">
+<div class="conclusion">
 
-**設計指針**: マスク生成→注意計算→マスク更新のサイクルを繰り返し、精度と効率のバランスを自動調整
+**設計指針**: 各モジュールは独立に差し替え可能。既存の効率化手法（Flash Attention 等）と直交する設計のため、併用により追加の高速化が得られる。
 
 </div>
 
@@ -203,7 +228,7 @@ $$T(n) = \underbrace{O(n \cdot k)}_{\text{スパース注意}} + \underbrace{O(n
 
 # 定量的結果
 
-## 言語モデリング（WikiText-103）
+## <span class="tab-num">Table 1.</span> 言語モデリング性能の比較（WikiText-103）
 
 | 手法 | Perplexity ↓ | 計算時間 | メモリ | パラメータ数 |
 |------|:-----------:|:------:|:----:|:---------:|
@@ -218,6 +243,8 @@ $$T(n) = \underbrace{O(n \cdot k)}_{\text{スパース注意}} + \underbrace{O(n
 
 </div>
 
+<div class="footnote">すべての実験は同一のハードウェア環境 (NVIDIA A100 80GB) で実施</div>
+
 ---
 
 <!-- _class: cols-2 -->
@@ -227,24 +254,16 @@ $$T(n) = \underbrace{O(n \cdot k)}_{\text{スパース注意}} + \underbrace{O(n
 <div class="columns">
 <div>
 
-![w:440](https://via.placeholder.com/440x300/f0f2f5/1a1a2e?text=Learning+Curve)
+![w:440](assets/learning-curve.svg)
 
-<div class="small muted center">Fig. 1: 学習曲線の比較</div>
-
-- 提案手法は **50 epoch** で収束
-- 標準 Transformer は 120 epoch 必要
-- 収束後の安定性も優れる
+<div class="small center"><span class="fig-num">Fig. 2.</span> 学習曲線の比較。提案手法（赤）は 50 epoch で収束し、標準 Transformer（青）の 2.4 倍速い。</div>
 
 </div>
 <div>
 
-![w:440](https://via.placeholder.com/440x300/f0f2f5/1a1a2e?text=Sparsity+Pattern)
+![w:440](assets/sparsity-pattern.svg)
 
-<div class="small muted center">Fig. 2: 学習されたスパースパターン</div>
-
-- 局所的な注意が支配的
-- 長距離依存は少数のハブトークンが担当
-- タスクに応じてパターンが変化
+<div class="small center"><span class="fig-num">Fig. 3.</span> Layer 6 で学習されたスパースパターン。対角（局所注意）が支配的で、Token 6 がハブとして全体に接続。</div>
 
 </div>
 </div>
@@ -314,11 +333,7 @@ $$T(n) = \underbrace{O(n \cdot k)}_{\text{スパース注意}} + \underbrace{O(n
 
 <div class="top">
 
-<div class="box-primary">
-
-**本研究の貢献**: 収束保証付き Sparse Attention により、精度を維持しつつ計算量 60% 削減を達成
-
-</div>
+<p class="lead">本研究では、収束保証付き Sparse Attention 機構を提案し、精度を維持しつつ計算量 60% 削減を達成した。以下に主要な成果と今後の展望を示す。</p>
 
 </div>
 
@@ -345,7 +360,11 @@ $$T(n) = \underbrace{O(n \cdot k)}_{\text{スパース注意}} + \underbrace{O(n
 
 <div class="bottom">
 
-本研究は JST CREST (JPMJCR20D3) の支援を受けた。
+<div class="conclusion">
+
+**結論**: Sparse Attention は大規模モデルの実用化における計算コスト問題の有力な解決策であり、精度と効率のトレードオフを根本的に改善する。本研究は JST CREST (JPMJCR20D3) の支援を受けた。
+
+</div>
 
 </div>
 
