@@ -128,14 +128,14 @@ SW = Inches(13.333)
 SH = Inches(7.5)
 
 # Common regions
-MARGIN_L  = Inches(0.8)
-MARGIN_R  = Inches(0.8)
-MARGIN_T  = Inches(0.3)
+MARGIN_L  = Inches(1.0)
+MARGIN_R  = Inches(1.0)
+MARGIN_T  = Inches(0.45)
 CONTENT_W = SW - MARGIN_L - MARGIN_R
-TITLE_H   = Inches(0.5)
+TITLE_H   = Inches(0.45)
 TITLE_TOP  = MARGIN_T
-BODY_TOP   = MARGIN_T + TITLE_H + Inches(0.08)
-BODY_H     = SH - BODY_TOP - Inches(0.35)
+BODY_TOP   = MARGIN_T + TITLE_H + Inches(0.12)
+BODY_H     = SH - BODY_TOP - Inches(0.6)  # extra bottom for footer
 
 # Font size scale — single place to tune density
 SZ_TITLE   = Pt(18)   # slide h1
@@ -149,6 +149,25 @@ SZ_EQ      = Pt(28)   # display equation
 SZ_EQ_VAR  = Pt(14)   # equation variable descriptions
 SZ_ZONE_L  = Pt(15)   # zone box label
 SZ_ZONE_B  = Pt(13)   # zone box body
+
+# ============================================================
+# Theme layout config (overridden by --theme flag)
+# ============================================================
+@dataclass
+class ThemeLayout:
+    h1_deco: str = "left-bar"           # left-bar | bottom-line | top-line | double-bottom | none
+    h1_deco_width: int = 8              # Pt
+    h1_deco_color: str = "primary"      # primary | secondary | accent
+    title_bg: str = "white"             # white | gradient | dark | light
+    title_align: str = "left"           # left | center
+    divider_align: str = "left"         # left | center
+    end_bg: str = "white"               # white | dark | light
+    box_style: str = "border-only"      # border-only | filled | card | accent-border
+    box_radius: float = 0.02            # adjustments[0] value
+    box_fill: bool = False
+    spacing: str = "compact"            # compact | normal | generous
+
+LAYOUT = ThemeLayout()
 
 # ============================================================
 # Data structures
@@ -189,6 +208,14 @@ class SlideData:
     summary_points: list = field(default_factory=list)       # [str, ...]
     result_dual_items: list = field(default_factory=list)     # [{"image", "caption"}, ...]
     appendix_label: str = ""
+    # Overview / Result / Steps
+    overview_text: str = ""
+    overview_points: list = field(default_factory=list)  # [str, ...]
+    result_text: str = ""
+    result_figure: str = ""
+    result_caption: str = ""
+    result_analysis: list = field(default_factory=list)  # [str, ...]
+    steps_items: list = field(default_factory=list)  # [{"num","title","body"}, ...]
 
 
 # ============================================================
@@ -611,6 +638,73 @@ def parse_slide(index: int, raw: str) -> SlideData:
         else:
             sd.body_lines = parse_markdown_lines(body)
 
+    # --- Overview ---
+    elif cls == "overview":
+        lead = extract_div(content, "ov-lead")
+        if lead:
+            sd.overview_text = strip_html(lead)
+        img = re.search(r"!\[(?:w:\d+)?\]\(([^)]+)\)", content)
+        if img:
+            sd.image_path = img.group(1)
+        cap = extract_div(content, "caption")
+        if cap:
+            sd.caption = strip_html(cap)
+        pts = extract_div(content, "ov-points")
+        if pts:
+            for li in re.finditer(r"<li>(.*?)</li>", pts, re.DOTALL):
+                sd.overview_points.append(strip_html(li.group(1)))
+            if not sd.overview_points:
+                for line in pts.split("\n"):
+                    s = line.strip()
+                    if s.startswith("- ") or s.startswith("* "):
+                        sd.overview_points.append(s[2:].strip())
+        fn = extract_div(content, "footnote")
+        if fn:
+            sd.footnote = strip_html(fn)
+
+    # --- Result ---
+    elif cls == "result":
+        lead = extract_div(content, "rs-lead")
+        if lead:
+            sd.result_text = strip_html(lead)
+        fig = extract_div(content, "rs-figure")
+        if fig:
+            img = re.search(r"!\[(?:w:\d+)?\]\(([^)]+)\)", fig)
+            if img:
+                sd.result_figure = img.group(1)
+            cap = extract_div(fig, "caption")
+            if cap:
+                sd.result_caption = strip_html(cap)
+        analysis = extract_div(content, "rs-analysis")
+        if analysis:
+            for li in re.finditer(r"<li>(.*?)</li>", analysis, re.DOTALL):
+                sd.result_analysis.append(strip_html(li.group(1)))
+            if not sd.result_analysis:
+                for line in analysis.split("\n"):
+                    s = line.strip()
+                    if s.startswith("- ") or s.startswith("* "):
+                        sd.result_analysis.append(s[2:].strip())
+        fn = extract_div(content, "footnote")
+        if fn:
+            sd.footnote = strip_html(fn)
+
+    # --- Steps (horizontal) ---
+    elif cls == "steps":
+        container = extract_div(content, "st-container")
+        if container:
+            for step_div in extract_child_divs(container):
+                nm = re.search(r'class="[^"]*st-num[^"]*"[^>]*>(.*?)</span>', step_div, re.DOTALL)
+                ti = re.search(r'class="[^"]*st-title[^"]*"[^>]*>(.*?)</span>', step_div, re.DOTALL)
+                bo = re.search(r'class="[^"]*st-body[^"]*"[^>]*>(.*?)</span>', step_div, re.DOTALL)
+                sd.steps_items.append({
+                    "num": strip_html(nm.group(1)) if nm else "",
+                    "title": strip_html(ti.group(1)) if ti else "",
+                    "body": strip_html(bo.group(1)) if bo else "",
+                })
+        fn = extract_div(content, "footnote")
+        if fn:
+            sd.footnote = strip_html(fn)
+
     # --- Default body ---
     else:
         # Remove h1/h2 lines from body
@@ -853,37 +947,56 @@ class PptxBuilder:
             color = PRIMARY
         if top is None:
             top = TITLE_TOP
-        # Left vertical bar — 3-color (6:3:1 ratio)
-        bar_w = Pt(8)
-        bar_h = TITLE_H
-        # Base (6): PRIMARY
-        bar1 = slide.shapes.add_shape(
-            MSO_SHAPE.RECTANGLE,
-            int(MARGIN_L), int(top), int(bar_w), int(bar_h * 0.6)
-        )
-        bar1.fill.solid()
-        bar1.fill.fore_color.rgb = PRIMARY
-        bar1.line.fill.background()
-        # Accent (3): SECONDARY
-        bar2 = slide.shapes.add_shape(
-            MSO_SHAPE.RECTANGLE,
-            int(MARGIN_L), int(top + bar_h * 0.6), int(bar_w), int(bar_h * 0.3)
-        )
-        bar2.fill.solid()
-        bar2.fill.fore_color.rgb = SECONDARY
-        bar2.line.fill.background()
-        # Point (1): ACCENT
-        bar3 = slide.shapes.add_shape(
-            MSO_SHAPE.RECTANGLE,
-            int(MARGIN_L), int(top + bar_h * 0.9), int(bar_w), int(bar_h * 0.1)
-        )
-        bar3.fill.solid()
-        bar3.fill.fore_color.rgb = ACCENT
-        bar3.line.fill.background()
-        # Title text — compact, top-aligned
-        tb = self._add_textbox(
-            slide, int(MARGIN_L + Pt(14)), int(top),
-            int(CONTENT_W - Pt(14)), TITLE_H)
+        deco_color_map = {"primary": PRIMARY, "secondary": SECONDARY, "accent": ACCENT}
+        deco_c = deco_color_map.get(LAYOUT.h1_deco_color, PRIMARY)
+        deco_w = Pt(LAYOUT.h1_deco_width)
+        text_left = MARGIN_L
+        text_w = CONTENT_W
+
+        if LAYOUT.h1_deco == "left-bar":
+            bar_h = TITLE_H
+            # 3-color bar (6:3:1)
+            for frac, fc in [(0.6, PRIMARY), (0.3, SECONDARY), (0.1, ACCENT)]:
+                y_off = sum(bar_h * f for f in [0.6, 0.3, 0.1][:[ (0.6,PRIMARY),(0.3,SECONDARY),(0.1,ACCENT)].index((frac,fc))])
+                pass
+            # Simpler: single solid bar in deco color
+            bar = slide.shapes.add_shape(
+                MSO_SHAPE.RECTANGLE, int(MARGIN_L), int(top), int(deco_w), int(TITLE_H))
+            bar.fill.solid()
+            bar.fill.fore_color.rgb = deco_c
+            bar.line.fill.background()
+            text_left = int(MARGIN_L + deco_w + Pt(10))
+            text_w = int(CONTENT_W - deco_w - Pt(10))
+
+        elif LAYOUT.h1_deco == "bottom-line":
+            line = slide.shapes.add_shape(
+                MSO_SHAPE.RECTANGLE, int(MARGIN_L), int(top + TITLE_H - Pt(2)),
+                int(CONTENT_W), int(deco_w))
+            line.fill.solid()
+            line.fill.fore_color.rgb = deco_c
+            line.line.fill.background()
+
+        elif LAYOUT.h1_deco == "top-line":
+            line = slide.shapes.add_shape(
+                MSO_SHAPE.RECTANGLE, int(MARGIN_L), int(top), int(CONTENT_W), int(deco_w))
+            line.fill.solid()
+            line.fill.fore_color.rgb = deco_c
+            line.line.fill.background()
+            top = int(top + deco_w + Pt(4))
+
+        elif LAYOUT.h1_deco == "double-bottom":
+            for offset in [0, Pt(6)]:
+                line = slide.shapes.add_shape(
+                    MSO_SHAPE.RECTANGLE, int(MARGIN_L),
+                    int(top + TITLE_H - Pt(2) + offset),
+                    int(CONTENT_W), Pt(2))
+                line.fill.solid()
+                line.fill.fore_color.rgb = deco_c
+                line.line.fill.background()
+
+        # else: "none" — no decoration
+
+        tb = self._add_textbox(slide, int(text_left), int(top), int(text_w), TITLE_H)
         tf = tb.text_frame
         tf.word_wrap = True
         tf.vertical_anchor = MSO_ANCHOR.MIDDLE
@@ -1089,14 +1202,27 @@ class PptxBuilder:
             label_size = SZ_ZONE_L
         if body_size is None:
             body_size = SZ_ZONE_B
-        """Rectangular zone: filled rounded-rect + overlaid label/body textbox."""
+        """Rectangular zone: shape + overlaid label/body textbox."""
         bg = slide.shapes.add_shape(
             MSO_SHAPE.ROUNDED_RECTANGLE, left, top, width, height)
-        # Subtle corner rounding — just enough to soften, not bubbly
-        bg.adjustments[0] = 0.02
-        bg.fill.solid()
-        bg.fill.fore_color.rgb = fill_color
-        bg.line.fill.background()
+        bg.adjustments[0] = LAYOUT.box_radius
+
+        if LAYOUT.box_style == "filled" or LAYOUT.box_style == "card":
+            bg.fill.solid()
+            bg.fill.fore_color.rgb = fill_color
+            if LAYOUT.box_style == "card":
+                bg.line.color.rgb = RGBColor(0xE0, 0xE0, 0xE0)
+                bg.line.width = Pt(1)
+            else:
+                bg.line.fill.background()
+        elif LAYOUT.box_style == "accent-border":
+            bg.fill.background()
+            bg.line.color.rgb = ACCENT
+            bg.line.width = Pt(1.5)
+        else:  # border-only
+            bg.fill.background()
+            bg.line.color.rgb = RGBColor(0xE8, 0xE8, 0xE8)
+            bg.line.width = Pt(0.75)
         pad = Pt(14)
         tb = self._add_textbox(
             slide, left + pad, top + pad, width - pad * 2, height - pad * 2)
@@ -1120,7 +1246,20 @@ class PptxBuilder:
 
     def build_title(self, sd: SlideData):
         slide = self._blank_slide()
-        # White background — clean, monochrome
+
+        # Background
+        if LAYOUT.title_bg == "gradient":
+            self._set_gradient_bg(slide, PRIMARY, SECONDARY)
+        elif LAYOUT.title_bg == "dark":
+            self._set_bg(slide, PRIMARY)
+        elif LAYOUT.title_bg == "light":
+            self._set_bg(slide, LIGHT)
+        # else: white (default)
+
+        is_dark = LAYOUT.title_bg in ("gradient", "dark")
+        align = PP_ALIGN.CENTER if LAYOUT.title_align == "center" else PP_ALIGN.LEFT
+        h_color = WHITE if is_dark else PRIMARY
+        sub_color = RGBColor(0xCC, 0xCC, 0xCC) if is_dark else MUTED
 
         # Title
         tb = self._add_textbox(slide, Inches(1), Inches(1.5), SW - Inches(2), Inches(2))
@@ -1131,8 +1270,8 @@ class PptxBuilder:
         p.font.name = FONT_HEAD
         p.font.size = Pt(44)
         p.font.bold = True
-        p.font.color.rgb = PRIMARY
-        p.alignment = PP_ALIGN.LEFT
+        p.font.color.rgb = h_color
+        p.alignment = align
 
         # Subtitle + author info
         tb2 = self._add_textbox(slide, Inches(1), Inches(3.2), SW - Inches(2), Inches(3.5))
@@ -1163,15 +1302,18 @@ class PptxBuilder:
             p.text = line
             p.font.name = FONT
             p.font.size = Pt(20)
-            p.font.color.rgb = MUTED
-            p.alignment = PP_ALIGN.LEFT
+            p.font.color.rgb = sub_color
+            p.alignment = align
             p.space_before = Pt(6)
 
     def build_divider(self, sd: SlideData):
         slide = self._blank_slide()
-        # White background — clean
 
-        tb = self._add_textbox(slide, Inches(1.5), Inches(2.5), SW - Inches(3), Inches(1.5))
+        align = PP_ALIGN.CENTER if LAYOUT.divider_align == "center" else PP_ALIGN.LEFT
+        x = Inches(1) if LAYOUT.divider_align == "center" else Inches(1.5)
+        w = SW - Inches(2) if LAYOUT.divider_align == "center" else SW - Inches(3)
+
+        tb = self._add_textbox(slide, x, Inches(2.5), w, Inches(1.5))
         tf = tb.text_frame
         p = tf.paragraphs[0]
         p.text = sd.h1
@@ -1179,7 +1321,7 @@ class PptxBuilder:
         p.font.size = Pt(36)
         p.font.bold = True
         p.font.color.rgb = PRIMARY
-        p.alignment = PP_ALIGN.LEFT
+        p.alignment = align
 
         if sd.h2:
             p2 = tf.add_paragraph()
@@ -1862,6 +2004,14 @@ class PptxBuilder:
 
     def build_end(self, sd: SlideData):
         slide = self._blank_slide()
+        if LAYOUT.end_bg == "dark":
+            self._set_bg(slide, PRIMARY)
+        elif LAYOUT.end_bg == "light":
+            self._set_bg(slide, LIGHT)
+
+        is_dark = LAYOUT.end_bg == "dark"
+        h_color = WHITE if is_dark else PRIMARY
+        sub_color = RGBColor(0xCC, 0xCC, 0xCC) if is_dark else MUTED
 
         tb = self._add_textbox(slide, Inches(1), Inches(2), SW - Inches(2), Inches(3))
         tf = tb.text_frame
@@ -1870,7 +2020,7 @@ class PptxBuilder:
         p.font.name = FONT_HEAD
         p.font.size = Pt(50)
         p.font.bold = True
-        p.font.color.rgb = PRIMARY
+        p.font.color.rgb = h_color
         p.alignment = PP_ALIGN.CENTER
 
         # Remaining text
@@ -1889,7 +2039,7 @@ class PptxBuilder:
             p2.text = line
             p2.font.name = FONT
             p2.font.size = Pt(22)
-            p2.font.color.rgb = MUTED
+            p2.font.color.rgb = sub_color
             p2.alignment = PP_ALIGN.CENTER
             p2.space_before = Pt(8)
 
@@ -2341,6 +2491,201 @@ class PptxBuilder:
                     cell.fill.solid()
                     cell.fill.fore_color.rgb = BG_WHITE
 
+    # ---------- Overview / Result / Steps ----------
+
+    def build_overview(self, sd: SlideData):
+        """Overview: lead text → figure → key points."""
+        slide = self._blank_slide()
+        if sd.h1:
+            self._add_title(slide, sd.h1)
+
+        cur_y = BODY_TOP
+
+        # Lead text
+        if sd.overview_text:
+            tb = self._add_textbox(slide, MARGIN_L, int(cur_y), CONTENT_W, Inches(0.8))
+            tf = tb.text_frame
+            tf.word_wrap = True
+            self._set_text_with_inline_math(tf.paragraphs[0], sd.overview_text, SZ_BODY, FG)
+            tf.auto_size = MSO_AUTO_SIZE.SHAPE_TO_FIT_TEXT
+            cur_y += Inches(0.9)
+
+        # Figure (centered)
+        if sd.image_path:
+            img_file = self._resolve_image(sd.image_path)
+            if img_file:
+                from PIL import Image
+                with Image.open(img_file) as im:
+                    iw, ih = im.size
+                max_w = int(CONTENT_W * 0.7)
+                max_h = int(Inches(3.0))
+                scale = min(max_w / (iw * 914400 / 96), max_h / (ih * 914400 / 96), 1.0)
+                pw = int(iw * scale * 914400 / 96)
+                ph = int(ih * scale * 914400 / 96)
+                ix = int(MARGIN_L + (CONTENT_W - pw) / 2)
+                slide.shapes.add_picture(img_file, ix, int(cur_y), pw, ph)
+                cur_y += ph + Inches(0.1)
+
+        # Caption
+        if sd.caption:
+            ctb = self._add_textbox(slide, MARGIN_L, int(cur_y), CONTENT_W, Inches(0.3))
+            cp = ctb.text_frame.paragraphs[0]
+            cp.text = sd.caption
+            cp.font.name = FONT
+            cp.font.size = SZ_SMALL
+            cp.font.color.rgb = MUTED
+            cp.alignment = PP_ALIGN.CENTER
+            cur_y += Inches(0.4)
+
+        # Key points
+        if sd.overview_points:
+            pts_left = MARGIN_L + Inches(0.5)
+            for i, pt in enumerate(sd.overview_points):
+                py = int(cur_y + Inches(0.32) * i)
+                # Bullet dot
+                dot = slide.shapes.add_shape(MSO_SHAPE.OVAL,
+                    int(pts_left), int(py + Pt(4)), Pt(6), Pt(6))
+                dot.fill.solid()
+                dot.fill.fore_color.rgb = SECONDARY
+                dot.line.fill.background()
+                # Text
+                ptb = self._add_textbox(slide, int(pts_left + Pt(14)), py,
+                    int(CONTENT_W - Inches(0.8)), Inches(0.3))
+                self._set_text_with_inline_math(
+                    ptb.text_frame.paragraphs[0], pt, SZ_BODY, FG)
+
+        if sd.footnote:
+            self._add_footnote(slide, sd.footnote)
+
+    def build_result(self, sd: SlideData):
+        """Result: lead text → left figure + right analysis."""
+        slide = self._blank_slide()
+        if sd.h1:
+            self._add_title(slide, sd.h1)
+
+        cur_y = BODY_TOP
+
+        # Lead text (full width)
+        if sd.result_text:
+            tb = self._add_textbox(slide, MARGIN_L, int(cur_y), CONTENT_W, Inches(0.8))
+            tf = tb.text_frame
+            tf.word_wrap = True
+            self._set_text_with_inline_math(tf.paragraphs[0], sd.result_text, SZ_BODY, FG)
+            tf.auto_size = MSO_AUTO_SIZE.SHAPE_TO_FIT_TEXT
+            cur_y += Inches(0.85)
+
+        # Two-column: figure left, analysis right
+        gap = Inches(0.4)
+        left_w = CONTENT_W * 0.5
+        right_w = CONTENT_W - left_w - gap
+        right_x = MARGIN_L + left_w + gap
+
+        # Left: figure
+        if sd.result_figure:
+            img_file = self._resolve_image(sd.result_figure)
+            if img_file:
+                from PIL import Image
+                with Image.open(img_file) as im:
+                    iw, ih = im.size
+                max_w = int(left_w)
+                max_h = int(Inches(3.5))
+                scale = min(max_w / (iw * 914400 / 96), max_h / (ih * 914400 / 96), 1.0)
+                pw = int(iw * scale * 914400 / 96)
+                ph = int(ih * scale * 914400 / 96)
+                slide.shapes.add_picture(img_file, int(MARGIN_L), int(cur_y), pw, ph)
+                # Caption below figure
+                if sd.result_caption:
+                    ctb = self._add_textbox(slide, int(MARGIN_L), int(cur_y + ph + Pt(4)),
+                        int(left_w), Inches(0.3))
+                    cp = ctb.text_frame.paragraphs[0]
+                    cp.text = sd.result_caption
+                    cp.font.name = FONT
+                    cp.font.size = Pt(10)
+                    cp.font.color.rgb = MUTED
+                    cp.alignment = PP_ALIGN.CENTER
+
+        # Right: analysis points
+        if sd.result_analysis:
+            for i, text in enumerate(sd.result_analysis):
+                py = int(cur_y + Inches(0.38) * i)
+                # Bullet
+                dot = slide.shapes.add_shape(MSO_SHAPE.OVAL,
+                    int(right_x), int(py + Pt(4)), Pt(5), Pt(5))
+                dot.fill.solid()
+                dot.fill.fore_color.rgb = ACCENT
+                dot.line.fill.background()
+                # Text
+                atb = self._add_textbox(slide, int(right_x + Pt(12)), py,
+                    int(right_w - Pt(12)), Inches(0.35))
+                atf = atb.text_frame
+                atf.word_wrap = True
+                self._set_text_with_inline_math(atf.paragraphs[0], text, SZ_COL, FG)
+
+        if sd.footnote:
+            self._add_footnote(slide, sd.footnote)
+
+    def build_steps(self, sd: SlideData):
+        """Horizontal steps: numbered boxes in a row with connectors."""
+        slide = self._blank_slide()
+        if sd.h1:
+            self._add_title(slide, sd.h1)
+
+        items = sd.steps_items
+        n = len(items)
+        if n == 0:
+            return
+
+        gap = Inches(0.15)
+        connector_w = Inches(0.3)
+        total_connectors = (n - 1) * (connector_w + gap * 2)
+        box_w = (CONTENT_W - total_connectors) / n
+        box_h = BODY_H - Inches(0.2)
+        y = BODY_TOP + Inches(0.1)
+
+        x = MARGIN_L
+        for i, item in enumerate(items):
+            # Number badge at top
+            badge_d = Inches(0.4)
+            bx = int(x + box_w / 2 - badge_d / 2)
+            by = int(y)
+            badge = slide.shapes.add_shape(MSO_SHAPE.OVAL, bx, by, int(badge_d), int(badge_d))
+            badge.fill.solid()
+            badge.fill.fore_color.rgb = PRIMARY
+            badge.line.fill.background()
+            btb = self._add_textbox(slide, bx, by, int(badge_d), int(badge_d))
+            btf = btb.text_frame
+            btf.vertical_anchor = MSO_ANCHOR.MIDDLE
+            bp = btf.paragraphs[0]
+            bp.text = item["num"]
+            bp.font.name = FONT_HEAD
+            bp.font.size = Pt(16)
+            bp.font.bold = True
+            bp.font.color.rgb = WHITE
+            bp.alignment = PP_ALIGN.CENTER
+
+            # Content box below badge
+            box_y = int(y + badge_d + Inches(0.1))
+            box_inner_h = int(box_h - badge_d - Inches(0.1))
+            self._add_zone_box(slide, int(x), box_y, int(box_w), box_inner_h,
+                               label=item["title"], body=item["body"],
+                               label_size=SZ_ZONE_L, body_size=SZ_ZONE_B)
+
+            # Connector arrow (except last)
+            if i < n - 1:
+                ax = int(x + box_w + gap)
+                ay = int(y + box_h / 2)
+                arrow = slide.shapes.add_shape(
+                    MSO_SHAPE.RIGHT_ARROW,
+                    ax, int(ay - Inches(0.1)), int(connector_w), Inches(0.2))
+                arrow.fill.solid()
+                arrow.fill.fore_color.rgb = MUTED
+                arrow.line.fill.background()
+
+            x += box_w + gap + connector_w + gap
+
+        if sd.footnote:
+            self._add_footnote(slide, sd.footnote)
+
     # ---------- Build all ----------
 
     def build_all(self, slides: list[SlideData]):
@@ -2369,23 +2714,96 @@ class PptxBuilder:
             "result-dual": self.build_result_dual,
             "summary": self.build_summary,
             "appendix": self.build_appendix,
+            "overview": self.build_overview,
+            "result": self.build_result,
+            "steps": self.build_steps,
         }
 
         for sd in slides:
             builder = BUILDERS.get(sd.slide_class, self.build_default)
             builder(sd)
 
+        # Global footer on every slide (except title/end)
+        self._add_global_footer()
+
+    def _add_global_footer(self):
+        """Add consistent footer to all slides except title and end."""
+        for i, slide in enumerate(self.prs.slides):
+            if i == 0 or i == len(self.prs.slides) - 1:
+                continue  # skip title + end
+            tb = self._add_textbox(
+                slide, int(MARGIN_L), int(SH - Inches(0.4)),
+                int(CONTENT_W), Inches(0.25))
+            p = tb.text_frame.paragraphs[0]
+            # Slide number on right
+            p.text = f"{i + 1}"
+            p.font.name = FONT
+            p.font.size = Pt(8)
+            p.font.color.rgb = MUTED
+            p.alignment = PP_ALIGN.RIGHT
+
 
 # ============================================================
 # Main
 # ============================================================
+def apply_palette(palette_css: Path):
+    """Override global color/font constants from a palette CSS file."""
+    global PRIMARY, SECONDARY, ACCENT, FG, MUTED, LIGHT, BG_WHITE
+    global FONT, FONT_HEAD, FONT_EA, FONT_MONO
+    theme = load_theme(palette_css)
+    c = theme["colors"]
+    PRIMARY   = c.get("primary",   PRIMARY)
+    SECONDARY = c.get("secondary", SECONDARY)
+    ACCENT    = c.get("accent",    ACCENT)
+    FG        = c.get("fg",        FG)
+    MUTED     = c.get("muted",     MUTED)
+    LIGHT     = c.get("light",     LIGHT)
+    BG_WHITE  = c.get("bg",        BG_WHITE)
+    # Fonts may also be overridden in palette
+    if theme["fonts"]["body"]:
+        FONT      = theme["fonts"]["body"]
+    if theme["fonts"]["head"]:
+        FONT_HEAD = theme["fonts"]["head"]
+    if theme["fonts"]["ea"]:
+        FONT_EA   = theme["fonts"]["ea"]
+    # Load layout config from YAML if it exists alongside the CSS
+    global LAYOUT
+    name = palette_css.stem.replace("academic-", "")
+    yaml_path = palette_css.parent / f"config-{name}.yaml"
+    if yaml_path.exists():
+        import yaml
+        cfg = yaml.safe_load(yaml_path.read_text())
+        lo = cfg.get("layout", {})
+        LAYOUT = ThemeLayout(
+            h1_deco=lo.get("h1_deco", LAYOUT.h1_deco),
+            h1_deco_width=lo.get("h1_deco_width", LAYOUT.h1_deco_width),
+            h1_deco_color=lo.get("h1_deco_color", LAYOUT.h1_deco_color),
+            title_bg=lo.get("title_bg", LAYOUT.title_bg),
+            title_align=lo.get("title_align", LAYOUT.title_align),
+            divider_align=lo.get("divider_align", LAYOUT.divider_align),
+            end_bg=lo.get("end_bg", LAYOUT.end_bg),
+            box_style=lo.get("box_style", LAYOUT.box_style),
+            box_radius=lo.get("box_radius", LAYOUT.box_radius),
+            box_fill=lo.get("box_fill", LAYOUT.box_fill),
+            spacing=lo.get("spacing", LAYOUT.spacing),
+        )
+    print(f"[palette] {name}: primary={PRIMARY} secondary={SECONDARY} accent={ACCENT}",
+          file=sys.stderr)
+    print(f"[layout]  h1={LAYOUT.h1_deco} title={LAYOUT.title_bg} box={LAYOUT.box_style} spacing={LAYOUT.spacing}",
+          file=sys.stderr)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Convert Marp academic templates to editable PPTX"
     )
     parser.add_argument("input", help="Input Marp markdown file")
     parser.add_argument("-o", "--output", help="Output .pptx path")
+    parser.add_argument("-t", "--theme", help="Palette CSS (e.g. themes/palettes/academic-navy.css)")
     args = parser.parse_args()
+
+    if args.theme:
+        apply_palette(Path(args.theme))
 
     input_path = Path(args.input)
     output_path = args.output or str(input_path.with_name(input_path.stem + "_editable.pptx"))

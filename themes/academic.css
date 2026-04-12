@@ -36,7 +36,7 @@ section {
   font-family: var(--font-body);
   color: var(--color-fg);
   background: var(--color-bg);
-  padding: 56px 80px 48px;
+  padding: 60px 96px 52px;
   font-size: 24px;
   line-height: 1.6;
   justify-content: flex-start;

@@ -3,3 +3,4 @@ node_modules/
 *.pdf
 *.pptx
 !pptx/reference.pptx
+pptx/__pycache__/

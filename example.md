@@ -521,6 +521,81 @@ $$\sum_{j} M_{ij} \le k, \quad \forall i$$
 
 ---
 
+<!-- _class: overview -->
+
+# [Overview] 概要テンプレート
+
+<div class="ov-lead">上部に要約文を配置。中央に概念図や全体像の図を入れ、下部にキーポイントを箇条書きする。研究の全体像を1枚で伝えるためのスライド。</div>
+
+![w:700](assets/architecture.svg)
+
+<div class="caption">Fig. 1. 全体構成図。ここに図の読み方を記載。</div>
+
+<div class="ov-points">
+<li>知見 1: 計算量を $O(n\sqrt{n})$ に削減しつつ精度を維持</li>
+<li>知見 2: 動的スパースマスクがタスクに応じた注意パターンを学習</li>
+<li>知見 3: 既存の効率化手法と直交する設計で併用可能</li>
+</div>
+
+---
+
+<!-- _class: result -->
+
+# [Result] 結果テンプレート
+
+<div class="rs-lead">左に図/グラフ、右に考察を配置する。実験結果の提示と解釈を1枚にまとめるレイアウト。</div>
+
+<div class="rs-figure">
+
+![w:500](assets/learning-curve.svg)
+
+<div class="caption">Fig. 2. 学習曲線の比較</div>
+
+</div>
+
+<div class="rs-analysis">
+<li>提案手法は 50 epoch で収束（標準の 2.4 倍速い）</li>
+<li>収束後の Perplexity は標準 Transformer と同等</li>
+<li>学習初期のスパースマスクは局所的 → 後期にグローバルパターンを獲得</li>
+<li>Flash Attention との併用でさらに 15% 高速化</li>
+</div>
+
+---
+
+<!-- _class: steps -->
+
+# [Steps] 手順テンプレート（横ステップ）
+
+<div class="st-container">
+
+<div class="st-step">
+  <span class="st-num">1</span>
+  <span class="st-title">データ準備</span>
+  <span class="st-body">データセット取得、前処理、トークナイズ</span>
+</div>
+
+<div class="st-step">
+  <span class="st-num">2</span>
+  <span class="st-title">モデル構築</span>
+  <span class="st-body">Sparse Attention Block の実装と組み立て</span>
+</div>
+
+<div class="st-step">
+  <span class="st-num">3</span>
+  <span class="st-title">学習と最適化</span>
+  <span class="st-body">交差検証、ハイパーパラメータ探索</span>
+</div>
+
+<div class="st-step">
+  <span class="st-num">4</span>
+  <span class="st-title">評価</span>
+  <span class="st-body">ベースライン比較、統計検定</span>
+</div>
+
+</div>
+
+---
+
 <!-- _class: summary -->
 
 # [Summary] まとめテンプレート（Q&A 表示用）
