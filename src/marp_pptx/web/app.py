@@ -174,13 +174,36 @@ button.primary:disabled { background: #999; cursor: wait; }
 
 <!-- Type picker modal -->
 <div class="modal-bg" id="picker-modal">
-<div class="modal">
+<div class="modal" style="max-width:820px">
 <div class="modal-header">
 <h2>スライド型を選ぶ</h2>
 <button class="close" onclick="closeModal('picker-modal')">×</button>
 </div>
+<div style="padding:10px 24px; border-bottom:1px solid #eee">
+<input type="text" id="type-search" placeholder="型名・意味・図形で検索 (例: 比較, 時間, VS, □)"
+  style="width:100%; padding:8px 10px; border:1px solid #ddd; border-radius:3px; font-size:0.95em"
+  oninput="filterTypes(this.value)">
+</div>
 <div class="modal-body">
 <div class="type-grid" id="type-grid"></div>
+</div>
+</div>
+</div>
+
+<!-- Slide edit modal (edit a single slide's raw MD) -->
+<div class="modal-bg" id="slide-edit-modal">
+<div class="modal" style="max-width:700px">
+<div class="modal-header">
+<h2>スライドを編集 <span style="font-weight:normal; color:#999; font-size:0.85em" id="slide-edit-idx"></span></h2>
+<button class="close" onclick="closeModal('slide-edit-modal')">×</button>
+</div>
+<div class="modal-body">
+<textarea id="slide-edit-ta" style="width:100%; min-height:320px; padding:12px; font-family:ui-monospace,'SF Mono',monospace; font-size:13px; line-height:1.6; border:1px solid #ccc; border-radius:3px; resize:vertical"></textarea>
+<div class="hint" style="margin-top:6px">このスライド部分の Markdown を直接編集します。他のスライドには影響しません。</div>
+</div>
+<div class="modal-footer">
+<button onclick="closeModal('slide-edit-modal')">キャンセル</button>
+<button class="primary" onclick="saveSlideEdit()">保存</button>
 </div>
 </div>
 </div>
@@ -939,13 +962,20 @@ TYPE_SCHEMAS['equations'] = {
 function openModal(id) { document.getElementById(id).classList.add('open'); }
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 
-async function openTypePicker() {
-    if (TYPES_META.length === 0) await loadTypeMeta();
+const CAT_LABEL = {meta:'メタ',structure:'構造',temporal:'時間',convergence:'収束・拡散',evaluation:'評価・判断',knowledge:'知識・定義',flow:'流れ・構造',narrative:'ナラティブ'};
+const CAT_ORDER = ['meta','structure','temporal','convergence','evaluation','knowledge','flow','narrative'];
+
+function renderTypeGrid(filter) {
+    const q = (filter || '').trim().toLowerCase();
     const grid = document.getElementById('type-grid');
     const byCategory = {};
-    const CAT_ORDER = ['meta','structure','temporal','convergence','evaluation','knowledge','flow','narrative'];
-    const CAT_LABEL = {meta:'メタ',structure:'構造',temporal:'時間',convergence:'収束・拡散',evaluation:'評価・判断',knowledge:'知識・定義',flow:'流れ・構造',narrative:'ナラティブ'};
-    TYPES_META.forEach(t => { (byCategory[t.category] = byCategory[t.category] || []).push(t); });
+    TYPES_META.forEach(t => {
+        if (q) {
+            const hay = `${t.name} ${t.meaning} ${t.geometry} ${t.use_when} ${CAT_LABEL[t.category] || ''}`.toLowerCase();
+            if (!hay.includes(q)) return;
+        }
+        (byCategory[t.category] = byCategory[t.category] || []).push(t);
+    });
     const parts = [];
     CAT_ORDER.forEach(cat => {
         if (!byCategory[cat]) return;
@@ -959,8 +989,21 @@ async function openTypePicker() {
             </div>`);
         });
     });
-    grid.innerHTML = parts.join('');
+    if (parts.length === 0) {
+        grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:40px; color:#999">一致する型がありません</div>';
+    } else {
+        grid.innerHTML = parts.join('');
+    }
+}
+
+function filterTypes(q) { renderTypeGrid(q); }
+
+async function openTypePicker() {
+    if (TYPES_META.length === 0) await loadTypeMeta();
+    document.getElementById('type-search').value = '';
+    renderTypeGrid('');
     openModal('picker-modal');
+    setTimeout(() => document.getElementById('type-search').focus(), 50);
 }
 
 let currentType = null;
@@ -1344,6 +1387,32 @@ function jumpToSlide(index) {
     editor.scrollTop = Math.max(0, lineCount * lineHeight - 80);
 }
 
+let editingSlideIndex = -1;
+function editSlide(index) {
+    const md = editor.value;
+    const slides = splitIntoSlides(md);
+    if (index < 0 || index >= slides.length) return;
+    editingSlideIndex = index;
+    document.getElementById('slide-edit-ta').value = slides[index].text.trim();
+    document.getElementById('slide-edit-idx').textContent = `Slide ${index + 1}`;
+    openModal('slide-edit-modal');
+    setTimeout(() => document.getElementById('slide-edit-ta').focus(), 50);
+}
+
+function saveSlideEdit() {
+    if (editingSlideIndex < 0) return;
+    const newText = document.getElementById('slide-edit-ta').value.trim();
+    const md = editor.value;
+    const slides = splitIntoSlides(md);
+    const s = slides[editingSlideIndex];
+    if (!s) return;
+    // Replace just this slide's content
+    editor.value = md.substring(0, s.start) + newText + '\\n' + md.substring(s.end);
+    updateStats(); autoSave(); triggerAutoPreview();
+    closeModal('slide-edit-modal');
+    editingSlideIndex = -1;
+}
+
 function deleteSlide(index) {
     if (!confirm(`Slide ${index+1} を削除しますか？`)) return;
     const md = editor.value;
@@ -1387,6 +1456,7 @@ refreshPreview = async function() {
         const actions = document.createElement('div');
         actions.className = 'slide-actions';
         actions.innerHTML = `
+            <button class="slide-action-btn" onclick="editSlide(${i})" title="このスライドを編集">✎</button>
             <button class="slide-action-btn" onclick="jumpToSlide(${i})" title="MDのこのスライドへジャンプ">↵</button>
             <button class="slide-action-btn" onclick="moveSlide(${i}, -1)" title="上に移動">↑</button>
             <button class="slide-action-btn" onclick="moveSlide(${i}, 1)" title="下に移動">↓</button>
@@ -1397,6 +1467,39 @@ refreshPreview = async function() {
         if (img) { img.style.cursor = 'pointer'; img.onclick = () => jumpToSlide(i); }
     });
 };
+
+// ── Keyboard shortcuts ──
+document.addEventListener('keydown', (e) => {
+    const mod = e.metaKey || e.ctrlKey;
+    if (mod && e.key === 's') {
+        e.preventDefault();
+        downloadMd();
+    } else if (mod && e.key === 'p') {
+        e.preventDefault();
+        refreshPreview();
+    } else if (mod && e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        generate();
+    } else if (e.key === 'Escape') {
+        document.querySelectorAll('.modal-bg.open').forEach(m => m.classList.remove('open'));
+    } else if (mod && e.key === 'k') {
+        e.preventDefault();
+        openTypePicker();
+    }
+});
+
+// Close modal on backdrop click
+document.querySelectorAll('.modal-bg').forEach(bg => {
+    bg.addEventListener('click', (e) => {
+        if (e.target === bg) bg.classList.remove('open');
+    });
+});
+
+// Show shortcuts hint in topbar
+const shortcutHint = document.createElement('span');
+shortcutHint.style.cssText = 'font-size:0.75em; color:#888; margin-left:auto';
+shortcutHint.innerHTML = '⌘S: MD保存 · ⌘P: プレビュー · ⌘K: 型追加 · ⌘↵: PPTX';
+document.querySelector('.topbar .spacer')?.replaceWith(shortcutHint);
 
 // Initialize
 loadTypeMeta();
