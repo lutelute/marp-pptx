@@ -991,15 +991,15 @@ class PptxBuilder:
         if n == 0:
             return
         line_y = BODY_TOP + Inches(0.8)
-        line = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, MARGIN_L, line_y, CONTENT_W, Pt(3))
+        line = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, MARGIN_L, line_y, CONTENT_W, Pt(4))
         line.fill.solid()
-        line.fill.fore_color.rgb = RGBColor(0xDE, 0xE2, 0xE6)
+        line.fill.fore_color.rgb = RGBColor(0x90, 0x9A, 0xA8)
         line.line.fill.background()
         item_w = CONTENT_W / n
         for i, item in enumerate(sd.timeline_items):
             cx = MARGIN_L + int(item_w * i) + int(item_w / 2)
             dot_color = self.ACCENT if item.get("highlight") else self.SECONDARY
-            dot = slide.shapes.add_shape(MSO_SHAPE.OVAL, cx - Pt(7), line_y - Pt(5), Pt(14), Pt(14))
+            dot = slide.shapes.add_shape(MSO_SHAPE.OVAL, cx - Pt(10), line_y - Pt(8), Pt(20), Pt(20))
             dot.fill.solid()
             dot.fill.fore_color.rgb = dot_color
             dot.line.fill.background()

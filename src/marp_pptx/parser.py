@@ -90,17 +90,53 @@ def parse_markdown_lines(text: str) -> list[str]:
                 lines.append(inner)
         else:
             lines.append(strip_html(line.rstrip()))
-    result = []
+    # Collapse consecutive blank lines
+    collapsed = []
     prev_blank = False
     for l in lines:
         if not l.strip():
             if not prev_blank:
-                result.append("")
+                collapsed.append("")
             prev_blank = True
         else:
-            result.append(l)
+            collapsed.append(l)
             prev_blank = False
-    return result
+
+    # Merge Markdown "soft wraps": non-blank lines that are part of the same
+    # paragraph. A new paragraph starts on:
+    # - blank line
+    # - list item (- / * / numbered)
+    # - heading (#)
+    # - line that follows a list/heading (so we don't glue them together)
+    def _is_block_starter(s: str) -> bool:
+        stripped = s.strip()
+        if not stripped:
+            return True
+        if stripped.startswith(("# ", "## ", "### ", "#### ")):
+            return True
+        if stripped.startswith(("- ", "* ")):
+            return True
+        if re.match(r"^\d+\.\s", stripped):
+            return True
+        if stripped.startswith(("|", ">")):
+            return True
+        return False
+
+    merged: list[str] = []
+    for line in collapsed:
+        if not merged:
+            merged.append(line)
+            continue
+        prev = merged[-1]
+        if not line.strip() or not prev.strip():
+            merged.append(line)
+            continue
+        if _is_block_starter(line) or _is_block_starter(prev):
+            merged.append(line)
+            continue
+        # Both are regular text — merge as soft wrap
+        merged[-1] = prev + " " + line.strip()
+    return merged
 
 
 @dataclass
