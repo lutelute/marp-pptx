@@ -48,6 +48,19 @@ class PptxBuilder:
         self.theme = theme
         self._img_cache: dict = {}
 
+    def _fs(self, pt_val):
+        """Scale a Pt value by theme.font_scale. Min 8pt.
+
+        Accepts either a Pt object or a raw int (points).
+        """
+        from pptx.util import Pt as _Pt
+        scale = getattr(self.theme, "font_scale", 1.0)
+        try:
+            base = pt_val.pt
+        except AttributeError:
+            base = float(pt_val)
+        return _Pt(max(8, base * scale))
+
     def save(self, path: str):
         self._ensure_ea_font()
         self.prs.save(path)
@@ -128,7 +141,7 @@ class PptxBuilder:
         run = p.add_run()
         run.text = ""
         run.font.name = self.FONT
-        run.font.size = Pt(pt_size)
+        run.font.size = self._fs(Pt(pt_size))
         run.font.color.rgb = self.FG
         p._p.append(el)
         return tb
@@ -247,7 +260,7 @@ class PptxBuilder:
         p = tf.paragraphs[0]
         p.text = text
         p.font.name = self.FONT_HEAD
-        p.font.size = SZ_TITLE
+        p.font.size = self._fs(SZ_TITLE)
         p.font.bold = True
         p.font.color.rgb = color
         tf.auto_size = MSO_AUTO_SIZE.SHAPE_TO_FIT_TEXT
@@ -298,14 +311,14 @@ class PptxBuilder:
             if is_h2:
                 p.text = strip_html(s[3:])
                 p.font.name = self.FONT_HEAD
-                p.font.size = SZ_H2
+                p.font.size = self._fs(SZ_H2)
                 p.font.bold = True
                 p.font.color.rgb = self.SECONDARY
                 p.space_before = Pt(10)
             elif is_h3:
                 p.text = strip_html(s[4:])
                 p.font.name = self.FONT_HEAD
-                p.font.size = SZ_H3
+                p.font.size = self._fs(SZ_H3)
                 p.font.bold = True
                 p.font.color.rgb = self.MUTED
                 p.space_before = Pt(6)
@@ -486,7 +499,7 @@ class PptxBuilder:
         p = tf.paragraphs[0]
         p.text = text
         p.font.name = self.FONT
-        p.font.size = SZ_FOOT
+        p.font.size = self._fs(SZ_FOOT)
         p.font.color.rgb = self.MUTED
         tf.auto_size = MSO_AUTO_SIZE.SHAPE_TO_FIT_TEXT
 
@@ -588,7 +601,7 @@ class PptxBuilder:
         p = tf.paragraphs[0]
         p.text = sd.h1
         p.font.name = self.FONT_HEAD
-        p.font.size = Pt(44)
+        p.font.size = self._fs(Pt(44))
         p.font.bold = True
         p.font.color.rgb = h_color
         p.alignment = align
@@ -616,7 +629,7 @@ class PptxBuilder:
                 p = tf2.add_paragraph()
             p.text = line
             p.font.name = self.FONT
-            p.font.size = Pt(20)
+            p.font.size = self._fs(Pt(20))
             p.font.color.rgb = sub_color
             p.alignment = align
             p.space_before = Pt(6)
@@ -631,7 +644,7 @@ class PptxBuilder:
         p = tf.paragraphs[0]
         p.text = sd.h1
         p.font.name = self.FONT_HEAD
-        p.font.size = Pt(36)
+        p.font.size = self._fs(Pt(36))
         p.font.bold = True
         p.font.color.rgb = self.PRIMARY
         p.alignment = align
@@ -639,7 +652,7 @@ class PptxBuilder:
             p2 = tf.add_paragraph()
             p2.text = sd.h2
             p2.font.name = self.FONT
-            p2.font.size = Pt(22)
+            p2.font.size = self._fs(Pt(22))
             p2.font.color.rgb = self.MUTED
             p2.alignment = PP_ALIGN.CENTER
             p2.space_before = Pt(12)
@@ -667,7 +680,7 @@ class PptxBuilder:
                     cell.text = strip_html(cell_text)
                     for p in cell.text_frame.paragraphs:
                         p.font.name = self.FONT
-                        p.font.size = SZ_SMALL
+                        p.font.size = self._fs(SZ_SMALL)
                         p.font.color.rgb = self.WHITE if ri == 0 else self.FG
                     if ri == 0:
                         cell.fill.solid()
@@ -700,7 +713,7 @@ class PptxBuilder:
                 p = tf.paragraphs[0]
                 p.text = sd.eq_main
                 p.font.name = self.FONT
-                p.font.size = Pt(28)
+                p.font.size = self._fs(Pt(28))
                 p.font.color.rgb = self.FG
                 p.alignment = PP_ALIGN.CENTER
                 var_top = eq_top + Inches(1.6)
@@ -718,7 +731,7 @@ class PptxBuilder:
                 if not self._append_math_omml_inline(sp, sym_latex, Pt(22), self.SECONDARY):
                     sp.text = sym
                     sp.font.name = self.FONT
-                    sp.font.size = Pt(18)
+                    sp.font.size = self._fs(Pt(18))
                     sp.font.bold = True
                     sp.font.color.rgb = self.SECONDARY
                 dtb = self._add_textbox(slide, desc_left + Inches(2.3), row_top, Inches(6.5), row_h)
@@ -756,7 +769,7 @@ class PptxBuilder:
                 lp = ltf.paragraphs[0]
                 lp.text = label
                 lp.font.name = self.FONT
-                lp.font.size = Pt(max(14, pt_size - 10))
+                lp.font.size = self._fs(Pt(max(14, pt_size - 10)))
                 lp.font.color.rgb = self.SECONDARY
                 lp.alignment = PP_ALIGN.RIGHT
             el = self._omml_element(latex, display=True)
@@ -769,7 +782,7 @@ class PptxBuilder:
             erun = ep.add_run()
             erun.text = ""
             erun.font.name = self.FONT
-            erun.font.size = Pt(pt_size)
+            erun.font.size = self._fs(Pt(pt_size))
             erun.font.color.rgb = self.FG
             if el is not None:
                 ep._p.append(el)
@@ -783,7 +796,7 @@ class PptxBuilder:
                     p2 = tf2.paragraphs[0]
                     p2.text = latex
                     p2.font.name = self.FONT
-                    p2.font.size = Pt(pt_size - 4)
+                    p2.font.size = self._fs(Pt(pt_size - 4))
                     p2.font.color.rgb = self.FG
         if sd.eq_vars:
             var_top = top + int(row_h * n) + Inches(0.25)
@@ -800,7 +813,7 @@ class PptxBuilder:
                 if not self._append_math_omml_inline(sp, sym_latex, Pt(18), self.SECONDARY):
                     sp.text = sym
                     sp.font.name = self.FONT
-                    sp.font.size = Pt(16)
+                    sp.font.size = self._fs(Pt(16))
                     sp.font.bold = True
                     sp.font.color.rgb = self.SECONDARY
                 dtb = self._add_textbox(slide, desc_left + Inches(2.3), row_top, Inches(6.5), row_h_v)
@@ -839,7 +852,7 @@ class PptxBuilder:
             p = tf.paragraphs[0]
             p.text = sd.top_text
             p.font.name = self.FONT
-            p.font.size = Pt(19)
+            p.font.size = self._fs(Pt(19))
             p.font.color.rgb = self.SECONDARY
             cur_top += Inches(1.0)
         n = len(sd.columns)
@@ -883,7 +896,7 @@ class PptxBuilder:
             p = tf.paragraphs[0]
             p.text = sd.caption
             p.font.name = self.FONT
-            p.font.size = Pt(14)
+            p.font.size = self._fs(Pt(14))
             p.font.color.rgb = self.FG
             p.alignment = PP_ALIGN.CENTER
         if sd.body_lines:
@@ -901,7 +914,7 @@ class PptxBuilder:
             p = tf.paragraphs[0]
             p.text = sd.h2
             p.font.name = self.FONT
-            p.font.size = Pt(16)
+            p.font.size = self._fs(Pt(16))
             p.font.bold = True
             p.font.color.rgb = self.SECONDARY
             sub_top += Inches(0.5)
@@ -919,7 +932,7 @@ class PptxBuilder:
                 cell.text = strip_html(cell_text)
                 for p in cell.text_frame.paragraphs:
                     p.font.name = self.FONT
-                    p.font.size = SZ_SMALL
+                    p.font.size = self._fs(SZ_SMALL)
                     p.font.color.rgb = self.WHITE if ri == 0 else self.FG
                 if ri == 0:
                     cell.fill.solid()
@@ -948,26 +961,26 @@ class PptxBuilder:
             run = p.add_run()
             run.text = f"[{i+1}] "
             run.font.name = self.FONT
-            run.font.size = Pt(11)
+            run.font.size = self._fs(Pt(11))
             run.font.color.rgb = self.MUTED
             if author:
                 run = p.add_run()
                 run.text = author + " "
                 run.font.name = self.FONT
-                run.font.size = Pt(11)
+                run.font.size = self._fs(Pt(11))
                 run.font.bold = True
                 run.font.color.rgb = self.FG
             if title:
                 run = p.add_run()
                 run.text = title + " "
                 run.font.name = self.FONT
-                run.font.size = Pt(11)
+                run.font.size = self._fs(Pt(11))
                 run.font.color.rgb = self.FG
             if venue:
                 run = p.add_run()
                 run.text = venue
                 run.font.name = self.FONT
-                run.font.size = Pt(11)
+                run.font.size = self._fs(Pt(11))
                 run.font.color.rgb = self.MUTED
 
     def build_timeline_h(self, sd: SlideData):
@@ -995,7 +1008,7 @@ class PptxBuilder:
             p = yr.text_frame.paragraphs[0]
             p.text = item.get("year", "")
             p.font.name = self.FONT_HEAD
-            p.font.size = Pt(13)
+            p.font.size = self._fs(Pt(13))
             p.font.bold = True
             p.font.color.rgb = self.PRIMARY
             p.alignment = PP_ALIGN.CENTER
@@ -1003,7 +1016,7 @@ class PptxBuilder:
             p2 = txt.text_frame.paragraphs[0]
             p2.text = item.get("text", "")
             p2.font.name = self.FONT
-            p2.font.size = Pt(11)
+            p2.font.size = self._fs(Pt(11))
             p2.font.color.rgb = self.FG
             p2.alignment = PP_ALIGN.CENTER
             txt.text_frame.word_wrap = True
@@ -1012,7 +1025,7 @@ class PptxBuilder:
                 p3 = dtl.text_frame.paragraphs[0]
                 p3.text = item["detail"]
                 p3.font.name = self.FONT
-                p3.font.size = Pt(9)
+                p3.font.size = self._fs(Pt(9))
                 p3.font.color.rgb = self.MUTED
                 p3.alignment = PP_ALIGN.CENTER
                 dtl.text_frame.word_wrap = True
@@ -1043,14 +1056,14 @@ class PptxBuilder:
             p = yr.text_frame.paragraphs[0]
             p.text = item.get("year", "")
             p.font.name = self.FONT_HEAD
-            p.font.size = Pt(13)
+            p.font.size = self._fs(Pt(13))
             p.font.bold = True
             p.font.color.rgb = self.PRIMARY
             txt = self._add_textbox(slide, content_left + Inches(1.3), ry, content_w - Inches(1.3), Inches(0.3))
             p2 = txt.text_frame.paragraphs[0]
             p2.text = item.get("text", "")
             p2.font.name = self.FONT
-            p2.font.size = Pt(13)
+            p2.font.size = self._fs(Pt(13))
             p2.font.color.rgb = self.FG
             txt.text_frame.word_wrap = True
             if item.get("detail"):
@@ -1058,7 +1071,7 @@ class PptxBuilder:
                 p3 = dtl.text_frame.paragraphs[0]
                 p3.text = item["detail"]
                 p3.font.name = self.FONT
-                p3.font.size = Pt(10)
+                p3.font.size = self._fs(Pt(10))
                 p3.font.color.rgb = self.MUTED
                 dtl.text_frame.word_wrap = True
 
@@ -1074,7 +1087,7 @@ class PptxBuilder:
         p = tf.paragraphs[0]
         p.text = sd.h1 or "Thank You"
         p.font.name = self.FONT_HEAD
-        p.font.size = Pt(48)
+        p.font.size = self._fs(Pt(48))
         p.font.bold = True
         p.font.color.rgb = self.WHITE if is_dark else self.PRIMARY
         p.alignment = PP_ALIGN.CENTER
@@ -1093,7 +1106,7 @@ class PptxBuilder:
                 first = False
                 p2.text = line
                 p2.font.name = self.FONT
-                p2.font.size = Pt(18)
+                p2.font.size = self._fs(Pt(18))
                 p2.font.color.rgb = RGBColor(0xCC, 0xCC, 0xCC) if is_dark else self.MUTED
                 p2.alignment = PP_ALIGN.CENTER
 
@@ -1137,7 +1150,7 @@ class PptxBuilder:
         p = vs_tb.text_frame.paragraphs[0]
         p.text = sd.zone_compare.get("vs_text", "VS")
         p.font.name = self.FONT_HEAD
-        p.font.size = Pt(18)
+        p.font.size = self._fs(Pt(18))
         p.font.bold = True
         p.font.color.rgb = self.ACCENT
         p.alignment = PP_ALIGN.CENTER
@@ -1186,7 +1199,7 @@ class PptxBuilder:
             p = num.text_frame.paragraphs[0]
             p.text = item.get("step", str(i + 1))
             p.font.name = self.FONT_HEAD
-            p.font.size = Pt(24)
+            p.font.size = self._fs(Pt(24))
             p.font.bold = True
             p.font.color.rgb = self.ACCENT
             p.alignment = PP_ALIGN.CENTER
@@ -1210,13 +1223,13 @@ class PptxBuilder:
             run_num = p.add_run()
             run_num.text = f"{i + 1}  "
             run_num.font.name = self.FONT_HEAD
-            run_num.font.size = Pt(24)
+            run_num.font.size = self._fs(Pt(24))
             run_num.font.bold = True
             run_num.font.color.rgb = self.SECONDARY
             run_txt = p.add_run()
             run_txt.text = item
             run_txt.font.name = self.FONT
-            run_txt.font.size = Pt(20)
+            run_txt.font.size = self._fs(Pt(20))
             run_txt.font.color.rgb = self.FG
 
     def build_rq(self, sd: SlideData):
@@ -1230,7 +1243,7 @@ class PptxBuilder:
             p = tf.paragraphs[0]
             p.text = sd.rq_main
             p.font.name = self.FONT_HEAD
-            p.font.size = Pt(28)
+            p.font.size = self._fs(Pt(28))
             p.font.bold = True
             p.font.color.rgb = self.PRIMARY
             p.alignment = PP_ALIGN.CENTER
@@ -1241,7 +1254,7 @@ class PptxBuilder:
             p2 = tf2.paragraphs[0]
             p2.text = sd.rq_sub
             p2.font.name = self.FONT
-            p2.font.size = Pt(16)
+            p2.font.size = self._fs(Pt(16))
             p2.font.color.rgb = self.MUTED
             p2.alignment = PP_ALIGN.CENTER
 
@@ -1274,7 +1287,7 @@ class PptxBuilder:
                 cp = ctb.text_frame.paragraphs[0]
                 cp.text = cap_text
                 cp.font.name = self.FONT
-                cp.font.size = Pt(12)
+                cp.font.size = self._fs(Pt(12))
                 cp.font.color.rgb = self.FG
                 cp.alignment = PP_ALIGN.CENTER
 
@@ -1299,7 +1312,7 @@ class PptxBuilder:
             run = p.add_run()
             run.text = f"  {pt}"
             run.font.name = self.FONT
-            run.font.size = Pt(18)
+            run.font.size = self._fs(Pt(18))
             run.font.color.rgb = self.FG
 
     def build_appendix(self, sd: SlideData):
@@ -1311,7 +1324,7 @@ class PptxBuilder:
             p = lbl.text_frame.paragraphs[0]
             p.text = sd.appendix_label
             p.font.name = self.FONT
-            p.font.size = Pt(10)
+            p.font.size = self._fs(Pt(10))
             p.font.color.rgb = self.MUTED
             p.alignment = PP_ALIGN.RIGHT
         if sd.table_rows:
@@ -1331,7 +1344,7 @@ class PptxBuilder:
             p = tf.paragraphs[0]
             p.text = sd.overview_text
             p.font.name = self.FONT
-            p.font.size = Pt(16)
+            p.font.size = self._fs(Pt(16))
             p.font.color.rgb = self.SECONDARY
             cur_top += Inches(0.8)
         left_w = CONTENT_W * 0.55
@@ -1372,7 +1385,7 @@ class PptxBuilder:
             p = tf.paragraphs[0]
             p.text = sd.result_text
             p.font.name = self.FONT
-            p.font.size = Pt(16)
+            p.font.size = self._fs(Pt(16))
             p.font.color.rgb = self.SECONDARY
             cur_top += Inches(0.8)
         left_w = CONTENT_W * 0.55
@@ -1417,7 +1430,7 @@ class PptxBuilder:
             p = num_tb.text_frame.paragraphs[0]
             p.text = item.get("num", str(i + 1))
             p.font.name = self.FONT_HEAD
-            p.font.size = Pt(28)
+            p.font.size = self._fs(Pt(28))
             p.font.bold = True
             p.font.color.rgb = self.ACCENT
             p.alignment = PP_ALIGN.CENTER
@@ -1434,7 +1447,7 @@ class PptxBuilder:
         p = mark.text_frame.paragraphs[0]
         p.text = "\u201C"
         p.font.name = self.FONT_HEAD
-        p.font.size = Pt(72)
+        p.font.size = self._fs(Pt(72))
         p.font.color.rgb = self.SECONDARY
         if sd.quote_text:
             tb = self._add_textbox(slide, Inches(2.0), Inches(2.5), SW - Inches(4), Inches(3))
@@ -1443,14 +1456,14 @@ class PptxBuilder:
             p = tf.paragraphs[0]
             p.text = sd.quote_text
             p.font.name = self.FONT
-            p.font.size = Pt(22)
+            p.font.size = self._fs(Pt(22))
             p.font.color.rgb = self.FG
         if sd.quote_source:
             stb = self._add_textbox(slide, Inches(2.0), Inches(5.5), SW - Inches(4), Inches(0.5))
             p = stb.text_frame.paragraphs[0]
             p.text = f"\u2014 {sd.quote_source}"
             p.font.name = self.FONT
-            p.font.size = Pt(14)
+            p.font.size = self._fs(Pt(14))
             p.font.color.rgb = self.MUTED
             p.alignment = PP_ALIGN.RIGHT
 
@@ -1468,7 +1481,7 @@ class PptxBuilder:
             p = yr.text_frame.paragraphs[0]
             p.text = item.get("year", "")
             p.font.name = self.FONT_HEAD
-            p.font.size = Pt(16)
+            p.font.size = self._fs(Pt(16))
             p.font.bold = True
             p.font.color.rgb = self.PRIMARY
             p.alignment = PP_ALIGN.RIGHT
@@ -1476,7 +1489,7 @@ class PptxBuilder:
             p2 = ev.text_frame.paragraphs[0]
             p2.text = item.get("event", "")
             p2.font.name = self.FONT
-            p2.font.size = Pt(14)
+            p2.font.size = self._fs(Pt(14))
             p2.font.color.rgb = self.FG
             ev.text_frame.word_wrap = True
 
@@ -1501,7 +1514,7 @@ class PptxBuilder:
             p = tb.text_frame.paragraphs[0]
             p.text = sd.panorama_text
             p.font.name = self.FONT
-            p.font.size = Pt(14)
+            p.font.size = self._fs(Pt(14))
             p.font.color.rgb = self.MUTED
             p.alignment = PP_ALIGN.CENTER
 
@@ -1523,7 +1536,7 @@ class PptxBuilder:
             p = vtb.text_frame.paragraphs[0]
             p.text = item.get("value", "")
             p.font.name = self.FONT_HEAD
-            p.font.size = Pt(36)
+            p.font.size = self._fs(Pt(36))
             p.font.bold = True
             p.font.color.rgb = self.ACCENT
             p.alignment = PP_ALIGN.CENTER
@@ -1531,7 +1544,7 @@ class PptxBuilder:
             p2 = ltb.text_frame.paragraphs[0]
             p2.text = item.get("label", "")
             p2.font.name = self.FONT
-            p2.font.size = Pt(14)
+            p2.font.size = self._fs(Pt(14))
             p2.font.color.rgb = self.MUTED
             p2.alignment = PP_ALIGN.CENTER
 
@@ -1555,7 +1568,7 @@ class PptxBuilder:
             p = lbl.text_frame.paragraphs[0]
             p.text = label_text
             p.font.name = self.FONT_HEAD
-            p.font.size = Pt(18)
+            p.font.size = self._fs(Pt(18))
             p.font.bold = True
             p.font.color.rgb = color
             itb = self._add_textbox(slide, int(x) + Pt(16), BODY_TOP + Inches(0.6), int(half_w) - Pt(32), int(box_h) - Inches(0.8))
@@ -1565,7 +1578,7 @@ class PptxBuilder:
                 p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
                 p.text = f"\u2022 {item}"
                 p.font.name = self.FONT
-                p.font.size = Pt(14)
+                p.font.size = self._fs(Pt(14))
                 p.font.color.rgb = self.FG
                 p.space_before = Pt(6)
 
@@ -1578,7 +1591,7 @@ class PptxBuilder:
             p = tb.text_frame.paragraphs[0]
             p.text = sd.def_term
             p.font.name = self.FONT_HEAD
-            p.font.size = Pt(28)
+            p.font.size = self._fs(Pt(28))
             p.font.bold = True
             p.font.color.rgb = self.PRIMARY
         if sd.def_body:
@@ -1588,14 +1601,14 @@ class PptxBuilder:
             p2 = tf2.paragraphs[0]
             p2.text = sd.def_body
             p2.font.name = self.FONT
-            p2.font.size = Pt(18)
+            p2.font.size = self._fs(Pt(18))
             p2.font.color.rgb = self.FG
         if sd.def_note:
             ntb = self._add_textbox(slide, MARGIN_L, SH - Inches(1.5), CONTENT_W, Inches(0.8))
             p = ntb.text_frame.paragraphs[0]
             p.text = sd.def_note
             p.font.name = self.FONT
-            p.font.size = Pt(12)
+            p.font.size = self._fs(Pt(12))
             p.font.color.rgb = self.MUTED
             ntb.text_frame.word_wrap = True
 
@@ -1620,7 +1633,7 @@ class PptxBuilder:
             p = ctb.text_frame.paragraphs[0]
             p.text = sd.caption
             p.font.name = self.FONT
-            p.font.size = Pt(12)
+            p.font.size = self._fs(Pt(12))
             p.font.color.rgb = self.FG
             p.alignment = PP_ALIGN.CENTER
 
@@ -1663,7 +1676,7 @@ class PptxBuilder:
             p = tf.paragraphs[0]
             p.text = sd.highlight_text
             p.font.name = self.FONT_HEAD
-            p.font.size = Pt(32)
+            p.font.size = self._fs(Pt(32))
             p.font.bold = True
             p.font.color.rgb = self.PRIMARY
             p.alignment = PP_ALIGN.CENTER
@@ -1682,7 +1695,7 @@ class PptxBuilder:
             check = "\u2611" if item.get("done") else "\u2610"
             p.text = f"{check}  {item.get('text', '')}"
             p.font.name = self.FONT
-            p.font.size = Pt(16)
+            p.font.size = self._fs(Pt(16))
             p.font.color.rgb = self.MUTED if item.get("done") else self.FG
             p.space_before = Pt(8)
 
@@ -1712,7 +1725,7 @@ class PptxBuilder:
                 p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
                 p.text = f"\u2022 {note}"
                 p.font.name = self.FONT
-                p.font.size = Pt(13)
+                p.font.size = self._fs(Pt(13))
                 p.font.color.rgb = self.FG
                 p.space_before = Pt(8)
 
@@ -1768,14 +1781,14 @@ class PptxBuilder:
             run_l = tf.paragraphs[0].add_run()
             run_l.text = item.get("label", "")
             run_l.font.name = self.FONT_HEAD
-            run_l.font.size = Pt(14)
+            run_l.font.size = self._fs(Pt(14))
             run_l.font.bold = True
             run_l.font.color.rgb = self.WHITE
             if item.get("value"):
                 run_v = tf.paragraphs[0].add_run()
                 run_v.text = f"  {item['value']}"
                 run_v.font.name = self.FONT
-                run_v.font.size = Pt(12)
+                run_v.font.size = self._fs(Pt(12))
                 run_v.font.color.rgb = RGBColor(0xEE, 0xEE, 0xEE)
 
     def build_stack(self, sd: SlideData):
@@ -1838,14 +1851,14 @@ class PptxBuilder:
         p = tf.paragraphs[0]
         p.text = sd.code_text
         p.font.name = self.FONT_MONO
-        p.font.size = Pt(12)
+        p.font.size = self._fs(Pt(12))
         p.font.color.rgb = RGBColor(0xCD, 0xD6, 0xF4)
         if sd.code_desc:
             dtb = self._add_textbox(slide, MARGIN_L, int(BODY_TOP + code_h + Inches(0.2)), CONTENT_W, Inches(0.8))
             p2 = dtb.text_frame.paragraphs[0]
             p2.text = sd.code_desc
             p2.font.name = self.FONT
-            p2.font.size = Pt(13)
+            p2.font.size = self._fs(Pt(13))
             p2.font.color.rgb = self.MUTED
             dtb.text_frame.word_wrap = True
 
@@ -1866,14 +1879,14 @@ class PptxBuilder:
             p = mtb.text_frame.paragraphs[0]
             p.text = item.get("metric", "")
             p.font.name = self.FONT
-            p.font.size = Pt(12)
+            p.font.size = self._fs(Pt(12))
             p.font.color.rgb = self.MUTED
             p.alignment = PP_ALIGN.CENTER
             vtb = self._add_textbox(slide, int(x), BODY_TOP + Inches(0.9), int(box_w), Inches(1.0))
             p2 = vtb.text_frame.paragraphs[0]
             p2.text = item.get("value", "")
             p2.font.name = self.FONT_HEAD
-            p2.font.size = Pt(32)
+            p2.font.size = self._fs(Pt(32))
             p2.font.bold = True
             p2.font.color.rgb = self.ACCENT
             p2.alignment = PP_ALIGN.CENTER
@@ -1881,7 +1894,7 @@ class PptxBuilder:
             p3 = dtb.text_frame.paragraphs[0]
             p3.text = item.get("desc", "")
             p3.font.name = self.FONT
-            p3.font.size = Pt(12)
+            p3.font.size = self._fs(Pt(12))
             p3.font.color.rgb = self.FG
             p3.alignment = PP_ALIGN.CENTER
             dtb.text_frame.word_wrap = True
@@ -1897,7 +1910,7 @@ class PptxBuilder:
             p = tf.paragraphs[0]
             p.text = sd.takeaway_main
             p.font.name = self.FONT_HEAD
-            p.font.size = Pt(28)
+            p.font.size = self._fs(Pt(28))
             p.font.bold = True
             p.font.color.rgb = self.PRIMARY
             p.alignment = PP_ALIGN.CENTER
@@ -1909,7 +1922,7 @@ class PptxBuilder:
                 p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
                 p.text = f"\u2022 {pt}"
                 p.font.name = self.FONT
-                p.font.size = Pt(16)
+                p.font.size = self._fs(Pt(16))
                 p.font.color.rgb = self.FG
                 p.space_before = Pt(8)
 
@@ -1937,7 +1950,7 @@ class PptxBuilder:
             p = ntb.text_frame.paragraphs[0]
             p.text = sd.profile_name
             p.font.name = self.FONT_HEAD
-            p.font.size = Pt(24)
+            p.font.size = self._fs(Pt(24))
             p.font.bold = True
             p.font.color.rgb = self.PRIMARY
             cur_y += Inches(0.6)
@@ -1946,7 +1959,7 @@ class PptxBuilder:
             p = atb.text_frame.paragraphs[0]
             p.text = sd.profile_affiliation
             p.font.name = self.FONT
-            p.font.size = Pt(14)
+            p.font.size = self._fs(Pt(14))
             p.font.color.rgb = self.MUTED
             cur_y += Inches(0.6)
         if sd.profile_bio:
@@ -1963,7 +1976,7 @@ class PptxBuilder:
                 run = p.add_run()
                 run.text = "\u2022 " + item
                 run.font.name = self.FONT
-                run.font.size = Pt(15)
+                run.font.size = self._fs(Pt(15))
                 run.font.color.rgb = self.FG
                 p.space_before = Pt(6)
 
@@ -2034,6 +2047,6 @@ class PptxBuilder:
             p = tb.text_frame.paragraphs[0]
             p.text = f"{i + 1}"
             p.font.name = self.FONT
-            p.font.size = Pt(8)
+            p.font.size = self._fs(Pt(8))
             p.font.color.rgb = self.MUTED
             p.alignment = PP_ALIGN.RIGHT

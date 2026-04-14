@@ -24,7 +24,8 @@ def main(ctx):
 @click.option("-o", "--output", help="Output .pptx path")
 @click.option("-p", "--palette", help="Palette name (e.g. navy, copper, earth)")
 @click.option("-t", "--theme", help="Custom palette CSS path")
-def convert(input_file: str, output: str | None, palette: str | None, theme: str | None):
+@click.option("--font-scale", type=float, default=1.0, help="Font size multiplier (0.7-1.3)")
+def convert(input_file: str, output: str | None, palette: str | None, theme: str | None, font_scale: float):
     """Convert a Marp markdown file to editable PPTX."""
     from marp_pptx.theme import ThemeConfig, get_default_theme_path, get_palette_path
     from marp_pptx.parser import parse_marp
@@ -34,6 +35,7 @@ def convert(input_file: str, output: str | None, palette: str | None, theme: str
 
     # Load theme
     tc = ThemeConfig.from_css(get_default_theme_path())
+    tc.font_scale = font_scale
 
     # Apply palette
     if palette:
@@ -45,7 +47,7 @@ def convert(input_file: str, output: str | None, palette: str | None, theme: str
     elif theme:
         tc.apply_palette(Path(theme))
 
-    print(f"[theme] latin={tc.font}  ea={tc.font_ea}  head={tc.font_head}", file=sys.stderr)
+    print(f"[theme] latin={tc.font}  ea={tc.font_ea}  head={tc.font_head}  font_scale={tc.font_scale}", file=sys.stderr)
 
     # Parse
     slides = parse_marp(str(input_path))

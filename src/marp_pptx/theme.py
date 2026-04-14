@@ -66,6 +66,9 @@ class ThemeConfig:
     font_head: str = "Helvetica Neue"
     font_ea: str = "Hiragino Sans"
     font_mono: str = "SF Mono"
+    # Scale multipliers (applied by builder)
+    font_scale: float = 1.0
+    margin_scale: float = 1.0
     # Layout
     layout: ThemeLayout = field(default_factory=ThemeLayout)
 
