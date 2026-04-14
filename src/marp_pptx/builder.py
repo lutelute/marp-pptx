@@ -397,21 +397,31 @@ class PptxBuilder:
 
         Handles:
         - `- item` and `* item` as bullets
-        - Indented continuation lines (merged into previous line)
+        - Continuation lines indented MORE than their parent bullet
         - **bold** markdown via _set_rich_text
         """
-        # First, merge continuation lines (lines starting with 2+ spaces)
-        # into the preceding line.
-        raw_lines = text.split("\n")
+        # Strip common leading whitespace (dedent) so HTML-source indentation
+        # doesn't get mistaken for content continuation.
+        raw = [line for line in text.split("\n") if line.strip()]
+        if not raw:
+            return
+        indents = [len(l) - len(l.lstrip()) for l in raw]
+        base_indent = min(indents) if indents else 0
+        dedented = [l[base_indent:] if len(l) >= base_indent else l for l in raw]
+
+        # Merge continuation: a line is a continuation only if the previous
+        # line was a bullet AND this line is further indented.
         merged: list[str] = []
-        for line in raw_lines:
-            if not line.strip():
-                continue
-            # Continuation: starts with whitespace and previous line exists
-            if merged and (line.startswith("  ") or line.startswith("\t")):
-                merged[-1] = merged[-1] + " " + line.strip()
+        last_was_bullet = False
+        for line in dedented:
+            stripped = line.lstrip()
+            line_indent = len(line) - len(stripped)
+            is_bullet = stripped.startswith("- ") or stripped.startswith("* ")
+            if last_was_bullet and line_indent > 0 and not is_bullet and merged:
+                merged[-1] = merged[-1] + " " + stripped
             else:
-                merged.append(line.rstrip())
+                merged.append(stripped)
+                last_was_bullet = is_bullet
 
         first = True
         for line in merged:
@@ -638,8 +648,33 @@ class PptxBuilder:
         slide = self._blank_slide()
         if sd.h1:
             self._add_title(slide, sd.h1)
+        cur_top = BODY_TOP
         if sd.body_lines:
-            self._add_body_text(slide, sd.body_lines)
+            tb = self._add_body_text(slide, sd.body_lines, top=int(cur_top))
+            # Advance cur_top by the body height if there's also a table
+            if sd.table_rows:
+                cur_top = BODY_TOP + Inches(0.5) * len([l for l in sd.body_lines if l.strip()])
+        if sd.table_rows:
+            rows = len(sd.table_rows)
+            cols = max(len(r) for r in sd.table_rows) if sd.table_rows else 1
+            tbl_h = min(Inches(4.5), Inches(0.45) * rows)
+            table = slide.shapes.add_table(rows, cols, MARGIN_L, int(cur_top), CONTENT_W, tbl_h).table
+            for ri, row in enumerate(sd.table_rows):
+                for ci, cell_text in enumerate(row):
+                    if ci >= cols:
+                        break
+                    cell = table.cell(ri, ci)
+                    cell.text = strip_html(cell_text)
+                    for p in cell.text_frame.paragraphs:
+                        p.font.name = self.FONT
+                        p.font.size = SZ_SMALL
+                        p.font.color.rgb = self.WHITE if ri == 0 else self.FG
+                    if ri == 0:
+                        cell.fill.solid()
+                        cell.fill.fore_color.rgb = self.PRIMARY
+                    elif ri % 2 == 0:
+                        cell.fill.solid()
+                        cell.fill.fore_color.rgb = self.LIGHT
         if sd.bottom_text:
             self._add_accent_box(slide, sd.bottom_text, MARGIN_L, SH - Inches(1.8), CONTENT_W, Inches(1.0))
         if sd.footnote:

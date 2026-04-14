@@ -59,6 +59,38 @@ def test_parse_slide_cols2_with_wrapper():
     assert len(sd.columns) == 2
 
 
+def test_parse_slide_default_with_table():
+    raw = '''# Data
+| Col A | Col B |
+|-------|-------|
+| 1     | 2     |
+| 3     | 4     |
+'''
+    sd = parse_slide(0, raw)
+    assert sd.slide_class is None
+    assert len(sd.table_rows) == 3  # header + 2 rows
+    # body_lines should NOT contain the raw pipe-separated rows
+    assert not any("|" in l for l in sd.body_lines)
+
+
+def test_parse_slide_box_with_html_list():
+    """box-primary with <ul><li> should produce bullet items."""
+    raw = '''# Title
+<div class="box-primary">
+  <ul>
+    <li>First item</li>
+    <li>Second item</li>
+  </ul>
+</div>'''
+    sd = parse_slide(0, raw)
+    assert "First item" in sd.bottom_text
+    assert "Second item" in sd.bottom_text
+    # With the html_lists_to_bullets conversion, both items should be
+    # on separate `- ` bullet lines in the stored text
+    assert "- First item" in sd.bottom_text
+    assert "- Second item" in sd.bottom_text
+
+
 def test_parse_slide_cols2_fallback_no_wrapper():
     """cols-2 should also work without <div class='columns'> wrapper."""
     raw = '''<!-- _class: cols-2 -->

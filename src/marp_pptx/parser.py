@@ -11,6 +11,17 @@ def strip_html(text: str) -> str:
     return re.sub(r"<[^>]+>", "", text).strip()
 
 
+def html_lists_to_bullets(text: str) -> str:
+    """Convert <ul><li>...</li></ul> / <ol> to markdown bullet lines.
+
+    This runs before strip_html so that bulleted content inside boxes
+    survives as actionable markdown rather than plain text.
+    """
+    text = re.sub(r"<li[^>]*>\s*(.*?)\s*</li>", r"- \1", text, flags=re.DOTALL)
+    text = re.sub(r"</?[uo]l[^>]*>", "", text)
+    return text
+
+
 def extract_div(text: str, cls: str) -> str | None:
     pattern = rf'<div\s+class="[^"]*{re.escape(cls)}[^"]*">'
     m = re.search(pattern, text)
@@ -760,11 +771,30 @@ def parse_slide(index: int, raw: str) -> SlideData:
             if div:
                 pattern = rf'<div\s+class="[^"]*{tag}[^"]*">.*?</div>'
                 body = re.sub(pattern, "", body, flags=re.DOTALL)
-        sd.body_lines = parse_markdown_lines(body)
+
+        # Detect Markdown tables in remaining body
+        table_rows: list[list[str]] = []
+        non_table_lines: list[str] = []
+        for line in body.split("\n"):
+            s = line.strip()
+            if s.startswith("|") and not re.match(r"^\|[-:|\s]+\|$", s):
+                cells = [c.strip() for c in s.strip("|").split("|")]
+                table_rows.append(cells)
+            elif re.match(r"^\|[-:|\s]+\|$", s):
+                continue  # table separator row
+            else:
+                non_table_lines.append(line)
+        if table_rows:
+            sd.table_rows = table_rows
+
+        sd.body_lines = parse_markdown_lines("\n".join(non_table_lines))
+
+        # Boxes: convert HTML lists to markdown bullets BEFORE strip_html so
+        # that `_fill_multiline_box` sees `- item` lines instead of plain text.
         if ba:
-            sd.bottom_text = strip_html(ba)
+            sd.bottom_text = strip_html(html_lists_to_bullets(ba))
         elif bp:
-            sd.bottom_text = strip_html(bp)
+            sd.bottom_text = strip_html(html_lists_to_bullets(bp))
         if fn:
             sd.footnote = strip_html(fn)
         img = re.search(r"!\[(?:w:\d+)?\]\(([^)]+)\)", content)
