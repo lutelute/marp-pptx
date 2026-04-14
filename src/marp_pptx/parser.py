@@ -239,6 +239,21 @@ def parse_slide(index: int, raw: str) -> SlideData:
         if cols:
             for child in extract_child_divs(cols):
                 sd.columns.append(parse_markdown_lines(child))
+        else:
+            # Fallback: no <div class="columns"> wrapper — treat top-level
+            # <div>s (that are not known utility classes) as columns directly.
+            body = content
+            if h1m:
+                body = body[:h1m.start()] + body[h1m.end():]
+            if h2m:
+                body = body[:h2m.start()] + body[h2m.end():]
+            # Remove known non-column divs so we don't pick them up as columns
+            for tag in ("footnote", "box-accent", "box-primary", "box"):
+                pattern = rf'<div\s+class="[^"]*{tag}[^"]*">.*?</div>'
+                body = re.sub(pattern, "", body, flags=re.DOTALL)
+            children = extract_child_divs(body)
+            for child in children:
+                sd.columns.append(parse_markdown_lines(child))
         fn = extract_div(content, "footnote")
         if fn:
             sd.footnote = strip_html(fn)

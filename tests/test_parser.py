@@ -47,6 +47,29 @@ def test_parse_marp(example_md):
     assert isinstance(slides[0], SlideData)
 
 
+def test_parse_slide_cols2_with_wrapper():
+    raw = '''<!-- _class: cols-2 -->
+# Compare
+<div class="columns">
+<div>left content</div>
+<div>right content</div>
+</div>'''
+    sd = parse_slide(0, raw)
+    assert sd.slide_class == "cols-2"
+    assert len(sd.columns) == 2
+
+
+def test_parse_slide_cols2_fallback_no_wrapper():
+    """cols-2 should also work without <div class='columns'> wrapper."""
+    raw = '''<!-- _class: cols-2 -->
+# Compare
+<div>left content</div>
+<div>right content</div>'''
+    sd = parse_slide(0, raw)
+    assert sd.slide_class == "cols-2"
+    assert len(sd.columns) == 2
+
+
 def test_parse_slide_kpi():
     raw = '''<!-- _class: kpi -->
 # Metrics

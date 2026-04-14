@@ -310,10 +310,8 @@ class PptxBuilder:
                 p.font.color.rgb = self.MUTED
                 p.space_before = Pt(6)
             elif is_bullet:
-                p.text = s[2:]
-                p.font.name = self.FONT
-                p.font.size = size
-                p.font.color.rgb = self.FG
+                # Apply rich text (bold markdown **...**) to bullet content
+                self._set_rich_text(p, s[2:], size, self.FG)
                 p.level = 0
                 p.space_before = Pt(4)
                 pPr = p._p.get_or_add_pPr()
@@ -394,6 +392,47 @@ class PptxBuilder:
             return str(png_path)
         return str(p)
 
+    def _fill_multiline_box(self, tf, text, size, color):
+        """Fill a textbox with text that may contain bullets and continuation lines.
+
+        Handles:
+        - `- item` and `* item` as bullets
+        - Indented continuation lines (merged into previous line)
+        - **bold** markdown via _set_rich_text
+        """
+        # First, merge continuation lines (lines starting with 2+ spaces)
+        # into the preceding line.
+        raw_lines = text.split("\n")
+        merged: list[str] = []
+        for line in raw_lines:
+            if not line.strip():
+                continue
+            # Continuation: starts with whitespace and previous line exists
+            if merged and (line.startswith("  ") or line.startswith("\t")):
+                merged[-1] = merged[-1] + " " + line.strip()
+            else:
+                merged.append(line.rstrip())
+
+        first = True
+        for line in merged:
+            s = line.strip()
+            if not s:
+                continue
+            p = tf.paragraphs[0] if first else tf.add_paragraph()
+            first = False
+            is_bullet = s.startswith("- ") or s.startswith("* ")
+            if is_bullet:
+                self._set_rich_text(p, s[2:], size, color)
+                p.space_before = Pt(4)
+                pPr = p._p.get_or_add_pPr()
+                buChar = pPr.makeelement(qn("a:buChar"), {"char": "\u2022"})
+                for existing in pPr.findall(qn("a:buChar")):
+                    pPr.remove(existing)
+                pPr.append(buChar)
+            else:
+                self._set_rich_text(p, s, size, color)
+                p.space_before = Pt(4)
+
     def _add_accent_box(self, slide, text, left, top, width, height, border_color=None):
         if border_color is None:
             border_color = self.ACCENT
@@ -408,7 +447,7 @@ class PptxBuilder:
         tb = self._add_textbox(slide, left + Pt(16), top + Pt(8), width - Pt(32), height - Pt(16))
         tf = tb.text_frame
         tf.word_wrap = True
-        self._set_rich_text(tf.paragraphs[0], text, SZ_BODY, self.FG)
+        self._fill_multiline_box(tf, text, SZ_BODY, self.FG)
         return tb
 
     def _add_conclusion_box(self, slide, text, left, top, width, height):
@@ -420,7 +459,7 @@ class PptxBuilder:
         tb = self._add_textbox(slide, left + Pt(16), top + Pt(10), width - Pt(32), height - Pt(20))
         tf = tb.text_frame
         tf.word_wrap = True
-        self._set_rich_text(tf.paragraphs[0], text, SZ_BODY, self.FG)
+        self._fill_multiline_box(tf, text, SZ_BODY, self.FG)
         return tb
 
     def _add_footnote(self, slide, text):
