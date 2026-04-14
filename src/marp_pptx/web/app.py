@@ -592,7 +592,13 @@ TYPE_SCHEMAS['code'] = {
         { name: 'code', label: 'コード', type: 'textarea', default: 'def hello():\\n    print("hi")' },
         { name: 'desc', label: '説明', type: 'text', default: '' },
     ],
-    toMd: d => `<!-- _class: code -->\\n# ${esc(d.h1)}\\n<div class="cd-code">\\n\\n\\\`\\\`\\\`${esc(d.lang)}\\n${esc(d.code)}\\n\\\`\\\`\\\`\\n</div>${d.desc?`\\n<div class="cd-desc">${esc(d.desc)}</div>`:''}`,
+    toMd: function(d) {
+        var bt = String.fromCharCode(96,96,96);
+        return '<!-- _class: code -->\\n# ' + esc(d.h1) +
+               '\\n<div class="cd-code">\\n\\n' + bt + esc(d.lang) +
+               '\\n' + esc(d.code) + '\\n' + bt + '\\n</div>' +
+               (d.desc ? '\\n<div class="cd-desc">' + esc(d.desc) + '</div>' : '');
+    },
 };
 
 TYPE_SCHEMAS['zone-flow'] = {
