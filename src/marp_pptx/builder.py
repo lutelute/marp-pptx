@@ -280,13 +280,40 @@ class PptxBuilder:
         p.space_before = space_before
         return p
 
+    def _estimate_text_height(self, lines, size):
+        """Rough height for a block of markdown lines at given font size.
+
+        Used as initial textbox height so the shape hugs its content. Without
+        this, starting at BODY_H and relying on auto_size keeps the shape
+        oversized in PowerPoint (SHAPE_TO_FIT_TEXT only grows, doesn't shrink
+        once the shape is saved at BODY_H).
+        """
+        from pptx.util import Pt as _Pt
+        base = size.pt if hasattr(size, "pt") else float(size)
+        scale = getattr(self.theme, "font_scale", 1.0)
+        line_h = base * 1.45 * scale  # pt per line
+        total = 0.0
+        for line in lines:
+            s = line.strip()
+            if not s:
+                continue
+            if s.startswith(("## ", "### ")):
+                total += line_h * 1.4  # heading slightly taller
+            else:
+                total += line_h
+            total += 4 * scale  # space_before
+        return _Pt(max(24, total + 10))
+
     def _add_body_text(self, slide, lines, left=None, top=None, width=None, height=None, size=None):
         if size is None:
             size = SZ_BODY
         if left is None: left = MARGIN_L
         if top is None: top = BODY_TOP
         if width is None: width = CONTENT_W
-        if height is None: height = BODY_H
+        if height is None:
+            # Hug the content instead of reserving the full body area
+            estimated = self._estimate_text_height(lines, size)
+            height = min(BODY_H, int(estimated))
 
         tb = self._add_textbox(slide, left, top, width, height)
         tf = tb.text_frame
@@ -587,8 +614,11 @@ class PptxBuilder:
                 cur_top += ph + Inches(0.1)
         remaining_h = top + height - cur_top
         if text_lines and remaining_h > 0:
+            # Hug content height (capped at remaining), don't force full column
+            estimated = self._estimate_text_height(text_lines, size)
+            use_h = min(int(remaining_h), int(estimated))
             self._add_body_text(slide, text_lines, left=left, top=int(cur_top),
-                               width=int(width), height=int(remaining_h), size=size)
+                               width=int(width), height=use_h, size=size)
 
     # ══════════════════════════════════════════════
     # Slide type builders
