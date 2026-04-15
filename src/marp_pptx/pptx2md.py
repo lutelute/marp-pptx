@@ -29,8 +29,34 @@ class ExtractedSlide:
     images: list[str] = field(default_factory=list)
     # Raw shape dump for heuristic analysis
     shapes: list[dict] = field(default_factory=list)
-    # Detected type (heuristic)
+    # Detected type (from notes if embedded by our builder, else heuristic)
     inferred_class: str | None = None
+    # The authoritative class pulled from the slide notes (if present)
+    note_class: str | None = None
+
+
+_NOTE_CLASS_RE = re.compile(r"_class:\s*(\S+)")
+
+
+def _read_class_from_notes(slide) -> str | None:
+    """If the slide has a `_class: xxx` note (written by our builder),
+    return it. This lets pptx2md recover the exact semantic type for
+    PPTXs produced by marp-pptx without any heuristic guessing.
+    """
+    try:
+        if not slide.has_notes_slide:
+            return None
+        notes_tf = slide.notes_slide.notes_text_frame
+        text = notes_tf.text or ""
+        m = _NOTE_CLASS_RE.search(text)
+        if m:
+            cls = m.group(1)
+            if cls == "default":
+                return None
+            return cls
+    except Exception:
+        pass
+    return None
 
 
 # ── Heuristic type detection ──
@@ -65,6 +91,7 @@ def _is_bullet(para) -> bool:
 
 def extract_slide(idx: int, slide) -> ExtractedSlide:
     es = ExtractedSlide(index=idx)
+    es.note_class = _read_class_from_notes(slide)
     largest_by_font = (None, 0.0)  # (text, font_size)
     second_largest = (None, 0.0)
 
@@ -325,7 +352,10 @@ def pptx_to_md(pptx_path: Path, extract_images_to: Path | None = None) -> str:
     # Build MD
     md_parts = ["---", "marp: true", "theme: academic", "math: katex", "---", ""]
     for es in slides_extracted:
-        cls = infer_slide_type(es, total)
+        # Prefer the authoritative class written by our builder into
+        # the slide notes; fall back to heuristic inference only when
+        # the PPTX came from some other source.
+        cls = es.note_class or infer_slide_type(es, total)
         es.inferred_class = cls
         md_parts.append(slide_to_md(es, cls))
         md_parts.append("")
@@ -343,13 +373,16 @@ def pptx_to_md_with_report(pptx_path: Path, extract_images_to: Path | None = Non
     md = pptx_to_md(pptx_path, extract_images_to=extract_images_to)
     prs = Presentation(str(pptx_path))
     slides_extracted = [extract_slide(i, s) for i, s in enumerate(prs.slides)]
+    total = len(slides_extracted)
     report = {
         "markdown": md,
         "slides": [
             {
                 "index": es.index,
                 "title": es.title,
-                "inferred_class": infer_slide_type(es, len(slides_extracted)),
+                "note_class": es.note_class,
+                "inferred_class": es.note_class or infer_slide_type(es, total),
+                "source": "notes" if es.note_class else "heuristic",
                 "bullets": len(es.bullets),
                 "numbered": len(es.numbered),
                 "paragraphs": len(es.paragraphs),

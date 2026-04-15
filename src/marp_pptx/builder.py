@@ -2105,8 +2105,33 @@ class PptxBuilder:
     def build_all(self, slides: list[SlideData]):
         for sd in slides:
             method_name = self.BUILDERS.get(sd.slide_class, "build_default")
+            before_n = len(self.prs.slides)
             getattr(self, method_name)(sd)
+            # Embed the slide class into the notes of the slide(s) just created
+            # so pptx2md (and any reverse tooling) can recover the semantic type
+            # exactly — no heuristic needed for our own output.
+            cls = sd.slide_class or "default"
+            for i in range(before_n, len(self.prs.slides)):
+                self._write_class_note(self.prs.slides[i], cls)
         self._add_global_footer()
+
+    def _write_class_note(self, slide, cls: str):
+        """Store `_class: <cls>` in the slide's speaker notes so the class
+        survives the PPTX format and can be read back by pptx2md.
+        """
+        try:
+            notes = slide.notes_slide
+            tf = notes.notes_text_frame
+            existing = tf.text
+            tag = f"_class: {cls}"
+            if existing and tag in existing:
+                return
+            if existing and existing.strip():
+                tf.text = existing.rstrip() + "\n" + tag
+            else:
+                tf.text = tag
+        except Exception:
+            pass
 
     def _add_global_footer(self):
         for i, slide in enumerate(self.prs.slides):
