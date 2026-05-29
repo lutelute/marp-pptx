@@ -14,7 +14,7 @@ from marp_pptx import __version__
 @click.version_option(__version__)
 @click.pass_context
 def main(ctx):
-    """marp-pptx: Convert Marp markdown to editable PowerPoint with 49 semantic slide types."""
+    """marp-pptx: Convert Marp markdown to editable PowerPoint with 50+ semantic slide types."""
     if ctx.invoked_subcommand is None:
         click.echo(ctx.get_help())
 
@@ -166,7 +166,7 @@ def list_themes():
 @click.option("-o", "--output", default="type_catalog.pptx", help="Output catalog PPTX")
 @click.option("-p", "--palette", help="Palette name")
 def preview(output: str, palette: str | None):
-    """Generate a visual catalog PPTX showing all 49 slide types."""
+    """Generate a visual catalog PPTX showing all slide types."""
     from marp_pptx.theme import ThemeConfig, get_default_theme_path, get_palette_path
     from marp_pptx.parser import parse_marp
     from marp_pptx.builder import PptxBuilder

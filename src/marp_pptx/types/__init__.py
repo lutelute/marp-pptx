@@ -1,4 +1,4 @@
-"""Slide type registry — semantic metadata for all 49 types."""
+"""Slide type registry — semantic metadata for all slide types."""
 
 from __future__ import annotations
 
@@ -45,6 +45,8 @@ TYPE_REGISTRY: list[SlideTypeInfo] = [
     SlideTypeInfo("result", "result", "evaluation", "結論＋根拠", "成果報告", "実験結果を報告するとき", "28-result.md"),
     SlideTypeInfo("result-dual", "result-dual", "evaluation", "結果□│結果□", "二つの成果を並列", "2つの結果を比較するとき", "24-result-dual.md"),
     SlideTypeInfo("multi-result", "multi-result", "evaluation", "結果□□□", "複数成果の一覧", "複数の結果を一覧するとき", "47-multi-result.md"),
+    SlideTypeInfo("big-number", "big-number", "evaluation", "巨大数字", "単一指標の強調", "ひとつの数字を主役にするとき", "51-big-number.md"),
+    SlideTypeInfo("chart", "chart", "evaluation", "棒/折れ線グラフ", "データの可視化", "数値データをグラフで見せるとき(編集可)", "52-chart.md"),
 
     # ── Knowledge ──
     SlideTypeInfo("definition", "definition", "knowledge", "用語：説明", "概念の定義", "用語を定義するとき", "35-definition.md"),
@@ -64,6 +66,7 @@ TYPE_REGISTRY: list[SlideTypeInfo] = [
     SlideTypeInfo("quote", "quote", "narrative", "「　」", "権威・声", "引用を示すとき", "30-quote.md"),
     SlideTypeInfo("profile", "profile", "narrative", "写真＋経歴", "人物紹介", "人物を紹介するとき", "49-profile.md"),
     SlideTypeInfo("takeaway", "takeaway", "narrative", "★ メッセージ", "持ち帰ってほしい1つ", "キーメッセージを伝えるとき", "48-takeaway.md"),
+    SlideTypeInfo("statement", "statement", "narrative", "全画面 1文", "断言・転換", "1メッセージを大きく言い切るとき(dark可)", "50-statement.md"),
     SlideTypeInfo("panorama", "panorama", "narrative", "横幅画像", "インパクト・没入", "大きな画像で印象づけるとき", "32-panorama.md"),
     SlideTypeInfo("gallery-img", "gallery-img", "narrative", "画像群", "ビジュアル一覧", "複数画像を並べるとき", "37-gallery-img.md"),
     SlideTypeInfo("figure", "figure", "narrative", "画像＋キャプション", "図の提示", "図を中心に見せるとき", "10-figure.md"),
