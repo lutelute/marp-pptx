@@ -8,7 +8,8 @@
   --color-fg:        #141413;   /* ink */
   --color-primary:   #141413;
   --color-secondary: #5a5852;   /* warm dark gray (subheads) */
-  --color-accent:    #d97757;   /* clay / coral — Anthropic primary accent */
+  --color-accent:    #d97757;   /* clay / coral — large text, bars, big numbers */
+  --color-accent-text: #b3502f; /* darker clay for SMALL labels/symbols (AA 4.86:1 on cream) */
   --color-muted:     #73706a;   /* contrast-safe warm gray */
   --color-hairline:  #e8e6dc;   /* warm light gray */
   --color-light:     #ffffff;   /* white cards pop on cream */

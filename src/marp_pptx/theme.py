@@ -74,6 +74,9 @@ class ThemeConfig:
     light: RGBColor = field(default_factory=lambda: RGBColor(0xf6, 0xf6, 0xf4))
     white: RGBColor = field(default_factory=lambda: RGBColor(0xff, 0xff, 0xff))
     hairline: RGBColor = field(default_factory=lambda: RGBColor(0xe2, 0xe2, 0xe6))
+    # Darker accent reserved for SMALL text (labels/symbols) so it clears
+    # WCAG AA (4.5:1) on the background; falls back to `accent` when unset.
+    accent_text: RGBColor | None = None
     # Fonts
     font: str = "Helvetica Neue"
     font_head: str = "Helvetica Neue"
@@ -102,7 +105,7 @@ class ThemeConfig:
             if k.startswith("color-"):
                 hm = _HEX_RE.search(v)
                 if hm:
-                    colors[k[len("color-"):]] = _hex_to_rgb(hm.group(1))
+                    colors[k[len("color-"):].replace("-", "_")] = _hex_to_rgb(hm.group(1))
 
         # Create defaults first, then override with CSS values
         defaults = cls()
@@ -116,6 +119,7 @@ class ThemeConfig:
             muted=colors.get("muted", defaults.muted),
             light=colors.get("light", defaults.light),
             hairline=colors.get("hairline", colors.get("border", defaults.hairline)),
+            accent_text=colors.get("accent_text"),
             font=_resolve_font(vars_.get("font-body", ""), installed),
             font_head=_resolve_font(vars_.get("font-head", ""), installed),
             font_ea=_resolve_font(vars_.get("font-ea", "Hiragino Sans"), installed),
@@ -135,7 +139,7 @@ class ThemeConfig:
             if k.startswith("color-"):
                 hm = _HEX_RE.search(v)
                 if hm:
-                    name = k[len("color-"):]
+                    name = k[len("color-"):].replace("-", "_")
                     color = _hex_to_rgb(hm.group(1))
                     if hasattr(self, name):
                         setattr(self, name, color)

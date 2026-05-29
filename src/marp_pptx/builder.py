@@ -230,7 +230,7 @@ class PptxBuilder:
         if size is None:
             size = SZ_KICKER
         if color is None:
-            color = self.ACCENT
+            color = self.ACCENT_TEXT
         t = (text or "")
         para.text = t.upper() if t.isascii() else t
         para.alignment = align
@@ -247,7 +247,7 @@ class PptxBuilder:
         tb = self._add_textbox(slide, int(left), int(top), int(width),
                                int(KICKER_H))
         self._kicker_para(tb.text_frame.paragraphs[0], text, size=size,
-                          color=color or self.ACCENT, align=align)
+                          color=color or self.ACCENT_TEXT, align=align)
         return tb
 
     def _add_card(self, slide, region, *, label="", body="", body_lines=None,
@@ -333,6 +333,10 @@ class PptxBuilder:
     def SECONDARY(self): return self.theme.secondary
     @property
     def ACCENT(self): return self.theme.accent
+    @property
+    def ACCENT_TEXT(self):
+        # Darker accent for small text (AA contrast); falls back to ACCENT.
+        return getattr(self.theme, "accent_text", None) or self.theme.accent
     @property
     def FG(self): return self.theme.fg
     @property
@@ -530,7 +534,7 @@ class PptxBuilder:
         if kicker:
             kb = self._add_textbox(slide, text_left, int(top - KICKER_H + Inches(0.02)),
                                    text_w, int(KICKER_H))
-            self._kicker_para(kb.text_frame.paragraphs[0], kicker, color=self.ACCENT)
+            self._kicker_para(kb.text_frame.paragraphs[0], kicker, color=self.ACCENT_TEXT)
 
         left_bar = self.LAYOUT.h1_deco == "left-bar"
         if left_bar:
@@ -916,18 +920,33 @@ class PptxBuilder:
         except Exception:
             pass
         rule_header = getattr(self.LAYOUT, "table_header_style", "fill") == "rule"
+        # Right-align columns whose body cells are predominantly numeric
+        # (numbers read better right/decimal-aligned — CSE table guidance).
+        num_re = re.compile(r"^[\s$¥€£]*[-+]?[\d,]+(\.\d+)?\s*[%x×kKMB]?\s*$")
+        clean = lambda s: strip_html(s).replace("**", "").strip()
+        numeric_cols = set()
+        for ci in range(cols):
+            body = [clean(r[ci]) for r in rows_data[1:] if ci < len(r) and r[ci].strip()]
+            if body and sum(bool(num_re.match(b)) for b in body) >= max(1, len(body) * 0.6):
+                numeric_cols.add(ci)
         for ri, row in enumerate(rows_data):
             for ci in range(cols):
                 cell = table.cell(ri, ci)
                 cell.vertical_anchor = MSO_ANCHOR.MIDDLE
                 cell.margin_left = Pt(10); cell.margin_right = Pt(10)
                 cell.margin_top = Pt(5); cell.margin_bottom = Pt(5)
-                cell.text = strip_html(row[ci]) if ci < len(row) else ""
+                raw = row[ci] if ci < len(row) else ""
+                cell.text = clean(raw)
                 is_head = (ri == 0)
+                emph = ("**" in raw)   # markdown-bolded cell (e.g. **Ours**)
+                align = PP_ALIGN.RIGHT if ci in numeric_cols else PP_ALIGN.LEFT
                 for p in cell.text_frame.paragraphs:
-                    p.font.name = self.FONT_HEAD if is_head else self.FONT
+                    p.alignment = align
+                    p.font.name = self.FONT_HEAD if (is_head or emph) else self.FONT
                     p.font.size = self._fs(SZ_SMALL)
-                    p.font.bold = is_head or (ci == 0 and not is_head)
+                    p.font.bold = is_head or emph or (ci == 0 and not is_head)
+                    if emph and not is_head:
+                        p.font.color.rgb = self.ACCENT_TEXT
                     if is_head:
                         p.font.color.rgb = self.FG if rule_header else self.WHITE
                     elif ci == 0:
@@ -1023,7 +1042,8 @@ class PptxBuilder:
         is_dark = self.LAYOUT.title_bg in ("gradient", "dark")
         h_color = self.WHITE if is_dark else self.PRIMARY
         sub_color = RGBColor(0xD8, 0xD8, 0xDE) if is_dark else self.MUTED
-        accent = self.WHITE if is_dark else self.ACCENT
+        accent = self.WHITE if is_dark else self.ACCENT           # for the rule (graphic)
+        kicker_color = self.WHITE if is_dark else self.ACCENT_TEXT  # for small text
         cx = int(SW // 2)
         align = PP_ALIGN.CENTER
 
@@ -1035,7 +1055,7 @@ class PptxBuilder:
         if kicker:
             kb = self._add_textbox(slide, int(Inches(1.0)), int(Inches(2.55)),
                                    int(SW - Inches(2.0)), int(KICKER_H))
-            self._kicker_para(kb.text_frame.paragraphs[0], kicker, color=accent,
+            self._kicker_para(kb.text_frame.paragraphs[0], kicker, color=kicker_color,
                               align=align, tracking=200)
         # (2) accent hairline above the title
         self._hairline(slide, int(cx - Inches(0.55)), int(Inches(3.16)),
@@ -1091,7 +1111,7 @@ class PptxBuilder:
         kb = self._add_textbox(slide, x, int(Inches(3.5)), w, int(KICKER_H))
         self._kicker_para(kb.text_frame.paragraphs[0],
                           ("Section " + ghost) if self.LAYOUT.divider_number else "Section",
-                          color=self.ACCENT, align=align, tracking=200)
+                          color=self.ACCENT_TEXT, align=align, tracking=200)
         # title
         tb = self._add_textbox(slide, x, int(Inches(3.92)), w,
                                int(self._fs(Pt(34 * 1.3 * 2))))
@@ -1209,11 +1229,11 @@ class PptxBuilder:
             stb.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
             sp = stb.text_frame.paragraphs[0]
             sp.alignment = PP_ALIGN.RIGHT
-            if not self._append_math_omml_inline(sp, sym_latex, Pt(sym_pt), self.ACCENT):
+            if not self._append_math_omml_inline(sp, sym_latex, Pt(sym_pt), self.ACCENT_TEXT):
                 sp.text = self._math_text_fallback(sym_latex)
                 sp.font.name = self.FONT; sp.font.size = self._fs(Pt(sym_pt - 2))
                 sp.font.bold = True; sp.font.italic = True
-                sp.font.color.rgb = self.ACCENT
+                sp.font.color.rgb = self.ACCENT_TEXT
             dtb = self._add_textbox(slide, div_x + int(Inches(0.25)), row_top, desc_w, row_h)
             dtb.text_frame.word_wrap = True
             dtb.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
@@ -2527,7 +2547,7 @@ class PptxBuilder:
             atb = self._add_textbox(slide, int(right_x), int(cur_y), int(right_w), affil_h)
             p = atb.text_frame.paragraphs[0]
             self._kicker_para(p, sd.profile_affiliation, size=SZ_SMALL,
-                              color=self.ACCENT, tracking=120)
+                              color=self.ACCENT_TEXT, tracking=120)
             cur_y += affil_h + int(Inches(0.2))
         if sd.profile_bio:
             btb = self._add_textbox(slide, int(right_x), int(cur_y), int(right_w), bio_h)
@@ -2590,9 +2610,69 @@ class PptxBuilder:
         "profile": "build_profile",
     }
 
+    # Generic noun-label titles that should be assertions instead.
+    _LABEL_TITLES = {
+        "結果", "考察", "背景", "方法", "手法", "まとめ", "結論", "議論", "目的",
+        "序論", "概要", "課題", "提案手法", "実験", "実験結果", "今後の課題",
+        "results", "result", "method", "methods", "methodology", "conclusion",
+        "conclusions", "background", "introduction", "discussion", "summary",
+        "objective", "overview", "agenda", "outline", "motivation", "approach",
+        "experiments", "evaluation", "future work", "related work",
+    }
+    # density -> (max_elements, max_body_lines, max_line_chars, max_words)
+    _LINT_LIMITS = {
+        "academic": (6, 6, 42, 75),
+        "keynote":  (4, 3, 30, 40),
+    }
+
+    def _lint_slide(self, sd, idx: int):
+        """Emit stderr warnings for over-stuffed slides / weak titles. Advisory
+        only (never blocks). Grounded in PLOS '≤6 elements', 6x6, action-titles."""
+        import sys as _sys
+        density = getattr(self.theme, "density", "academic")
+        max_el, max_lines, max_chars, max_words = self._LINT_LIMITS.get(
+            density, self._LINT_LIMITS["academic"])
+        warn = lambda m: print(f"[lint] slide {idx}: {m}", file=_sys.stderr)
+
+        def cjk_len(s):  # full-width chars count as 2
+            return sum(2 if ord(c) > 0x2E7F else 1 for c in s)
+
+        body = [l.strip() for l in (sd.body_lines or []) if l.strip()
+                and not l.strip().startswith(("#", "<"))]
+        if len(body) > max_lines:
+            warn(f"{len(body)} body lines (>{max_lines}) — split or trim")
+        for l in body:
+            if cjk_len(l) > max_chars * 2:
+                warn(f"a line is long (~{cjk_len(l)//2} chars >{max_chars}) — shorten")
+                break
+        words = sum(len(l.split()) for l in body)
+        if words > max_words:
+            warn(f"~{words} words (>{max_words}) — this reads as a document, not a slide")
+
+        # element count (max items across the type's collection + body + media)
+        item_fields = ("columns", "kpi_items", "zone_flow_items", "zone_process_items",
+                       "steps_items", "card_items", "timeline_items", "agenda_items",
+                       "summary_points", "checklist_items", "funnel_items", "stack_items",
+                       "multi_result_items", "gallery_items", "history_items",
+                       "eq_system", "ref_items", "annotation_notes")
+        items = max([len(getattr(sd, f, []) or []) for f in item_fields] + [0])
+        elements = max(items, len(body)) + (1 if sd.image_path else 0) + (1 if sd.table_rows else 0)
+        if elements > max_el:
+            warn(f"{elements} elements (>{max_el}) — one slide, one message")
+
+        # assertion (action-title) check
+        h = (sd.h2 or sd.h1 or "").strip()
+        h = re.sub(r"^\[[^\]]*\]\s*", "", h)   # drop a "[KPI]" style prefix
+        if h and h.strip().rstrip("。.:：").lower() in self._LABEL_TITLES:
+            warn(f'title "{h}" is a label — state the takeaway (e.g. add the result/number)')
+
     def build_all(self, slides: list[SlideData]):
         self._divider_no = 0
-        for sd in slides:
+        for n, sd in enumerate(slides, 1):
+            try:
+                self._lint_slide(sd, n)
+            except Exception:
+                pass
             if sd.slide_class == "divider":
                 self._divider_no += 1
             method_name = self.BUILDERS.get(sd.slide_class, "build_default")
