@@ -2557,6 +2557,130 @@ class PptxBuilder:
                 p.space_before = PARA_GAP
                 self._set_rich_text(p, "\u2022  " + item, SZ_ZONE_B, self.FG)
 
+    # ── Okabe-Ito color-vision-safe categorical palette ──
+    OKABE_ITO = [
+        RGBColor(0xE6, 0x9F, 0x00), RGBColor(0x56, 0xB4, 0xE9),
+        RGBColor(0x00, 0x9E, 0x73), RGBColor(0xF0, 0xE4, 0x42),
+        RGBColor(0x00, 0x72, 0xB2), RGBColor(0xD5, 0x5E, 0x00),
+        RGBColor(0xCC, 0x79, 0xA7), RGBColor(0x00, 0x00, 0x00),
+    ]
+
+    def build_statement(self, sd: SlideData):
+        slide = self._blank_slide()
+        if sd.dark:
+            self._set_bg(slide, self.PRIMARY)
+        fg = self.WHITE if sd.dark else self.PRIMARY
+        accent = self.WHITE if sd.dark else self.ACCENT
+        text = sd.statement_text or sd.h1 or ""
+        cx = int(SW // 2)
+        n = len(text)
+        pt = 44 if n <= 40 else (36 if n <= 90 else 28)
+        th = int(self._estimate_text_height([text], Pt(pt)))
+        top = int(MARGIN_T) + max(0, (int(SH - 2 * MARGIN_T) - th - int(Inches(0.3))) // 2)
+        self._hairline(slide, cx - int(Inches(0.5)), top - int(Inches(0.28)),
+                       Inches(1.0), thickness=ACCENT_RULE_W, color=accent)
+        tb = self._add_textbox(slide, int(Inches(1.2)), top, int(SW - Inches(2.4)),
+                               th + int(Inches(0.4)))
+        tf = tb.text_frame; tf.word_wrap = True
+        p = tf.paragraphs[0]
+        self._set_rich_text(p, text, Pt(pt), fg)
+        for r in p.runs:
+            r.font.bold = True; r.font.name = self.FONT_HEAD
+        p.alignment = PP_ALIGN.CENTER; p.line_spacing = LINE_TITLE
+
+    def build_big_number(self, sd: SlideData):
+        slide = self._blank_slide()
+        if sd.dark:
+            self._set_bg(slide, self.PRIMARY)
+        if sd.h1:
+            self._add_title(slide, sd.h1)
+        _, rtop, rwidth, rheight = self._content_region(has_title=bool(sd.h1),
+                                                        full=not sd.footnote)
+        cx = int(SW // 2)
+        big = sd.bignum_value or "—"
+        num_pt = 110 if len(big) <= 4 else (88 if len(big) <= 7 else 64)
+        num_h = int(self._fs(Pt(num_pt)) * 1.15)
+        lbl_h = int(Inches(0.5)) if sd.bignum_label else 0
+        cap_h = int(Inches(0.45)) if sd.bignum_caption else 0
+        block = num_h + lbl_h + cap_h
+        top = rtop + max(0, (rheight - block) // 2)
+        tb = self._add_textbox(slide, int(MARGIN_L), top, int(CONTENT_W), num_h)
+        tb.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
+        p = tb.text_frame.paragraphs[0]; p.text = big
+        p.font.name = self.FONT_HEAD; p.font.size = self._fs(Pt(num_pt))
+        p.font.bold = True; p.font.color.rgb = self.ACCENT
+        p.alignment = PP_ALIGN.CENTER
+        self._hairline(slide, cx - int(Inches(0.5)), top + num_h + int(Inches(0.02)),
+                       Inches(1.0), thickness=ACCENT_RULE_W, color=self.ACCENT)
+        cur = top + num_h + int(Inches(0.16))
+        if sd.bignum_label:
+            lb = self._add_textbox(slide, int(MARGIN_L), cur, int(CONTENT_W), lbl_h)
+            self._kicker_para(lb.text_frame.paragraphs[0], sd.bignum_label,
+                              size=SZ_H3, color=(self.WHITE if sd.dark else self.SECONDARY),
+                              align=PP_ALIGN.CENTER, tracking=140)
+            cur += lbl_h
+        if sd.bignum_caption:
+            cb = self._add_textbox(slide, int(MARGIN_L), cur, int(CONTENT_W), cap_h)
+            cp = cb.text_frame.paragraphs[0]; cp.text = sd.bignum_caption
+            cp.font.name = self.FONT; cp.font.size = self._fs(SZ_SMALL)
+            cp.font.color.rgb = (RGBColor(0xD8, 0xD8, 0xDE) if sd.dark else self.MUTED)
+            cp.alignment = PP_ALIGN.CENTER
+            cb.text_frame.word_wrap = True
+        if sd.footnote:
+            self._add_footnote(slide, sd.footnote)
+
+    def build_chart(self, sd: SlideData):
+        slide = self._blank_slide()
+        if sd.h1:
+            self._add_title(slide, sd.h1)
+        left, rtop, width, rheight = self._content_region(has_title=bool(sd.h1))
+        if not sd.chart_series or not sd.chart_categories:
+            self._add_body_text(slide, ["(chart: データ未指定 — Markdown表で系列を渡してください)"],
+                                left=left, top=rtop, width=width)
+            return
+        from pptx.chart.data import CategoryChartData
+        from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION
+        kind = {"line": XL_CHART_TYPE.LINE_MARKERS,
+                "bar": XL_CHART_TYPE.BAR_CLUSTERED,
+                "column": XL_CHART_TYPE.COLUMN_CLUSTERED}.get(
+                    sd.chart_kind, XL_CHART_TYPE.COLUMN_CLUSTERED)
+        data = CategoryChartData()
+        data.categories = sd.chart_categories
+        for name, vals in sd.chart_series:
+            data.add_series(name, vals)
+        cap_h = int(Inches(0.4)) if (sd.chart_caption or sd.footnote) else 0
+        ch_h = rheight - cap_h
+        gf = slide.shapes.add_chart(kind, left, rtop, width, ch_h, data)
+        chart = gf.chart
+        chart.has_title = False
+        n_series = len(sd.chart_series)
+        chart.has_legend = n_series > 1
+        if chart.has_legend:
+            chart.legend.position = XL_LEGEND_POSITION.BOTTOM
+            chart.legend.include_in_layout = False
+            chart.legend.font.size = self._fs(SZ_SMALL)
+        for i, plot_series in enumerate(chart.series):
+            col = self.ACCENT if n_series == 1 else self.OKABE_ITO[i % len(self.OKABE_ITO)]
+            try:
+                fmt = plot_series.format
+                fmt.fill.solid(); fmt.fill.fore_color.rgb = col
+                fmt.line.color.rgb = col
+            except Exception:
+                pass
+        try:
+            for ax in (chart.category_axis, chart.value_axis):
+                ax.tick_labels.font.size = self._fs(SZ_SMALL)
+                ax.format.line.color.rgb = self.HAIRLINE
+        except Exception:
+            pass
+        if sd.chart_caption or sd.footnote:
+            cb = self._add_textbox(slide, left, int(rtop + ch_h + Inches(0.05)),
+                                   width, cap_h)
+            cp = cb.text_frame.paragraphs[0]
+            cp.text = sd.chart_caption or sd.footnote
+            cp.font.name = self.FONT; cp.font.size = self._fs(SZ_SMALL)
+            cp.font.color.rgb = self.MUTED; cp.alignment = PP_ALIGN.CENTER
+
     # ══════════════════════════════════════════════
     # Build all slides
     # ══════════════════════════════════════════════
@@ -2608,6 +2732,12 @@ class PptxBuilder:
         "multi-result": "build_multi_result",
         "takeaway": "build_takeaway",
         "profile": "build_profile",
+        "statement": "build_statement",
+        "big-statement": "build_statement",
+        "dark": "build_statement",
+        "big-number": "build_big_number",
+        "big-number-dark": "build_big_number",
+        "chart": "build_chart",
     }
 
     # Generic noun-label titles that should be assertions instead.

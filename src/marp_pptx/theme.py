@@ -89,6 +89,9 @@ class ThemeConfig:
     # "png" (matplotlib image — use for live-preview where the viewer
     # has poor OMML support, e.g. LibreOffice).
     math_mode: str = "omml"
+    # Content density preset: "academic" (dense, handout-friendly, default) or
+    # "keynote" (sparse, projection-first — bigger type, fewer elements).
+    density: str = "academic"
     # Layout
     layout: ThemeLayout = field(default_factory=ThemeLayout)
 
