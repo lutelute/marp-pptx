@@ -16,6 +16,7 @@ from lxml import etree
 
 NS_A14 = "http://schemas.microsoft.com/office/drawing/2010/main"
 NS_M = "http://schemas.openxmlformats.org/officeDocument/2006/math"
+NS_W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 
 _CACHE_DIR = Path(tempfile.gettempdir()) / "marp_omml_cache"
 _CACHE_DIR.mkdir(exist_ok=True)
@@ -92,3 +93,42 @@ def latex_to_omml_element(latex: str, display: bool = False) -> etree._Element:
     serialized = etree.tostring(chosen)
     cached.write_bytes(serialized)
     return etree.fromstring(serialized)
+
+
+def set_omml_size(el: etree._Element, half_points: int) -> etree._Element:
+    """Pin the run size of every <m:r> by injecting <w:rPr><w:sz/><w:szCs/>.
+
+    half_points = pt * 2 (e.g. 30pt -> 60). In OOXML math the run size lives in
+    the wordprocessingml run properties (<w:rPr>), NOT in <m:rPr> (which only
+    holds math styling). Schema order inside <m:r> is: m:rPr?, w:rPr?, m:t.
+    This makes the equation render at a deterministic size across viewers,
+    fixing the "M_{ij} balloons huge" auto-scaling inconsistency.
+    """
+    m = f"{{{NS_M}}}"
+    w = f"{{{NS_W}}}"
+    val = str(int(half_points))
+    for r in el.iter(f"{m}r"):
+        wrpr = r.find(f"{w}rPr")
+        if wrpr is None:
+            wrpr = etree.Element(f"{w}rPr")
+            mrpr = r.find(f"{m}rPr")
+            if mrpr is not None:
+                mrpr.addnext(wrpr)      # w:rPr follows m:rPr
+            else:
+                r.insert(0, wrpr)       # else first child (before m:t)
+        for tag in (f"{w}sz", f"{w}szCs"):
+            node = wrpr.find(tag)
+            if node is None:
+                node = etree.SubElement(wrpr, tag)
+            node.set(f"{w}val", val)
+    return el
+
+
+def omml_glyph_count(el: etree._Element) -> int:
+    """Rough width proxy: total <m:t> characters plus a structural penalty
+    for fractions/radicals (which render wide). Used to auto-shrink only the
+    equations that would overflow their box, keeping the rest uniform."""
+    m = f"{{{NS_M}}}"
+    chars = sum(len(t.text or "") for t in el.iter(f"{m}t"))
+    nest = len(list(el.iter(f"{m}f"))) + len(list(el.iter(f"{m}rad")))
+    return chars + nest * 2

@@ -21,3 +21,6 @@ build/
 *.bmp
 *.svg
 assets/
+
+# Learning data (collected third-party templates, not redistributable)
+learning-data/

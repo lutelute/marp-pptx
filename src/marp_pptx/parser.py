@@ -207,17 +207,27 @@ class SlideData:
     profile_name: str = ""
     profile_affiliation: str = ""
     profile_bio: list = field(default_factory=list)
+    speaker_notes: str = ""
 
 
 def parse_slide(index: int, raw: str) -> SlideData:
     """Parse a raw slide chunk into SlideData."""
     directives = {}
+    notes_chunks: list[str] = []
 
     def repl(m):
         directives[m.group(1)] = m.group(2)
         return ""
 
-    content = re.sub(r"<!--\s+_(\w+):\s*(.+?)\s*-->", repl, raw).strip()
+    def note_repl(m):
+        notes_chunks.append(m.group(1).strip())
+        return ""
+
+    # Speaker notes: <!-- note: ... --> (multi-line). Extract before the
+    # directive pass so they don't get mistaken for _key directives.
+    content = re.sub(r"<!--\s*note:\s*(.+?)\s*-->", note_repl, raw,
+                     flags=re.DOTALL | re.IGNORECASE)
+    content = re.sub(r"<!--\s+_(\w+):\s*(.+?)\s*-->", repl, content).strip()
 
     sd = SlideData(
         index=index,
@@ -225,6 +235,7 @@ def parse_slide(index: int, raw: str) -> SlideData:
         paginate=directives.get("paginate", "true") != "false",
         raw=content,
     )
+    sd.speaker_notes = "\n\n".join(notes_chunks)
 
     h1m = re.search(r"^#\s+(.+)$", content, re.MULTILINE)
     h2m = re.search(r"^##\s+(.+)$", content, re.MULTILINE)

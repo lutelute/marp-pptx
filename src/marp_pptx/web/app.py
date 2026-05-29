@@ -56,8 +56,8 @@ EDITOR_HTML = """<!DOCTYPE html>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html, body { height: 100%; }
-body { font-family: -apple-system, 'Segoe UI', 'Hiragino Sans', sans-serif; background: #f7f7f7; color: #1a1a1a; }
-.topbar { background: #1a1a1a; color: white; padding: 10px 20px; display: flex; align-items: center; gap: 16px; }
+body { font-family: -apple-system, 'Segoe UI', 'Hiragino Sans', sans-serif; background: #fafaf8; color: #1c1c22; }
+.topbar { background: #1c1c22; color: white; padding: 10px 20px; display: flex; align-items: center; gap: 16px; }
 .topbar h1 { font-size: 1.1em; font-weight: 600; }
 .topbar a { color: #bbb; text-decoration: none; font-size: 0.9em; }
 .topbar a:hover { color: white; }
@@ -71,7 +71,7 @@ body { font-family: -apple-system, 'Segoe UI', 'Hiragino Sans', sans-serif; back
 .preview-pane .slide-thumb .caption { padding: 6px 10px; font-size: 0.75em; color: #999; border-top: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
 .preview-pane .slide-thumb .slide-actions { display: flex; gap: 3px; }
 .preview-pane .slide-thumb .slide-action-btn { background: #f0f0f0; border: 1px solid #ccc; padding: 2px 6px; border-radius: 2px; font-size: 0.85em; cursor: pointer; min-width: 22px; color: #555; }
-.preview-pane .slide-thumb .slide-action-btn:hover { background: #ddd; color: #1a1a1a; }
+.preview-pane .slide-thumb .slide-action-btn:hover { background: #ddd; color: #1c1c22; }
 .preview-pane .slide-thumb .slide-action-btn.delete:hover { background: #fce4e4; color: #c62828; border-color: #c62828; }
 .preview-empty { color: #999; font-size: 0.85em; text-align: center; padding: 40px 20px; }
 .preview-loading { color: #666; font-size: 0.85em; text-align: center; padding: 40px 20px; }
@@ -80,7 +80,7 @@ body { font-family: -apple-system, 'Segoe UI', 'Hiragino Sans', sans-serif; back
 .editor-toolbar { background: white; padding: 10px 14px; border-bottom: 1px solid #eee; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .editor-toolbar button { background: #f0f0f0; border: 1px solid #ddd; padding: 6px 12px; border-radius: 3px; font-size: 0.85em; cursor: pointer; }
 .editor-toolbar button:hover { background: #e0e0e0; }
-.editor-toolbar button.primary { background: #1a1a1a; color: white; border-color: #1a1a1a; font-weight: 600; }
+.editor-toolbar button.primary { background: #1c1c22; color: white; border-color: #1c1c22; font-weight: 600; }
 .editor-toolbar button.primary:hover { background: #333; }
 .editor-toolbar .sep { color: #ccc; margin: 0 4px; }
 
@@ -94,13 +94,13 @@ body { font-family: -apple-system, 'Segoe UI', 'Hiragino Sans', sans-serif; back
 .modal-body { padding: 20px 24px; overflow-y: auto; flex: 1; }
 .modal-footer { padding: 14px 24px; border-top: 1px solid #eee; display: flex; gap: 8px; justify-content: flex-end; background: #f9f9f9; }
 .modal-footer button { padding: 8px 18px; border-radius: 3px; border: 1px solid #ddd; background: white; cursor: pointer; font-size: 0.9em; }
-.modal-footer button.primary { background: #1a1a1a; color: white; border-color: #1a1a1a; font-weight: 600; }
+.modal-footer button.primary { background: #1c1c22; color: white; border-color: #1c1c22; font-weight: 600; }
 
 /* Type picker */
 .type-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
 .type-card { border: 1px solid #ddd; border-radius: 4px; padding: 10px 12px; cursor: pointer; background: white; }
-.type-card:hover { background: #eef; border-color: #88c; }
-.type-card .type-name { font-family: ui-monospace, 'SF Mono', monospace; font-size: 0.85em; font-weight: 600; color: #1a1a1a; }
+.type-card:hover { background: #fbeae1; border-color: #d98a6a; }
+.type-card .type-name { font-family: ui-monospace, 'SF Mono', monospace; font-size: 0.85em; font-weight: 600; color: #1c1c22; }
 .type-card .type-geom { font-size: 0.9em; margin-top: 4px; color: #444; }
 .type-card .type-meaning { font-size: 0.78em; color: #777; margin-top: 2px; }
 .type-category-header { grid-column: 1/-1; font-size: 0.75em; font-weight: 600; color: #555; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 10px; padding: 4px 0; border-bottom: 1px solid #eee; }
@@ -113,11 +113,11 @@ body { font-family: -apple-system, 'Segoe UI', 'Hiragino Sans', sans-serif; back
 .form-row .hint { font-size: 0.75em; color: #999; margin-top: 3px; }
 .form-row input[type="checkbox"] { margin-right: 6px; }
 .array-items { display: flex; flex-direction: column; gap: 8px; }
-.array-item { display: flex; gap: 8px; align-items: flex-start; padding: 8px; background: #f7f7f7; border-radius: 3px; }
+.array-item { display: flex; gap: 8px; align-items: flex-start; padding: 8px; background: #fafaf8; border-radius: 3px; }
 .array-item > div { flex: 1; }
 .array-item .remove-btn { background: #fff; border: 1px solid #ccc; color: #c62828; padding: 4px 10px; border-radius: 3px; cursor: pointer; font-size: 0.85em; flex-shrink: 0; }
 .array-item .remove-btn:hover { background: #fce4e4; }
-.add-item-btn { margin-top: 8px; background: #eef; color: #1a1a1a; border: 1px dashed #88c; padding: 8px 14px; border-radius: 3px; cursor: pointer; font-size: 0.85em; }
+.add-item-btn { margin-top: 8px; background: #fbeae1; color: #1c1c22; border: 1px dashed #d98a6a; padding: 8px 14px; border-radius: 3px; cursor: pointer; font-size: 0.85em; }
 .add-item-btn:hover { background: #ccd; }
 .img-preview { max-width: 200px; max-height: 120px; margin-top: 6px; border: 1px solid #ddd; border-radius: 3px; display: block; }
 .img-preview-sm { max-width: 100px; max-height: 60px; margin-top: 4px; border: 1px solid #ddd; border-radius: 3px; display: block; }
@@ -135,13 +135,13 @@ select, input[type="text"] { width: 100%; padding: 6px 8px; border: 1px solid #d
 input[type="range"] { width: 100%; padding: 0; }
 .slider-row { display: flex; align-items: center; gap: 8px; }
 .slider-val { min-width: 36px; font-variant-numeric: tabular-nums; font-size: 0.85em; color: #666; }
-button.primary { width: 100%; background: #1a1a1a; color: white; border: none; padding: 12px; border-radius: 4px; font-size: 0.95em; cursor: pointer; margin-top: 16px; font-weight: 600; }
+button.primary { width: 100%; background: #1c1c22; color: white; border: none; padding: 12px; border-radius: 4px; font-size: 0.95em; cursor: pointer; margin-top: 16px; font-weight: 600; }
 button.primary:hover { background: #333; }
 button.primary:disabled { background: #999; cursor: wait; }
 .stats { font-size: 0.8em; color: #666; margin-top: 8px; padding: 10px; background: #f9f9f9; border-radius: 4px; }
-.stats span { font-weight: 600; color: #1a1a1a; }
-.sample-btn { display: block; width: 100%; text-align: left; padding: 8px 10px; margin-bottom: 4px; background: #f7f7f7; border: 1px solid #eee; border-radius: 3px; font-size: 0.85em; cursor: pointer; color: #555; }
-.sample-btn:hover { background: #eef; color: #1a1a1a; }
+.stats span { font-weight: 600; color: #1c1c22; }
+.sample-btn { display: block; width: 100%; text-align: left; padding: 8px 10px; margin-bottom: 4px; background: #fafaf8; border: 1px solid #eee; border-radius: 3px; font-size: 0.85em; cursor: pointer; color: #555; }
+.sample-btn:hover { background: #fbeae1; color: #1c1c22; }
 .status { margin-top: 10px; padding: 8px 10px; border-radius: 3px; font-size: 0.85em; display: none; }
 .status.ok { background: #e6f7e6; color: #2e7d32; display: block; }
 .status.err { background: #fce4e4; color: #c62828; display: block; }
@@ -165,10 +165,10 @@ button.primary:disabled { background: #999; cursor: wait; }
 <button onclick="insertSnippet('bullets')">箇条書き</button>
 <button onclick="insertSnippet('divider')">区切り</button>
 <span class="sep">|</span>
-<button onclick="downloadMd()" title="編集中のMarkdownを.mdファイルで保存">📥 MD保存</button>
-<button onclick="document.getElementById('md-upload').click()" title=".mdファイルを読み込んでエディタに展開">📤 MD読込</button>
+<button onclick="downloadMd()" title="編集中のMarkdownを.mdファイルで保存">MD保存</button>
+<button onclick="document.getElementById('md-upload').click()" title=".mdファイルを読み込んでエディタに展開">MD読込</button>
 <input type="file" id="md-upload" accept=".md,.markdown,text/*" style="display:none" onchange="loadMdFile(event)">
-<button onclick="document.getElementById('pptx-upload').click()" title="PPTXを読み込んでMD構造に変換">🔄 PPTX→MD</button>
+<button onclick="document.getElementById('pptx-upload').click()" title="PPTXを読み込んでMD構造に変換">PPTX→MD</button>
 <input type="file" id="pptx-upload" accept=".pptx" style="display:none" onchange="loadPptxFile(event)">
 <span class="sep">|</span>
 <button onclick="if(confirm('エディタ内容を全削除しますか？')) { document.getElementById('md-editor').value=''; updateStats(); autoSave(); triggerAutoPreview(); }">全削除</button>
@@ -241,7 +241,7 @@ button.primary:disabled { background: #999; cursor: wait; }
 <h2>サンプル</h2>
 <button class="sample-btn" onclick="loadSample('minimal')">📄 最小雛形</button>
 <button class="sample-btn" onclick="loadSample('all')">📚 全型カタログ</button>
-<button class="sample-btn" onclick="loadSample('academic')">🎓 学術発表サンプル</button>
+<button class="sample-btn" onclick="loadSample('academic')">学術発表サンプル</button>
 
 <h2>出力設定</h2>
 <label>Palette</label>
@@ -2012,24 +2012,24 @@ INDEX_HTML = """<!DOCTYPE html>
 <title>marp-pptx Web UI</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: -apple-system, 'Segoe UI', 'Hiragino Sans', sans-serif; background: #f7f7f7; color: #1a1a1a; line-height: 1.6; }
+body { font-family: -apple-system, 'Segoe UI', 'Hiragino Sans', sans-serif; background: #fafaf8; color: #1c1c22; line-height: 1.6; }
 .container { max-width: 900px; margin: 40px auto; padding: 0 20px; }
 h1 { font-size: 1.8em; margin-bottom: 8px; }
 .subtitle { color: #999; margin-bottom: 32px; }
 .card { background: white; border-radius: 8px; padding: 32px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); margin-bottom: 24px; }
 label { display: block; font-weight: 600; margin-bottom: 8px; margin-top: 12px; }
 select, input[type="file"], input[type="text"] { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 16px; }
-button { background: #1a1a1a; color: white; border: none; padding: 12px 32px; border-radius: 4px; font-size: 1em; cursor: pointer; margin-right: 8px; }
+button { background: #1c1c22; color: white; border: none; padding: 12px 32px; border-radius: 4px; font-size: 1em; cursor: pointer; margin-right: 8px; }
 button:hover { background: #333; }
-button.secondary { background: white; color: #1a1a1a; border: 1px solid #ddd; }
+button.secondary { background: white; color: #1c1c22; border: 1px solid #ddd; }
 .types-table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
-.types-table th { background: #1a1a1a; color: white; padding: 10px 12px; text-align: left; }
+.types-table th { background: #1c1c22; color: white; padding: 10px 12px; text-align: left; }
 .types-table td { padding: 8px 12px; border-bottom: 1px solid #eee; }
 .types-table tr:nth-child(even) { background: #f9f9f9; }
 .cat-badge { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 0.8em; background: #e8e8e8; }
 .tabs { display: flex; border-bottom: 2px solid #ddd; margin-bottom: 20px; }
 .tabs a { padding: 10px 20px; color: #666; text-decoration: none; border-bottom: 2px solid transparent; margin-bottom: -2px; }
-.tabs a.active { color: #1a1a1a; border-color: #1a1a1a; font-weight: 600; }
+.tabs a.active { color: #1c1c22; border-color: #1c1c22; font-weight: 600; }
 </style>
 </head>
 <body>
@@ -2042,12 +2042,12 @@ button.secondary { background: white; color: #1a1a1a; border: 1px solid #ddd; }
 <a href="/types-page">型一覧</a>
 </div>
 
-<div class="card" style="background:#1a1a1a; color:white;">
-<h2 style="margin-bottom:16px">✏️ ブラウザで直接編集 → PPTX 生成</h2>
+<div class="card" style="background:#1c1c22; color:white;">
+<h2 style="margin-bottom:16px">ブラウザで直接編集 → PPTX 生成</h2>
 <p style="margin-bottom:16px; color:#ccc; font-size:0.9em">
 .md ファイルを用意せず、その場で Markdown を書いて PPTX にします。型の挿入ボタンあり。
 </p>
-<a href="/editor"><button type="button" style="background:white; color:#1a1a1a; cursor:pointer">→ エディタを開く</button></a>
+<a href="/editor"><button type="button" style="background:white; color:#1c1c22; cursor:pointer">→ エディタを開く</button></a>
 </div>
 
 <div class="card">
@@ -2084,14 +2084,14 @@ TYPES_PAGE_HTML = """<!DOCTYPE html>
 <title>marp-pptx: Slide Types</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: -apple-system, 'Segoe UI', 'Hiragino Sans', sans-serif; background: #f7f7f7; color: #1a1a1a; line-height: 1.6; }
+body { font-family: -apple-system, 'Segoe UI', 'Hiragino Sans', sans-serif; background: #fafaf8; color: #1c1c22; line-height: 1.6; }
 .container { max-width: 1100px; margin: 40px auto; padding: 0 20px; }
 h1 { margin-bottom: 20px; }
 .tabs { display: flex; border-bottom: 2px solid #ddd; margin-bottom: 20px; }
 .tabs a { padding: 10px 20px; color: #666; text-decoration: none; border-bottom: 2px solid transparent; margin-bottom: -2px; }
-.tabs a.active { color: #1a1a1a; border-color: #1a1a1a; font-weight: 600; }
+.tabs a.active { color: #1c1c22; border-color: #1c1c22; font-weight: 600; }
 table { width: 100%; border-collapse: collapse; font-size: 0.9em; background: white; }
-th { background: #1a1a1a; color: white; padding: 10px 12px; text-align: left; }
+th { background: #1c1c22; color: white; padding: 10px 12px; text-align: left; }
 td { padding: 8px 12px; border-bottom: 1px solid #eee; }
 tr:nth-child(even) { background: #f9f9f9; }
 .cat-badge { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 0.8em; background: #e8e8e8; }
@@ -2130,7 +2130,7 @@ PREVIEW_HTML = """<!DOCTYPE html>
 <title>marp-pptx: Preview & Adjust</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: -apple-system, 'Segoe UI', 'Hiragino Sans', sans-serif; background: #f7f7f7; color: #1a1a1a; line-height: 1.6; }
+body { font-family: -apple-system, 'Segoe UI', 'Hiragino Sans', sans-serif; background: #fafaf8; color: #1c1c22; line-height: 1.6; }
 .layout { display: grid; grid-template-columns: 320px 1fr; min-height: 100vh; }
 aside { background: white; border-right: 1px solid #ddd; padding: 24px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
 main { padding: 24px 32px; overflow-y: auto; }
@@ -2141,17 +2141,17 @@ select, input { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius
 input[type="range"] { padding: 0; }
 .slider-row { display: flex; align-items: center; gap: 8px; }
 .slider-val { min-width: 36px; font-variant-numeric: tabular-nums; font-size: 0.85em; color: #666; }
-button { width: 100%; background: #1a1a1a; color: white; border: none; padding: 14px; border-radius: 4px; font-size: 1em; cursor: pointer; margin-top: 20px; font-weight: 600; }
+button { width: 100%; background: #1c1c22; color: white; border: none; padding: 14px; border-radius: 4px; font-size: 1em; cursor: pointer; margin-top: 20px; font-weight: 600; }
 button:hover { background: #333; }
-button.secondary { background: white; color: #1a1a1a; border: 1px solid #ddd; }
-.slide-card { background: white; border-radius: 6px; padding: 16px 20px; margin-bottom: 12px; border-left: 4px solid #3d5a80; }
+button.secondary { background: white; color: #1c1c22; border: 1px solid #ddd; }
+.slide-card { background: white; border-radius: 6px; padding: 16px 20px; margin-bottom: 12px; border-left: 4px solid #c2410c; }
 .slide-card.warning { border-left-color: #e07a5f; }
 .slide-num { color: #999; font-size: 0.85em; }
 .slide-type { display: inline-block; background: #e8e8e8; padding: 2px 8px; border-radius: 3px; font-size: 0.8em; font-family: ui-monospace, monospace; margin-left: 6px; }
 .slide-h1 { font-size: 1.1em; font-weight: 600; margin: 6px 0; }
 .slide-stats { font-size: 0.85em; color: #666; }
 .back-link { color: #666; text-decoration: none; font-size: 0.9em; }
-.back-link:hover { color: #1a1a1a; }
+.back-link:hover { color: #1c1c22; }
 </style>
 </head>
 <body>

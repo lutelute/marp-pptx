@@ -13,6 +13,35 @@ _CACHE_DIR = Path(tempfile.gettempdir()) / "marp_math_png"
 _CACHE_DIR.mkdir(exist_ok=True)
 
 
+def _sanitize_for_mathtext(tex: str) -> str:
+    """Rewrite LaTeX macros matplotlib's mathtext can't parse into ones it can.
+
+    mathtext is a subset of LaTeX: no \\tfrac, \\bigl, \\operatorname, etc.
+    This keeps the common academic equations renderable without a TeX install."""
+    import re as _re
+    repl = [
+        (r"\\tfrac", r"\\frac"),
+        (r"\\dfrac", r"\\frac"),
+        (r"\\bigl", ""), (r"\\bigr", ""), (r"\\Bigl", ""), (r"\\Bigr", ""),
+        (r"\\big", ""), (r"\\Big", ""), (r"\\biggl", ""), (r"\\biggr", ""),
+        (r"\\Biggl", ""), (r"\\Biggr", ""), (r"\\bigg", ""), (r"\\Bigg", ""),
+        (r"\\!", ""), (r"\\,", r"\\ "), (r"\\;", r"\\ "), (r"\\:", r"\\ "),
+        (r"\\qquad", r"\\quad"),
+        (r"\\lVert", r"\\|"), (r"\\rVert", r"\\|"),
+        (r"\\lvert", r"|"), (r"\\rvert", r"|"),
+        (r"\\colon", ":"),
+    ]
+    for pat, sub in repl:
+        tex = _re.sub(pat, sub, tex)
+    # relation aliases mathtext may not know
+    tex = _re.sub(r"\\le(?![a-zA-Z])", r"\\leq", tex)
+    tex = _re.sub(r"\\ge(?![a-zA-Z])", r"\\geq", tex)
+    tex = _re.sub(r"\\to(?![a-zA-Z])", r"\\rightarrow", tex)
+    # \operatorname{xyz} -> \mathrm{xyz}
+    tex = _re.sub(r"\\operatorname\s*\{([^}]*)\}", r"\\mathrm{\1}", tex)
+    return tex
+
+
 def render_latex_png(
     latex: str,
     fontsize: int = 28,
@@ -35,10 +64,11 @@ def render_latex_png(
         import matplotlib.pyplot as plt
         from matplotlib import mathtext
 
-        # Wrap in display-mode delimiters if needed
-        tex = latex.strip()
+        # Sanitize unsupported macros, then wrap in math delimiters.
+        # (mathtext has no \displaystyle; \sum already renders with limits.)
+        tex = _sanitize_for_mathtext(latex.strip())
         if not tex.startswith("$"):
-            tex = f"${tex}$" if not display else f"${tex}$"
+            tex = f"${tex}$"
 
         fig = plt.figure(figsize=(0.01, 0.01))
         fig.patch.set_alpha(0.0)

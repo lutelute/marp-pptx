@@ -36,17 +36,29 @@ def _list_installed_fonts() -> set[str]:
 
 @dataclass
 class ThemeLayout:
-    h1_deco: str = "left-bar"
-    h1_deco_width: int = 8
-    h1_deco_color: str = "primary"
-    title_bg: str = "white"
-    title_align: str = "left"
+    # Heading decoration
+    h1_deco: str = "left-bar"          # left-bar / bottom-line / top-line / double-bottom / none
+    h1_deco_width: int = 8             # Pt
+    h1_deco_color: str = "primary"     # primary / secondary / accent / hairline
+    # Slide-type background & alignment
+    title_bg: str = "white"            # white / gradient / dark / light
+    title_align: str = "left"          # left / center
     divider_align: str = "left"
     end_bg: str = "white"
-    box_style: str = "border-only"
+    # Cards / boxes
+    box_style: str = "border-only"     # border-only / filled / card / accent-border / soft-card
     box_radius: float = 0.02
-    box_fill: bool = False
-    spacing: str = "compact"
+    box_fill: bool = False             # deprecated: prefer box_style
+    card_shadow: bool = False
+    # Rhythm
+    spacing: str = "compact"           # compact / normal / generous
+    # Refined-minimal additions (defaults preserve legacy behavior)
+    vertical_align: str = "top"        # top / center / fill  (center fixes empty-bottom)
+    kicker: bool = False               # small-caps eyebrow label above H1
+    kicker_color: str = "accent"
+    accent_rule: str = "none"          # none / short-left / underline / top-tick
+    table_header_style: str = "fill"   # fill / rule
+    divider_number: bool = True        # giant ghost section number on dividers
 
 
 @dataclass
@@ -59,8 +71,9 @@ class ThemeConfig:
     bg: RGBColor = field(default_factory=lambda: RGBColor(0xff, 0xff, 0xff))
     fg: RGBColor = field(default_factory=lambda: RGBColor(0x1a, 0x1a, 0x2e))
     muted: RGBColor = field(default_factory=lambda: RGBColor(0x6c, 0x75, 0x7d))
-    light: RGBColor = field(default_factory=lambda: RGBColor(0xf0, 0xf2, 0xf5))
+    light: RGBColor = field(default_factory=lambda: RGBColor(0xf6, 0xf6, 0xf4))
     white: RGBColor = field(default_factory=lambda: RGBColor(0xff, 0xff, 0xff))
+    hairline: RGBColor = field(default_factory=lambda: RGBColor(0xe2, 0xe2, 0xe6))
     # Fonts
     font: str = "Helvetica Neue"
     font_head: str = "Helvetica Neue"
@@ -102,6 +115,7 @@ class ThemeConfig:
             fg=colors.get("fg", defaults.fg),
             muted=colors.get("muted", defaults.muted),
             light=colors.get("light", defaults.light),
+            hairline=colors.get("hairline", colors.get("border", defaults.hairline)),
             font=_resolve_font(vars_.get("font-body", ""), installed),
             font_head=_resolve_font(vars_.get("font-head", ""), installed),
             font_ea=_resolve_font(vars_.get("font-ea", "Hiragino Sans"), installed),
@@ -134,26 +148,20 @@ class ThemeConfig:
         if vars_.get("font-ea"):
             self.font_ea = _resolve_font(vars_["font-ea"], installed)
 
-        # Load layout config from YAML if it exists alongside the CSS
+        # Load layout config from YAML if it exists alongside the CSS.
+        # Loop over dataclass fields so new layout tokens are picked up without
+        # editing this construction (avoids the old two-place maintenance bug).
         name = palette_css.stem.replace("academic-", "")
         yaml_path = palette_css.parent / f"config-{name}.yaml"
         if yaml_path.exists():
             import yaml
+            from dataclasses import fields
             cfg = yaml.safe_load(yaml_path.read_text())
-            lo = cfg.get("layout", {})
-            self.layout = ThemeLayout(
-                h1_deco=lo.get("h1_deco", self.layout.h1_deco),
-                h1_deco_width=lo.get("h1_deco_width", self.layout.h1_deco_width),
-                h1_deco_color=lo.get("h1_deco_color", self.layout.h1_deco_color),
-                title_bg=lo.get("title_bg", self.layout.title_bg),
-                title_align=lo.get("title_align", self.layout.title_align),
-                divider_align=lo.get("divider_align", self.layout.divider_align),
-                end_bg=lo.get("end_bg", self.layout.end_bg),
-                box_style=lo.get("box_style", self.layout.box_style),
-                box_radius=lo.get("box_radius", self.layout.box_radius),
-                box_fill=lo.get("box_fill", self.layout.box_fill),
-                spacing=lo.get("spacing", self.layout.spacing),
-            )
+            lo = cfg.get("layout", {}) or {}
+            kwargs = {}
+            for f in fields(ThemeLayout):
+                kwargs[f.name] = lo.get(f.name, getattr(self.layout, f.name))
+            self.layout = ThemeLayout(**kwargs)
 
         print(f"[palette] {name}: primary={self.primary} secondary={self.secondary} accent={self.accent}",
               file=sys.stderr)

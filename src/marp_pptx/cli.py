@@ -25,7 +25,11 @@ def main(ctx):
 @click.option("-p", "--palette", help="Palette name (e.g. navy, copper, earth)")
 @click.option("-t", "--theme", help="Custom palette CSS path")
 @click.option("--font-scale", type=float, default=1.0, help="Font size multiplier (0.7-1.3)")
-def convert(input_file: str, output: str | None, palette: str | None, theme: str | None, font_scale: float):
+@click.option("--math", type=click.Choice(["omml", "png"]), default="omml",
+              help="Math rendering: omml (editable, default) or png (matplotlib image — "
+                   "use for LibreOffice/Keynote where OMML renders poorly)")
+def convert(input_file: str, output: str | None, palette: str | None, theme: str | None,
+            font_scale: float, math: str):
     """Convert a Marp markdown file to editable PPTX."""
     from marp_pptx.theme import ThemeConfig, get_default_theme_path, get_palette_path
     from marp_pptx.parser import parse_marp
@@ -36,18 +40,30 @@ def convert(input_file: str, output: str | None, palette: str | None, theme: str
     # Load theme
     tc = ThemeConfig.from_css(get_default_theme_path())
     tc.font_scale = font_scale
+    tc.math_mode = math
 
-    # Apply palette
+    # Apply palette. With no explicit palette/theme, fall back to the "claude"
+    # default (Anthropic cream + clay) so a bare `convert deck.md` looks polished.
+    applied = "claude (default)"
     if palette:
         palette_path = get_palette_path(palette)
         if palette_path:
             tc.apply_palette(palette_path)
+            applied = palette
         else:
-            click.echo(f"Warning: palette '{palette}' not found, using default", err=True)
+            click.echo(f"Warning: palette '{palette}' not found, using claude", err=True)
+            mp = get_palette_path("claude")
+            if mp:
+                tc.apply_palette(mp)
     elif theme:
         tc.apply_palette(Path(theme))
+        applied = theme
+    else:
+        mp = get_palette_path("claude")
+        if mp:
+            tc.apply_palette(mp)
 
-    print(f"[theme] latin={tc.font}  ea={tc.font_ea}  head={tc.font_head}  font_scale={tc.font_scale}", file=sys.stderr)
+    print(f"[theme] {applied}  latin={tc.font}  ea={tc.font_ea}  head={tc.font_head}  font_scale={tc.font_scale}", file=sys.stderr)
 
     # Parse
     slides = parse_marp(str(input_path))
@@ -110,6 +126,32 @@ def list_types(category: str | None, as_json: bool):
     click.echo(f"\nTotal: {len(types)} types in {len(CATEGORIES)} categories")
     if not category:
         click.echo(f"Categories: {', '.join(f'{v} ({k})' for k, v in CATEGORIES.items())}")
+
+
+@main.command("themes")
+def list_themes():
+    """List available themes / color palettes."""
+    import json
+    from marp_pptx.theme import get_palette_path
+
+    click.echo("Themes (color + layout):")
+    click.echo(f"  {'claude':<14} Anthropic cream + clay・中央バランス  accent #d97757   (default)")
+    click.echo(f"  {'minimal':<14} 洗練ミニマル白基調・中央バランス      accent #c2410c")
+
+    palettes_dir = Path(__file__).parent / "data" / "themes" / "palettes"
+    pj = palettes_dir / "palettes.json"
+    if pj.exists():
+        click.echo("\nColor palettes (academic family):")
+        try:
+            for p in json.loads(pj.read_text(encoding="utf-8")):
+                name = p.get("name", "?")
+                desc = p.get("desc", "")
+                accent = p.get("accent", "")
+                click.echo(f"  {name:<14} {desc:<40} accent {accent}")
+        except Exception:
+            pass
+    click.echo("\nUsage:  marp-pptx convert deck.md -p <name>")
+    click.echo("        marp-pptx convert deck.md            # minimal (default)")
 
 
 @main.command()
