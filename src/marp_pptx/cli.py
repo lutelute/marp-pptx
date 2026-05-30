@@ -159,7 +159,7 @@ def list_themes():
         except Exception:
             pass
     click.echo("\nUsage:  marp-pptx convert deck.md -p <name>")
-    click.echo("        marp-pptx convert deck.md            # minimal (default)")
+    click.echo("        marp-pptx convert deck.md            # claude (default)")
 
 
 @main.command()

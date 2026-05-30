@@ -1,7 +1,7 @@
 # marp-pptx
 
 Marp Markdown を **編集可能な PowerPoint (.pptx)** に変換する Python ツール。
-49 種のセマンティックなスライド型・OMML 数式（PowerPoint でそのまま編集可）・
+52 種のセマンティックなスライド型・OMML 数式（PowerPoint でそのまま編集可）・
 洗練ミニマルなデザインを、`pip install` 一発で。
 
 > v0.2 で全面リニューアル: 上下中央バランス配置・細いアクセント線・small-caps ラベルに刷新。
@@ -73,5 +73,5 @@ marp: true
 
 ## ドキュメント
 
-- 全機能・全 49 型の詳細は [USAGE.md](USAGE.md)
+- 全機能・全 52 型の詳細は [USAGE.md](USAGE.md)
 - 今後の計画は [ROADMAP.md](ROADMAP.md)

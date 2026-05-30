@@ -30,3 +30,7 @@ packages = ["src/marp_pptx"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# src-layout: import the package directly so the suite never depends on the
+# editable-install .pth (which macOS hides via UF_HIDDEN inside .venv, and
+# Python 3.14's site.py skips hidden .pth files).
+pythonpath = ["src"]
