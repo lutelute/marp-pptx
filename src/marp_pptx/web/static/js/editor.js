@@ -1343,14 +1343,32 @@ function insertSnippet(type) {
 }
 
 async function loadSample(name) {
+    if (editor.value.trim() && !confirm('現在の内容を置き換えます。よろしいですか？')) return;
     try {
         const r = await fetch('/editor/sample/' + name);
         if (!r.ok) throw new Error(await r.text());
         editor.value = await r.text();
         updateStats();
         editor.scrollTop = 0;
+        triggerAutoPreview();
+        setStatus('読み込みました', 'ok');
     } catch(e) {
         setStatus('サンプル読込失敗: ' + e.message, 'err');
+    }
+}
+
+async function loadPresets() {
+    const host = document.getElementById('preset-list');
+    if (!host) return;
+    try {
+        const presets = await (await fetch('/api/presets')).json();
+        host.innerHTML = presets.map(p =>
+            `<button class="preset-btn" onclick="loadSample('${p.id}')" title="${esc(p.description)}">`
+            + `<span class="preset-title">${esc(p.icon || '')} ${esc(p.title)}</span>`
+            + `<span class="preset-desc">${esc(p.description)}</span></button>`
+        ).join('');
+    } catch(e) {
+        host.innerHTML = '<p class="muted">プリセットの取得に失敗しました</p>';
     }
 }
 
@@ -1733,6 +1751,7 @@ loadTypeMeta().then(() => {
     const t = new URLSearchParams(location.search).get('type');
     if (t) selectType(t);
 });
+loadPresets();
 restoreFromStorage();
 updateStats();
 if (editor.value.trim()) triggerAutoPreview();

@@ -76,6 +76,21 @@ def test_sample_markdown(client):
     assert b"_class: title" in r.data
 
 
+def test_presets_api_and_load(client):
+    presets = json.loads(client.get("/api/presets").data)
+    assert isinstance(presets, list) and len(presets) >= 3
+    ids = {p["id"] for p in presets}
+    assert {"minimal", "academic-talk"} <= ids
+    # every advertised preset deck actually loads as valid Marp markdown
+    for p in presets:
+        md = client.get(f"/editor/sample/{p['id']}")
+        assert md.status_code == 200, p["id"]
+        assert b"marp: true" in md.data
+    # the full-catalog sample and a bogus name behave
+    assert client.get("/editor/sample/all").status_code == 200
+    assert client.get("/editor/sample/does-not-exist").status_code == 404
+
+
 def test_external_css_served(client):
     # editor links its stylesheet rather than inlining it, and the file serves
     body = client.get("/editor").data

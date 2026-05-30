@@ -41,129 +41,39 @@ def create_app() -> Flask:
 
     @app.route("/editor/sample/<name>")
     def editor_sample(name: str):
-        """Return a sample Markdown document to populate the editor."""
-        templates_dir = Path(__file__).parent.parent / "data" / "templates"
-        if name == "minimal":
-            md = """---
-marp: true
-theme: academic
----
+        """Serve a preset starter deck, or the full type catalog (name='all')."""
+        from flask import Response
 
-<!-- _class: title -->
-# 発表タイトル
-## サブタイトル
-発表者名 / 2026年
-
----
-
-# 概要
-- 背景
-- 手法
-- 結果
-- 考察
-
----
-
-<!-- _class: end -->
-# Thank You
-"""
-        elif name == "all":
-            # Concatenate all 49 templates
-            parts = ["---\nmarp: true\ntheme: academic\n---\n"]
-            for tpl in sorted(templates_dir.glob("*.md")):
+        data_dir = Path(__file__).parent.parent / "data"
+        if name == "all":
+            # Concatenate every type template into one reference catalog.
+            parts = ["---\nmarp: true\n---\n"]
+            for tpl in sorted((data_dir / "templates").glob("*.md")):
                 text = tpl.read_text(encoding="utf-8")
                 if text.startswith("---"):
                     end = text.find("---", 3)
                     if end != -1:
                         text = text[end + 3:]
                 parts.append(text.strip())
-            md = "\n\n---\n\n".join(parts)
-        elif name == "academic":
-            md = """---
-marp: true
-theme: academic
----
+            return Response("\n\n---\n\n".join(parts), mimetype="text/plain; charset=utf-8")
 
-<!-- _class: title -->
-# 研究タイトル
-## サブタイトル
-山田 太郎 / 2026年4月
-
----
-
-<!-- _class: agenda -->
-# 本日の内容
-<div class="agenda-list">
-1. 背景と研究目的
-2. 提案手法
-3. 実験結果
-4. 考察とまとめ
-</div>
-
----
-
-<!-- _class: rq -->
-# 研究課題
-<div class="rq-main">既存手法は大規模データに対してスケールするか？</div>
-<div class="rq-sub">計算量 $O(n^2)$ がボトルネックとなっている。</div>
-
----
-
-<!-- _class: sandwich -->
-# 提案手法
-<div class="top">
-<div class="lead">従来の $O(n^2)$ を $O(n \\log n)$ に改善。</div>
-</div>
-<div class="columns">
-<div>
-
-### 従来
-- 計算量: `O(n^2)`
-- メモリ: 多い
-</div>
-<div>
-
-### 提案
-- 計算量: `O(n \\log n)`
-- メモリ: 少ない
-</div>
-</div>
-<div class="bottom">
-<div class="conclusion"><strong>結論:</strong> 大規模データでも実用的な速度を実現。</div>
-</div>
-
----
-
-<!-- _class: kpi -->
-# 実験結果
-<div class="kpi-container">
-<div><span class="kpi-value">97%</span><span class="kpi-label">精度</span></div>
-<div><span class="kpi-value">10x</span><span class="kpi-label">高速化</span></div>
-<div><span class="kpi-value">50%</span><span class="kpi-label">省メモリ</span></div>
-</div>
-
----
-
-<!-- _class: takeaway -->
-# Takeaway
-<div class="ta-main">型を選ぶだけで、伝わるプレゼンに</div>
-<div class="ta-points">
-<ul>
-<li>計算量の改善により大規模データに対応</li>
-<li>精度は従来と同等</li>
-<li>OSS として公開予定</li>
-</ul>
-</div>
-
----
-
-<!-- _class: end -->
-# Thank You
-"""
-        else:
+        # Otherwise: a named preset deck from data/presets/<name>.md
+        if "/" in name or ".." in name:
+            return "bad name", 400
+        preset = data_dir / "presets" / f"{name}.md"
+        if not preset.is_file():
             return "unknown sample", 404
-        from flask import Response
-        return Response(md, mimetype="text/plain; charset=utf-8")
+        return Response(preset.read_text(encoding="utf-8"), mimetype="text/plain; charset=utf-8")
+
+    @app.route("/api/presets")
+    def api_presets():
+        """List the curated starter decks (manifest metadata)."""
+        import json
+        manifest = Path(__file__).parent.parent / "data" / "presets" / "manifest.json"
+        try:
+            return jsonify(json.loads(manifest.read_text(encoding="utf-8")))
+        except (OSError, ValueError):
+            return jsonify([])
 
     @app.route("/editor/preview", methods=["POST"])
     def editor_preview():
