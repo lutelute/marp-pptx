@@ -1,4 +1,4 @@
-"""Slide type registry — semantic metadata for all 49 types."""
+"""Slide type registry — semantic metadata for all slide types."""
 
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ TYPE_REGISTRY: list[SlideTypeInfo] = [
     SlideTypeInfo("cols-2", "cols-2", "structure", "□ □", "並列・対比", "2つを同じ重みで比較するとき", "03-cols-2.md"),
     SlideTypeInfo("cols-3", "cols-3", "structure", "□ □ □", "分類・カテゴリ", "3つの側面を示すとき", "04-cols-3.md"),
     SlideTypeInfo("sandwich", "sandwich", "structure", "─ □□ ─", "概要→詳細→結論", "フレーミングが必要なとき", "05-sandwich.md"),
+    SlideTypeInfo("sandwich-3col", "sandwich-3col", "structure", "─ □□□ ─", "概要→3並列→結論", "共通設定＋3条件＋考察を1枚にまとめるとき", "06-sandwich-3col.md"),
     SlideTypeInfo("split-text", "split-text", "structure", "□│□", "二面性・補完", "左右で補完的な内容を示すとき", "45-split-text.md"),
     SlideTypeInfo("card-grid", "card-grid", "structure", "□□ □□", "均質な要素の一覧", "同種のアイテムを並べるとき", "44-card-grid.md"),
 
@@ -45,11 +46,15 @@ TYPE_REGISTRY: list[SlideTypeInfo] = [
     SlideTypeInfo("result", "result", "evaluation", "結論＋根拠", "成果報告", "実験結果を報告するとき", "28-result.md"),
     SlideTypeInfo("result-dual", "result-dual", "evaluation", "結果□│結果□", "二つの成果を並列", "2つの結果を比較するとき", "24-result-dual.md"),
     SlideTypeInfo("multi-result", "multi-result", "evaluation", "結果□□□", "複数成果の一覧", "複数の結果を一覧するとき", "47-multi-result.md"),
+    SlideTypeInfo("big-number", "big-number", "evaluation", "巨大数字", "単一指標の強調", "ひとつの数字を主役にするとき", "51-big-number.md"),
+    SlideTypeInfo("chart", "chart", "evaluation", "棒/折れ線グラフ", "データの可視化", "数値データをグラフで見せるとき(編集可)", "52-chart.md"),
 
     # ── Knowledge ──
     SlideTypeInfo("definition", "definition", "knowledge", "用語：説明", "概念の定義", "用語を定義するとき", "35-definition.md"),
     SlideTypeInfo("equation", "equation", "knowledge", "$式$ 中央", "数理的真理", "数式が主役のとき", "07-equation.md"),
     SlideTypeInfo("equations", "equations", "knowledge", "$式$ $式$ $式$", "式の体系", "連立方程式・最適化問題のとき", "17-equations-opt.md"),
+    SlideTypeInfo("equation-annotated", "equation-annotated", "knowledge", "$式$ ＋ 凡例", "数式＋記号注釈", "数式の各記号を注釈付きで解説するとき", "08-equation-annotated.md"),
+    SlideTypeInfo("equation-highlight", "equation-highlight", "knowledge", "$式$ 領域強調", "数式の着目部を強調", "数式の特定項を色で強調して読み解くとき", "09-equation-highlight.md"),
     SlideTypeInfo("diagram", "diagram", "knowledge", "図＋説明", "構造の可視化", "図で構造を説明するとき", "36-diagram.md"),
     SlideTypeInfo("annotation", "annotation", "knowledge", "図＋注釈", "詳細解説", "図に注釈を付けるとき", "40-annotation.md"),
     SlideTypeInfo("code", "code", "knowledge", "コードブロック", "実装・手続き", "コードを見せるとき", "46-code.md"),
@@ -64,9 +69,11 @@ TYPE_REGISTRY: list[SlideTypeInfo] = [
     SlideTypeInfo("quote", "quote", "narrative", "「　」", "権威・声", "引用を示すとき", "30-quote.md"),
     SlideTypeInfo("profile", "profile", "narrative", "写真＋経歴", "人物紹介", "人物を紹介するとき", "49-profile.md"),
     SlideTypeInfo("takeaway", "takeaway", "narrative", "★ メッセージ", "持ち帰ってほしい1つ", "キーメッセージを伝えるとき", "48-takeaway.md"),
+    SlideTypeInfo("statement", "statement", "narrative", "全画面 1文", "断言・転換", "1メッセージを大きく言い切るとき(dark可)", "50-statement.md"),
     SlideTypeInfo("panorama", "panorama", "narrative", "横幅画像", "インパクト・没入", "大きな画像で印象づけるとき", "32-panorama.md"),
     SlideTypeInfo("gallery-img", "gallery-img", "narrative", "画像群", "ビジュアル一覧", "複数画像を並べるとき", "37-gallery-img.md"),
     SlideTypeInfo("figure", "figure", "narrative", "画像＋キャプション", "図の提示", "図を中心に見せるとき", "10-figure.md"),
+    SlideTypeInfo("figure-cols", "figure-cols", "narrative", "図 │ 解説", "図＋考察の対比", "図と解説（観察・含意）を左右に並べるとき", "11-figure-cols.md"),
 
     # ── Meta ──
     SlideTypeInfo("title", "title", "meta", "大タイトル", "始まり", "プレゼンの冒頭", "01-title.md"),

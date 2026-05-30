@@ -1,93 +1,102 @@
-# Marp Academic Slide Templates
+# marp-pptx
 
-学会発表用の Marp スライドテンプレート集。
+Marp Markdown を **編集可能な PowerPoint (.pptx)** に変換する Python ツール。
+52 種のセマンティックなスライド型・OMML 数式（PowerPoint でそのまま編集可）・
+洗練ミニマルなデザインを、`pip install` 一発で。
+
+> v0.2 で全面リニューアル: 上下中央バランス配置・細いアクセント線・small-caps ラベルに刷新。
+> 新デフォルトは `claude`（Anthropic ブランド: 温かいクリーム地＋クレイ accent）。
+> 白基調が好みなら `minimal`。タイトル/区切り/数式/カード/表を作り直しました。
 
 ## Quick Start
 
 ```bash
-# プレビュー
-npx @marp-team/marp-cli --theme themes/academic.css --allow-local-files -p example.md
+pip install -e .
 
-# PDF出力
-npx @marp-team/marp-cli --theme themes/academic.css --pdf --allow-local-files example.md
+# 変換（無指定で claude テーマ = Anthropic cream + clay）
+marp-pptx convert deck.md -o deck.pptx
 
-# PPTX出力
-npx @marp-team/marp-cli --theme themes/academic.css --pptx --allow-local-files example.md
+# 白基調の minimal / その他パレット
+marp-pptx convert deck.md -p minimal
+marp-pptx convert deck.md -p navy
+
+# LibreOffice / Keynote で開く想定なら数式を画像で焼き込む
+marp-pptx convert deck.md --math png
+
+# テーマ／型の一覧
+marp-pptx themes
+marp-pptx types
+
+# ブラウザ編集 UI（要 marp-pptx[web]）
+marp-pptx serve
 ```
 
-## Structure
+## Web UI（ブラウザで作る）
 
-```
-themes/academic.css    ← スライドマスター（テーマCSS）
-templates/             ← スライド種類別テンプレート（個別ファイル）
-assets/                ← SVG図（architecture, learning-curve, sparsity-pattern）
-example.md             ← 全テンプレートを使ったサンプル発表
-```
+`pip install -e ".[web]"` のうえで `marp-pptx serve` → ブラウザで **http://127.0.0.1:8080**。
+Markdown を覚えなくても、**型を選んでフォームに入力するだけ**でスライドが組めます。
 
-## Slide Classes
+### 1. 型ギャラリーから選ぶ — `/types-page`
 
-| Class | Description |
-|-------|-------------|
-| `title` | タイトルスライド |
-| `divider` | セクション区切り |
-| `cols-2` / `cols-2-wide-l` / `cols-2-wide-r` | 2カラム |
-| `cols-3` | 3カラム |
-| `sandwich` | 上下全幅（`.lead` + `.conclusion`）+ 中央マルチカラム |
-| `equation` | 数式を大きく中央配置 + 変数説明グリッド |
-| `figure` | 図 + LaTeX式キャプション（`Fig. N.`） |
-| `table-slide` | 表スタイリング（`Table N.`） |
-| `references` | 参考文献リスト |
-| `timeline` / `timeline-h` | 歴史フロー（縦/横、ブロック型） |
-| `end` | 終了スライド |
+![型ギャラリーの操作](docs/demo-gallery.gif)
 
-## Utility Classes
+- 52 種の型を**サムネ付き**で一覧。検索ボックスで「比較」「KPI」「□」などから絞り込み
+- カードをクリックすると、その型のフォームを開いた状態で**エディタが起動**
 
-| Class | Description |
-|-------|-------------|
-| `.box` | グレー背景ボックス |
-| `.box-accent` | 太い左ボーダー赤のボックス |
-| `.box-primary` | 太い左ボーダー青のボックス |
-| `.lead` | リード文（サンドイッチ上部） |
-| `.conclusion` | 結論ボックス（ネイビー背景白文字） |
-| `.eq-highlight` / `.eq-highlight-b` | 下線ハイライト（赤/青） |
-| `.fig-num` / `.tab-num` | 図番号・表番号（太字） |
-| `.footnote` | スライド下部の脚注 |
-| `.small` `.muted` `.bold` `.center` | テキストユーティリティ |
+### 2. プリセットから作って即プレビュー — `/editor`
+
+![エディタとライブプレビュー](docs/demo-editor.gif)
+
+1. 右の「**プリセットから開始**」で雛形を選ぶ（最小雛形 / 学術発表 / プロダクト紹介 / 講義・勉強会）
+2. 「**＋スライドを追加**」で型を選び、フォームに入力 → Markdown が自動生成される
+3. 「**更新**」で各スライドを実レンダリング（LibreOffice、数秒）。数式は互換性のため画像表示
+4. 「**→ PPTX を生成してダウンロード**」で**完全編集可能**な `.pptx` を取得
+
+その他の機能: 画像のドラッグ&ドロップ埋め込み・MD の保存／読込＆オートセーブ・既存 PPTX の読み込み（PPTX→MD）・パレット切替・フォント倍率。
+
+> 型ギャラリーのサムネは `marp-pptx render-gallery` で再生成できます。
 
 ## Preview
 
-### Title
-![Title](docs/slide.001.png)
+| | |
+|---|---|
+| ![Title](docs/preview-title.png) | ![Divider](docs/preview-divider.png) |
+| ![Equation](docs/preview-equation.png) | ![KPI](docs/preview-kpi.png) |
+| ![Timeline](docs/preview-timeline.png) | ![History](docs/preview-history.png) |
 
-### Content + Box
-![Content](docs/slide.003.png)
+## 入力フォーマット
 
-### Horizontal Timeline (Block)
-![Timeline](docs/slide.004.png)
+Marp Markdown。スライドは `---` 区切り、型は HTML コメントで指定します。
 
-### Equation (Large)
-![Equation](docs/slide.006.png)
+```markdown
+---
+marp: true
+---
 
-### Equation (Underbrace)
-![Equation Underbrace](docs/slide.007.png)
+<!-- _class: title -->
+# 研究タイトル
+## サブタイトルがキッカーになる
+山田太郎 / 福井大学 / 2026
 
-### Figure (SVG)
-![Figure](docs/slide.008.png)
+---
 
-### Sandwich (Lead + 3-col + Conclusion)
-![Sandwich](docs/slide.009.png)
+# 本文スライド
+<!-- note: ここは発表者ノート。PPTX のノート欄に入る -->
+- 内容は本文領域の上下中央にバランス配置される
+- **太字** / `コード` / $x^2$ のインライン記法に対応
+```
 
-### Table
-![Table](docs/slide.011.png)
+各型ごとの HTML 構造（`kpi` / `zone-flow` / `equation` など）は
+`marp-pptx types` と各テンプレート（`src/marp_pptx/data/templates/`）、[USAGE.md](USAGE.md) を参照。
 
-### 2-Column with Figures
-![2-col Figure](docs/slide.012.png)
+## デザイン
 
-### Summary (Lead + Conclusion)
-![Summary](docs/slide.015.png)
+- **テーマ**: `claude`（デフォルト, Anthropic cream `#faf9f5` + clay `#d97757`）/ `minimal`（白基調）/ `academic` 系 10 パレット
+- **配色 (claude)**: ink `#141413` / accent `#d97757` / hairline `#e8e6dc` / cards `#ffffff` on cream
+- **数式**: OMML（PowerPoint で編集可能, デフォルト）/ matplotlib PNG（`--math png`）
+- **編集可能性**: すべて実テキストボックス + 実テーブル + OMML。一枚絵の画像化はしない
 
-### References
-![References](docs/slide.016.png)
+## ドキュメント
 
-### End
-![End](docs/slide.017.png)
+- 全機能・全 52 型の詳細は [USAGE.md](USAGE.md)
+- 今後の計画は [ROADMAP.md](ROADMAP.md)

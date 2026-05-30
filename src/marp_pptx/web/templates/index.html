@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>marp-pptx Web UI</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/index.css') }}">
+</head>
+<body>
+<div class="container">
+<h1>marp-pptx</h1>
+<p class="subtitle">Marp Markdown → Editable PowerPoint (49 semantic slide types)</p>
+
+<div class="tabs">
+<a href="/" class="active">変換</a>
+<a href="/types-page">型一覧</a>
+</div>
+
+<div class="card" style="background:#1c1c22; color:white;">
+<h2 style="margin-bottom:16px">ブラウザで直接編集 → PPTX 生成</h2>
+<p style="margin-bottom:16px; color:#ccc; font-size:0.9em">
+.md ファイルを用意せず、その場で Markdown を書いて PPTX にします。型の挿入ボタンあり。
+</p>
+<a href="/editor"><button type="button" style="background:white; color:#1c1c22; cursor:pointer">→ エディタを開く</button></a>
+</div>
+
+<div class="card">
+<h2 style="margin-bottom:16px">① 簡易変換 (設定なしで即ダウンロード)</h2>
+<form action="/convert" method="post" enctype="multipart/form-data">
+<label>Markdown File (.md)</label>
+<input type="file" name="file" accept=".md" required>
+<label>Palette</label>
+<select name="palette">
+<option value="">Default (monochrome)</option>
+{% for p in palettes %}<option value="{{ p }}">{{ p }}</option>{% endfor %}
+</select>
+<button type="submit">→ PPTX に変換してダウンロード</button>
+</form>
+</div>
+
+<div class="card">
+<h2 style="margin-bottom:16px">② 調整画面 (スライド分析 + フォント倍率 + パレット)</h2>
+<form action="/preview" method="post" enctype="multipart/form-data">
+<label>Markdown File (.md)</label>
+<input type="file" name="file" accept=".md" required>
+<button type="submit">→ プレビュー画面へ</button>
+</form>
+</div>
+</div>
+</body>
+</html>

@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "marp-pptx"
-version = "0.1.0"
-description = "Convert Marp markdown to editable PowerPoint with 49 semantic slide types"
+version = "0.2.0"
+description = "Convert Marp markdown to editable PowerPoint with 50+ semantic slide types"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
@@ -30,3 +30,7 @@ packages = ["src/marp_pptx"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# src-layout: import the package directly so the suite never depends on the
+# editable-install .pth (which macOS hides via UF_HIDDEN inside .venv, and
+# Python 3.14's site.py skips hidden .pth files).
+pythonpath = ["src"]

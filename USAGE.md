@@ -4,7 +4,8 @@
 
 ## プロジェクトの位置づけ
 
-**このツールは Markdown → PPTX の一方向変換ツールです。** 逆方向（PPTX → MD）は扱いません。
+**このツールの主軸は Markdown → PPTX の変換です。** 逆方向（PPTX → MD）は学習データ
+作成用のベストエフォート機能として Web UI に用意されています（完全な見た目の復元は保証しません）。
 
 ### 設計思想
 
@@ -12,27 +13,44 @@ PPTX で実現できる洗練されたレイアウト（KPI ダッシュボー�
 タイムライン等）を、**Markdown の記述だけで再現する**ための試みです。PowerPoint の表現力の
 良さを、Markdown の編集しやすさと組み合わせます。
 
-- **MD → PPTX**: 本ツールが担当（この方向の品質にフォーカス）
-- **PPTX → MD**: 非対応（PPTX の見た目を Markdown に自動逆変換することはできない）
+- **MD → PPTX**: 本ツールの主軸（この方向の品質にフォーカス）
+- **PPTX → MD**: ベストエフォート（Web UI の「PPTX を読み込み」。テキスト・構造を抽出するが
+  見た目の完全復元は対象外。`marp_pptx.pptx2md` モジュール）
 - **PPTX を直接編集**: 出力された PPTX は完全編集可能。仕上げは PowerPoint で行う想定
 
 ### 型ライブラリ = PPTX 風サンプルの MD 実装集
 
-`templates/` と `src/marp_pptx/data/templates/` にある 49 種類の MD ファイルは、
+`src/marp_pptx/data/templates/` にある 52 種類の MD ファイル（型ごとに 1 つ）は、
 「PPTX で見栄え良く表現される各種スライドパターンを、どう Markdown で書けば再現できるか」
 を調査・実装したサンプル集です。AI がユーザーのプレゼンを組む時は、これらをテンプレートとして参照してください。
+（リポジトリ直下の `templates/` は旧コピーで、新型 50–52 を含みません。正は `src/marp_pptx/data/templates/`。）
 
 ## TL;DR
 
 ```bash
-pip install -e .                                    # インストール
-marp-pptx convert slides.md -o out.pptx             # 変換
+pip install -e .                                    # インストール（Web UI は pip install -e ".[web]"）
+marp-pptx convert slides.md -o out.pptx             # 変換（無指定で claude テーマ）
 marp-pptx convert slides.md -o out.pptx -p navy     # パレット指定
-marp-pptx convert slides.md --font-scale 1.15       # フォント拡大
-marp-pptx types                                     # 型一覧
-marp-pptx preview -o catalog.pptx                   # 全型のビジュアル例
-marp-pptx serve --port 8080                         # Web UI (プレビュー調整画面あり)
+marp-pptx convert slides.md --math png              # 数式を画像で焼く（LibreOffice/Keynote 用）
+marp-pptx convert slides.md --density keynote       # 投影向けに大きめ・余白広め
+marp-pptx convert slides.md --font-scale 1.15       # フォント拡大（0.7–1.3）
+marp-pptx types                                     # 型一覧（-c でカテゴリ絞り / --json）
+marp-pptx themes                                    # テーマ・パレット一覧
+marp-pptx preview -o catalog.pptx                   # 全型のビジュアル例（カタログ PPTX）
+marp-pptx render-gallery                            # 全型のサムネ PNG を再生成（Web UI ギャラリー用）
+marp-pptx serve --port 8080                         # Web UI（フォーム編集＋ライブプレビュー）
 ```
+
+### convert の主なオプション
+
+| オプション | 既定 | 説明 |
+|---|---|---|
+| `-o, --output` | `<入力>_editable.pptx` | 出力先 |
+| `-p, --palette` | `claude` | パレット名（`minimal` / `navy` / `copper` …。`marp-pptx themes` 参照） |
+| `-t, --theme` | — | 任意のパレット CSS パスを直接指定 |
+| `--math` | `omml` | `omml`=PowerPoint で編集可（要 pandoc）/ `png`=matplotlib 画像（LibreOffice・Keynote 用） |
+| `--density` | `academic` | `academic`=高密度 / `keynote`=投影向けに大きめ（font×1.22・余白×1.12） |
+| `--font-scale` | `1.0` | フォント倍率（0.7–1.3） |
 
 ## Markdown の書き方と PPTX への対応
 
@@ -87,7 +105,7 @@ Markdown 標準に準拠：
 
 ## 基本原則: 「型」を選んで書く
 
-このツールの核心は **49種類のセマンティックなスライド型**。
+このツールの核心は **52種類のセマンティックなスライド型**。
 ユーザーが「何を伝えたいか」を聞いたら、まず **どの型を使うか** を決める。
 
 ### 型選択の思考フロー
@@ -136,9 +154,21 @@ Markdown 標準に準拠：
 | 研究質問 | `rq` |
 | まとめ | `summary` |
 | キーメッセージ | `takeaway` |
+| 1文を大きく言い切る／論点転換 | `statement` |
+| 1つの数字を主役に | `big-number` |
+| 数値データをグラフで（編集可） | `chart` |
 | 参考文献 | `references` |
 | 補足 | `appendix` |
 | 終わり | `end` |
+
+**バリエーション型**（親型の `_class` を流用した応用レシピ）：
+
+| ユーザーの意図 | 選ぶべき型 | ベース |
+|---|---|---|
+| 共通設定＋3条件＋考察を1枚に | `sandwich-3col` | sandwich |
+| 数式の各記号を注釈付きで解説 | `equation-annotated` | equation |
+| 数式の特定項を色で強調 | `equation-highlight` | equation |
+| 図と解説を左右に並べる | `figure-cols` | cols-2 |
 
 ## Markdown の書き方
 
@@ -147,8 +177,6 @@ Markdown 標準に準拠：
 ```markdown
 ---
 marp: true
-theme: academic
-math: katex
 ---
 
 <!-- _class: title -->
@@ -166,6 +194,7 @@ math: katex
 3. 結果
 4. まとめ
 </div>
+<!-- note: 各章の所要時間に触れる -->
 
 ---
 
@@ -175,7 +204,9 @@ math: katex
 
 - スライド区切りは `---`
 - 型の指定は `<!-- _class: 型名 -->`
-- フロントマター (`---...---`) は1つだけ先頭に
+- フロントマター (`---...---`) は1つだけ先頭に。`marp: true` だけで十分
+  （`theme:` / `math:` フィールドは parser が読みません。**テーマ／パレットは CLI の `-p` で選ぶ**）
+- 発表者ノートは `<!-- note: ... -->`（PPTX のノート欄に入る。後述）
 - 各型は**特定のHTML構造**を期待する（下記参照）
 
 ### 各型のテンプレート
@@ -440,12 +471,55 @@ def fibonacci(n):
 <div class="ta-main">型を選ぶだけで、伝わるプレゼンになる</div>
 <div class="ta-points">
 <ul>
-<li>49種類の意味的な型</li>
+<li>52種類の意味的な型</li>
 <li>PPTXとして編集可能</li>
 <li>日本語・数式対応</li>
 </ul>
 </div>
 ```
+
+#### statement — 断言・論点転換（全画面1文）
+
+```markdown
+<!-- _class: statement -->
+
+本研究は、スパース注意機構に初めて理論的保証を与える。
+```
+
+見出し（`#`）も HTML 構造も不要。1 文を全画面の中央に大きく置く。論点の転換や
+キーメッセージの「タメ」に使う。
+
+#### big-number — 単一指標の強調
+
+```markdown
+<!-- _class: big-number -->
+<!-- source: 社内ベンチマーク 2026 (n=1000) -->
+# 主要成果
+<div class="big-number">
+  <span class="bn-value">89.4%</span>
+  <span class="bn-label">分類精度</span>
+  <span class="bn-caption">従来手法から +4.2pt 改善</span>
+</div>
+```
+
+ひとつの数字を主役にする。`<!-- source: ... -->` を書くと出典フットノートが付く。
+
+#### chart — データ可視化（編集可能なグラフ）
+
+```markdown
+<!-- _class: chart -->
+<!-- _chart: column -->
+# 系列長ごとの計算時間（相対）
+| 系列長 | Transformer | Ours |
+|---|---|---|
+| 1024 | 1.0 | 0.6 |
+| 4096 | 4.2 | 1.1 |
+| 16384 | 18.5 | 2.3 |
+<div class="chart-caption">同一ハードウェアで測定。</div>
+```
+
+表をそのまま**ネイティブの編集可能なグラフ**に変換する（PowerPoint 上で系列・数値を編集可）。
+`<!-- _chart: column -->` でグラフ種別を指定（`column` 縦棒 / `bar` 横棒 / `line` 折れ線）。
 
 #### summary — まとめ
 
@@ -478,9 +552,19 @@ def fibonacci(n):
 Questions?
 ```
 
-## パレット（配色）
+## テーマとパレット（配色）
 
-10種類用意されている。ユーザーの雰囲気に合わせて選ぶ：
+`-p` で指定する。**テーマ**＝レイアウト＋配色、**パレット**＝配色だけの差し替え。
+無指定なら `claude`。一覧は `marp-pptx themes`。
+
+### 主テーマ（レイアウト＋配色）
+
+| 名前 | 雰囲気 | accent |
+|---|---|---|
+| `claude` | デフォルト。Anthropic の温かいクリーム地（`#faf9f5`）＋クレイ | `#d97757` |
+| `minimal` | 洗練ミニマルな白基調・中央バランス | `#c2410c` |
+
+### academic 系パレット（配色のみ）
 
 | パレット | 雰囲気 |
 |---|---|
@@ -496,8 +580,34 @@ Questions?
 | `wine` | ワイン・高級感 |
 
 ```bash
-marp-pptx convert slides.md -p navy
+marp-pptx convert slides.md            # claude（デフォルト）
+marp-pptx convert slides.md -p minimal # 白基調
+marp-pptx convert slides.md -p navy    # 紺
 ```
+
+## 発表者ノート
+
+`<!-- note: ... -->` をスライド内に書くと、その内容が PPTX の**ノート欄**に入る。
+複数書くと結合される。本文には表示されない。
+
+```markdown
+<!-- _class: result -->
+# 実験結果
+- 提案手法が全条件で最良
+<!-- note: 有意差は p<0.01。質問が来たら付録のablationを見せる -->
+```
+
+## Web UI（ブラウザ編集）
+
+`pip install -e ".[web]"` の上で `marp-pptx serve`（既定 `127.0.0.1:8080`、`--host` / `--port`）。
+
+- **プリセットから開始**: 厳選スターターデッキ（最小雛形 / 学術発表 / プロダクト紹介 / 講義・勉強会）をワンクリックで読み込み（`data/presets/`）
+- **型ギャラリー**（`/types-page`）: 全52型をサムネ付きで一覧・検索。カードをクリックするとその型でエディタが開く
+- **フォーム編集**: 型を選んでフォームに入力 → Markdown を自動生成
+- **ライブプレビュー**: 各スライドを PNG で即時レンダ（互換性のため数式は内部的に `png` で表示）
+- **MD の保存／読み込み・オートセーブ**、スライドの並べ替え・削除
+- **画像アップロード**: ドラッグ＆ドロップで `assets/` に取り込み、PPTX に埋め込み
+- **PPTX 読み込み（PPTX → MD）**: 既存 PPTX からテキスト・構造をベストエフォート抽出（学習データ作成用）
 
 ## AI が資料作成を依頼されたときの手順
 
@@ -514,9 +624,10 @@ marp-pptx convert slides.md -p navy
 - **HTML構造を間違えると** 該当箇所が空になる（例：`<div class="kpi-container">` の中に `<div><span class="kpi-value">...` の入れ子が必要）
 - **画像パス**：MDファイルからの相対パス
 - **フロントマター**は必ず先頭のみ。各スライドに `---` 区切りを入れても frontmatter にならない
-- **数式** `$$...$$` は display、`$...$` は inline。OMML変換には Pandoc 必要（なければ matplotlib PNG fallback）
+- **数式** `$$...$$` は display、`$...$` は inline。`--math omml`（既定）は OMML 変換に **pandoc が必要**
+  （無い場合は自動で matplotlib PNG にフォールバック）。LibreOffice/Keynote で開くなら最初から `--math png` 推奨
 - **日本語フォント**：CSS の `--font-ea` で指定したフォントが自動適用される
-- **テンプレート例**は `src/marp_pptx/data/templates/` の 49 ファイルに実例あり
+- **テンプレート例**は `src/marp_pptx/data/templates/` の 52 ファイルに実例あり
 
 ## プログラムから使う（Python API）
 
@@ -527,7 +638,9 @@ from marp_pptx.parser import parse_marp
 from marp_pptx.builder import PptxBuilder
 
 tc = ThemeConfig.from_css(get_default_theme_path())
-tc.apply_palette(get_palette_path("navy"))
+tc.apply_palette(get_palette_path("navy"))   # CLI 既定と同じ見た目にするなら "claude"
+# tc.math_mode = "png"     # LibreOffice/Keynote 用（既定は "omml"）
+# tc.density = "keynote"   # 投影向け
 
 slides = parse_marp("input.md")
 builder = PptxBuilder(base_path=Path("."), theme=tc)

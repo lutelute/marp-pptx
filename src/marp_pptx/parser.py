@@ -207,17 +207,44 @@ class SlideData:
     profile_name: str = ""
     profile_affiliation: str = ""
     profile_bio: list = field(default_factory=list)
+    speaker_notes: str = ""
+    source: str = ""              # data-source attribution (<!-- source: ... -->)
+    dark: bool = False            # render on a dark (ink) background
+    # statement / big-number
+    statement_text: str = ""
+    bignum_value: str = ""
+    bignum_label: str = ""
+    bignum_caption: str = ""
+    # chart (native, editable)
+    chart_kind: str = "bar"       # bar | line | column
+    chart_categories: list = field(default_factory=list)
+    chart_series: list = field(default_factory=list)  # [(name, [floats]), ...]
+    chart_caption: str = ""
 
 
 def parse_slide(index: int, raw: str) -> SlideData:
     """Parse a raw slide chunk into SlideData."""
     directives = {}
+    notes_chunks: list[str] = []
 
     def repl(m):
         directives[m.group(1)] = m.group(2)
         return ""
 
-    content = re.sub(r"<!--\s+_(\w+):\s*(.+?)\s*-->", repl, raw).strip()
+    def note_repl(m):
+        notes_chunks.append(m.group(1).strip())
+        return ""
+
+    # Speaker notes: <!-- note: ... --> (multi-line). Extract before the
+    # directive pass so they don't get mistaken for _key directives.
+    content = re.sub(r"<!--\s*note:\s*(.+?)\s*-->", note_repl, raw,
+                     flags=re.DOTALL | re.IGNORECASE)
+    # Data-source attribution: <!-- source: ... -->
+    source_chunks: list[str] = []
+    content = re.sub(r"<!--\s*source:\s*(.+?)\s*-->",
+                     lambda m: (source_chunks.append(m.group(1).strip()) or ""),
+                     content, flags=re.DOTALL | re.IGNORECASE)
+    content = re.sub(r"<!--\s+_(\w+):\s*(.+?)\s*-->", repl, content).strip()
 
     sd = SlideData(
         index=index,
@@ -225,6 +252,9 @@ def parse_slide(index: int, raw: str) -> SlideData:
         paginate=directives.get("paginate", "true") != "false",
         raw=content,
     )
+    sd.speaker_notes = "\n\n".join(notes_chunks)
+    sd.source = "; ".join(source_chunks)
+    sd.dark = directives.get("bg", "").strip().lower() == "dark"
 
     h1m = re.search(r"^#\s+(.+)$", content, re.MULTILINE)
     h2m = re.search(r"^##\s+(.+)$", content, re.MULTILINE)
@@ -793,6 +823,62 @@ def parse_slide(index: int, raw: str) -> SlideData:
         if img:
             sd.image_path = img.group(1)
 
+    elif cls in ("statement", "dark", "big-statement"):
+        if cls == "dark":
+            sd.dark = True
+        st = extract_div(content, "statement")
+        if not st:
+            # first non-heading, non-comment line(s)
+            lines = [l.strip() for l in content.split("\n")
+                     if l.strip() and not l.strip().startswith(("#", "<"))]
+            st = " ".join(lines)
+        sd.statement_text = strip_html(st)
+
+    elif cls in ("big-number", "big-number-dark"):
+        if cls.endswith("-dark"):
+            sd.dark = True
+        bn = extract_div(content, "big-number") or content
+        vm = re.search(r'class="[^"]*bn-value[^"]*"[^>]*>(.*?)</span>', bn, re.DOTALL)
+        lm = re.search(r'class="[^"]*bn-label[^"]*"[^>]*>(.*?)</span>', bn, re.DOTALL)
+        cm = re.search(r'class="[^"]*bn-caption[^"]*"[^>]*>(.*?)</span>', bn, re.DOTALL)
+        if vm:
+            sd.bignum_value = strip_html(vm.group(1))
+            sd.bignum_label = strip_html(lm.group(1)) if lm else ""
+            sd.bignum_caption = strip_html(cm.group(1)) if cm else ""
+        else:
+            lines = [l.strip() for l in content.split("\n")
+                     if l.strip() and not l.strip().startswith(("#", "<", "-"))]
+            if lines:
+                sd.bignum_value = strip_html(lines[0])
+                sd.bignum_label = strip_html(lines[1]) if len(lines) > 1 else (sd.h2 or "")
+                sd.bignum_caption = strip_html(lines[2]) if len(lines) > 2 else ""
+
+    elif cls == "chart":
+        sd.chart_kind = directives.get("chart", "bar").strip().lower()
+        rows = []
+        for line in content.split("\n"):
+            s = line.strip()
+            if s.startswith("|") and not re.match(r"^\|[-:|\s]+\|$", s):
+                rows.append([c.strip() for c in s.strip("|").split("|")])
+        if len(rows) >= 2:
+            header = rows[0]
+            series_names = [strip_html(h) for h in header[1:]]
+            cats, series_vals = [], [[] for _ in series_names]
+            for r in rows[1:]:
+                cats.append(strip_html(r[0]) if r else "")
+                for si in range(len(series_names)):
+                    raw = r[si + 1] if si + 1 < len(r) else ""
+                    num = re.sub(r"[^\d.\-]", "", strip_html(raw))
+                    try:
+                        series_vals[si].append(float(num))
+                    except ValueError:
+                        series_vals[si].append(0.0)
+            sd.chart_categories = cats
+            sd.chart_series = list(zip(series_names, series_vals))
+        cap = extract_div(content, "chart-caption")
+        if cap:
+            sd.chart_caption = strip_html(cap)
+
     else:
         body = content
         if h1m:
@@ -836,6 +922,11 @@ def parse_slide(index: int, raw: str) -> SlideData:
         img = re.search(r"!\[(?:w:\d+)?\]\(([^)]+)\)", content)
         if img:
             sd.image_path = img.group(1)
+
+    # A data source falls back to the footnote slot so existing footnote
+    # rendering surfaces it (small-caps, bottom of slide).
+    if sd.source and not sd.footnote:
+        sd.footnote = sd.source
 
     return sd
 

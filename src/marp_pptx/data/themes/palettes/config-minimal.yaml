@@ -1,0 +1,31 @@
+name: minimal
+title: Minimal — 洗練ミニマル
+description: 白基調・上下中央バランス・細いアクセント線。Keynote 的な静かな高級感。marp-pptx の新デフォルト。
+colors:
+  primary:   '#1c1c22'
+  secondary: '#3a3a44'
+  accent:    '#c2410c'
+  fg:        '#1c1c22'
+  muted:     '#6b6b73'
+  hairline:  '#e2e2e6'
+  light:     '#f6f6f4'
+  border:    '#e2e2e6'
+fonts:
+  head: "'Avenir Next', 'Helvetica Neue', 'Hiragino Sans', sans-serif"
+  body: "'Avenir Next', 'Helvetica Neue', 'Hiragino Sans', sans-serif"
+layout:
+  h1_deco: none           # no under-title line — whitespace + kicker do the work
+  title_bg: white
+  title_align: center
+  divider_align: center
+  end_bg: white
+  box_style: soft-card
+  box_radius: 0.035
+  card_shadow: false
+  spacing: generous
+  vertical_align: center
+  kicker: true
+  kicker_color: accent
+  accent_rule: none
+  table_header_style: rule
+  divider_number: true

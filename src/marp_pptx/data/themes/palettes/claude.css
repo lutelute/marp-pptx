@@ -1,0 +1,21 @@
+/*!
+ * Claude palette — Anthropic brand identity (warm cream + clay).
+ * Colors + fonts consumed by ThemeConfig.apply_palette().
+ * Layout tokens live in config-claude.yaml alongside this file.
+ */
+:root {
+  --color-bg:        #faf9f5;   /* warm cream */
+  --color-fg:        #141413;   /* ink */
+  --color-primary:   #141413;
+  --color-secondary: #5a5852;   /* warm dark gray (subheads) */
+  --color-accent:    #d97757;   /* clay / coral — large text, bars, big numbers */
+  --color-accent-text: #b3502f; /* darker clay for SMALL labels/symbols (AA 4.86:1 on cream) */
+  --color-muted:     #73706a;   /* contrast-safe warm gray */
+  --color-hairline:  #e8e6dc;   /* warm light gray */
+  --color-light:     #ffffff;   /* white cards pop on cream */
+  --color-border:    #e8e6dc;
+
+  --font-head: 'Poppins', 'Avenir Next', 'Helvetica Neue', 'Hiragino Sans', sans-serif;
+  --font-body: 'Poppins', 'Avenir Next', 'Helvetica Neue', 'Hiragino Sans', sans-serif;
+  --font-ea:   'Hiragino Sans', 'Noto Sans JP', sans-serif;
+}

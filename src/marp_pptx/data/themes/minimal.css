@@ -1,0 +1,53 @@
+/*!
+ * @theme minimal
+ * @auto-scaling true
+ *
+ * Minimal — refined, white-based, center-balanced. Thin accent rules,
+ * small-caps keyword labels, calm Keynote-like sophistication.
+ * The default theme for marp-pptx. Inherits the 49 slide-class styles from
+ * the academic theme and overrides only the palette + key headings.
+ */
+@import 'academic';
+
+:root {
+  --color-bg:          #ffffff;
+  --color-fg:          #1c1c22;
+  --color-ink:         #1c1c22;
+  --color-primary:     #1c1c22;
+  --color-secondary:   #3a3a44;
+  --color-accent:      #c2410c;
+  --color-muted:       #6b6b73;
+  --color-hairline:    #e2e2e6;
+  --color-light:       #f6f6f4;
+  --color-border:      #e2e2e6;
+  --color-highlight:   #fbeae1;
+  --color-highlight-b: #eceaf0;
+
+  --font-head: 'Avenir Next', 'Helvetica Neue', 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+  --font-body: 'Avenir Next', 'Helvetica Neue', 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+  --font-ea:   'Hiragino Sans', 'Noto Sans JP', 'Yu Gothic UI', sans-serif;
+  --font-mono: 'SF Mono', 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+/* Headings: drop the heavy left bar; thin hairline underline + lighter weight */
+section h1 {
+  border-left: none;
+  padding-left: 0;
+  border-bottom: 1px solid var(--color-hairline);
+  padding-bottom: 8px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* Cards: visible surface fill + hairline border (kills the invisible-box look) */
+.box, .box-accent, .box-primary {
+  background: var(--color-light);
+  border: 1px solid var(--color-hairline);
+  border-radius: 6px;
+}
+.box-accent  { border-left: 3px solid var(--color-accent); }
+.box-primary { border-left: 3px solid var(--color-secondary); }
+
+/* Tables: unfilled header + ink rule (Keynote style) */
+section.table-slide table thead th { border-bottom: 2px solid var(--color-ink); }
+section.table-slide table tbody tr:nth-child(even) { background: var(--color-light); }

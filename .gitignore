@@ -21,3 +21,16 @@ build/
 *.bmp
 *.svg
 assets/
+
+# …but the slide-type gallery thumbnails are a shipped, tracked artifact
+# (regenerate with `marp-pptx render-gallery`).
+!src/marp_pptx/web/static/type-gallery/
+!src/marp_pptx/web/static/type-gallery/*.png
+
+# README demo assets (tracked)
+!docs/
+!docs/demo-*.gif
+!docs/preview-*.png
+
+# Learning data (collected third-party templates, not redistributable)
+learning-data/

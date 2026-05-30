@@ -1,0 +1,32 @@
+name: claude
+title: Claude — Anthropic ブランド
+description: 温かいクリーム地＋クレイ(coral)アクセント。Anthropic 公式カラー。中央バランス・細アクセント線。
+colors:
+  primary:   '#141413'
+  secondary: '#5a5852'
+  accent:    '#d97757'
+  fg:        '#141413'
+  bg:        '#faf9f5'
+  muted:     '#73706a'
+  hairline:  '#e8e6dc'
+  light:     '#ffffff'
+  border:    '#e8e6dc'
+fonts:
+  head: "'Poppins', 'Avenir Next', 'Helvetica Neue', 'Hiragino Sans', sans-serif"
+  body: "'Poppins', 'Avenir Next', 'Helvetica Neue', 'Hiragino Sans', sans-serif"
+layout:
+  h1_deco: none           # no under-title line — whitespace + kicker do the work
+  title_bg: white
+  title_align: center
+  divider_align: center
+  end_bg: white
+  box_style: soft-card
+  box_radius: 0.035
+  card_shadow: false
+  spacing: generous
+  vertical_align: center
+  kicker: true
+  kicker_color: accent
+  accent_rule: none
+  table_header_style: rule
+  divider_number: true

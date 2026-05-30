@@ -1,220 +1,19 @@
 """Flask web UI for marp-pptx."""
 from __future__ import annotations
 
+import hashlib
 import tempfile
 import uuid
 from pathlib import Path
 
-from flask import Flask, request, send_file, render_template_string, jsonify, redirect, url_for
+from flask import Flask, request, send_file, render_template, jsonify
+
+from marp_pptx.render import pptx_to_pngs
 
 
-INDEX_HTML = """<!DOCTYPE html>
-<html lang="ja">
-<head>
-<meta charset="utf-8">
-<title>marp-pptx Web UI</title>
-<style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: -apple-system, 'Segoe UI', 'Hiragino Sans', sans-serif; background: #f7f7f7; color: #1a1a1a; line-height: 1.6; }
-.container { max-width: 900px; margin: 40px auto; padding: 0 20px; }
-h1 { font-size: 1.8em; margin-bottom: 8px; }
-.subtitle { color: #999; margin-bottom: 32px; }
-.card { background: white; border-radius: 8px; padding: 32px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); margin-bottom: 24px; }
-label { display: block; font-weight: 600; margin-bottom: 8px; margin-top: 12px; }
-select, input[type="file"], input[type="text"] { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 16px; }
-button { background: #1a1a1a; color: white; border: none; padding: 12px 32px; border-radius: 4px; font-size: 1em; cursor: pointer; margin-right: 8px; }
-button:hover { background: #333; }
-button.secondary { background: white; color: #1a1a1a; border: 1px solid #ddd; }
-.types-table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
-.types-table th { background: #1a1a1a; color: white; padding: 10px 12px; text-align: left; }
-.types-table td { padding: 8px 12px; border-bottom: 1px solid #eee; }
-.types-table tr:nth-child(even) { background: #f9f9f9; }
-.cat-badge { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 0.8em; background: #e8e8e8; }
-.tabs { display: flex; border-bottom: 2px solid #ddd; margin-bottom: 20px; }
-.tabs a { padding: 10px 20px; color: #666; text-decoration: none; border-bottom: 2px solid transparent; margin-bottom: -2px; }
-.tabs a.active { color: #1a1a1a; border-color: #1a1a1a; font-weight: 600; }
-</style>
-</head>
-<body>
-<div class="container">
-<h1>marp-pptx</h1>
-<p class="subtitle">Marp Markdown → Editable PowerPoint (49 semantic slide types)</p>
-
-<div class="tabs">
-<a href="/" class="active">変換</a>
-<a href="/types-page">型一覧</a>
-</div>
-
-<div class="card">
-<h2 style="margin-bottom:16px">① 簡易変換 (設定なしで即ダウンロード)</h2>
-<form action="/convert" method="post" enctype="multipart/form-data">
-<label>Markdown File (.md)</label>
-<input type="file" name="file" accept=".md" required>
-<label>Palette</label>
-<select name="palette">
-<option value="">Default (monochrome)</option>
-{% for p in palettes %}<option value="{{ p }}">{{ p }}</option>{% endfor %}
-</select>
-<button type="submit">→ PPTX に変換してダウンロード</button>
-</form>
-</div>
-
-<div class="card">
-<h2 style="margin-bottom:16px">② 調整画面 (スライド分析 + フォント倍率 + パレット)</h2>
-<form action="/preview" method="post" enctype="multipart/form-data">
-<label>Markdown File (.md)</label>
-<input type="file" name="file" accept=".md" required>
-<button type="submit">→ プレビュー画面へ</button>
-</form>
-</div>
-</div>
-</body>
-</html>"""
-
-
-TYPES_PAGE_HTML = """<!DOCTYPE html>
-<html lang="ja">
-<head>
-<meta charset="utf-8">
-<title>marp-pptx: Slide Types</title>
-<style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: -apple-system, 'Segoe UI', 'Hiragino Sans', sans-serif; background: #f7f7f7; color: #1a1a1a; line-height: 1.6; }
-.container { max-width: 1100px; margin: 40px auto; padding: 0 20px; }
-h1 { margin-bottom: 20px; }
-.tabs { display: flex; border-bottom: 2px solid #ddd; margin-bottom: 20px; }
-.tabs a { padding: 10px 20px; color: #666; text-decoration: none; border-bottom: 2px solid transparent; margin-bottom: -2px; }
-.tabs a.active { color: #1a1a1a; border-color: #1a1a1a; font-weight: 600; }
-table { width: 100%; border-collapse: collapse; font-size: 0.9em; background: white; }
-th { background: #1a1a1a; color: white; padding: 10px 12px; text-align: left; }
-td { padding: 8px 12px; border-bottom: 1px solid #eee; }
-tr:nth-child(even) { background: #f9f9f9; }
-.cat-badge { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 0.8em; background: #e8e8e8; }
-</style>
-</head>
-<body>
-<div class="container">
-<h1>型一覧 ({{ types|length }})</h1>
-<div class="tabs">
-<a href="/">変換</a>
-<a href="/types-page" class="active">型一覧</a>
-</div>
-<table>
-<thead><tr><th>型</th><th>カテゴリ</th><th>図形</th><th>意味</th><th>使いどころ</th></tr></thead>
-<tbody>
-{% for t in types %}
-<tr>
-<td><code>{{ t.name }}</code></td>
-<td><span class="cat-badge">{{ categories[t.category] }}</span></td>
-<td>{{ t.geometry }}</td>
-<td>{{ t.meaning }}</td>
-<td>{{ t.use_when }}</td>
-</tr>
-{% endfor %}
-</tbody>
-</table>
-</div>
-</body>
-</html>"""
-
-
-PREVIEW_HTML = """<!DOCTYPE html>
-<html lang="ja">
-<head>
-<meta charset="utf-8">
-<title>marp-pptx: Preview & Adjust</title>
-<style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: -apple-system, 'Segoe UI', 'Hiragino Sans', sans-serif; background: #f7f7f7; color: #1a1a1a; line-height: 1.6; }
-.layout { display: grid; grid-template-columns: 320px 1fr; min-height: 100vh; }
-aside { background: white; border-right: 1px solid #ddd; padding: 24px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
-main { padding: 24px 32px; overflow-y: auto; }
-h1 { font-size: 1.4em; margin-bottom: 16px; }
-h2 { font-size: 1.1em; margin: 16px 0 8px; color: #555; }
-label { display: block; font-weight: 600; margin: 12px 0 6px; font-size: 0.9em; }
-select, input { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.9em; }
-input[type="range"] { padding: 0; }
-.slider-row { display: flex; align-items: center; gap: 8px; }
-.slider-val { min-width: 36px; font-variant-numeric: tabular-nums; font-size: 0.85em; color: #666; }
-button { width: 100%; background: #1a1a1a; color: white; border: none; padding: 14px; border-radius: 4px; font-size: 1em; cursor: pointer; margin-top: 20px; font-weight: 600; }
-button:hover { background: #333; }
-button.secondary { background: white; color: #1a1a1a; border: 1px solid #ddd; }
-.slide-card { background: white; border-radius: 6px; padding: 16px 20px; margin-bottom: 12px; border-left: 4px solid #3d5a80; }
-.slide-card.warning { border-left-color: #e07a5f; }
-.slide-num { color: #999; font-size: 0.85em; }
-.slide-type { display: inline-block; background: #e8e8e8; padding: 2px 8px; border-radius: 3px; font-size: 0.8em; font-family: ui-monospace, monospace; margin-left: 6px; }
-.slide-h1 { font-size: 1.1em; font-weight: 600; margin: 6px 0; }
-.slide-stats { font-size: 0.85em; color: #666; }
-.back-link { color: #666; text-decoration: none; font-size: 0.9em; }
-.back-link:hover { color: #1a1a1a; }
-</style>
-</head>
-<body>
-<div class="layout">
-<aside>
-<a href="/" class="back-link">← 戻る</a>
-<h1 style="margin-top:12px">設定</h1>
-<form action="/generate" method="post" id="gen-form">
-<input type="hidden" name="session_id" value="{{ session_id }}">
-
-<h2>パレット</h2>
-<label>Color Palette</label>
-<select name="palette">
-<option value="">Default (monochrome)</option>
-{% for p in palettes %}<option value="{{ p }}">{{ p }}</option>{% endfor %}
-</select>
-
-<h2>サイズ</h2>
-<label>Font Scale (0.7 - 1.3)</label>
-<div class="slider-row">
-<input type="range" name="font_scale" min="0.7" max="1.3" step="0.05" value="1.0" id="fs-range">
-<span class="slider-val" id="fs-val">1.00</span>
-</div>
-
-<h2>出力</h2>
-<label>Filename</label>
-<input type="text" name="output_name" value="{{ filename_base }}_editable.pptx">
-
-<button type="submit">→ PPTX を生成してダウンロード</button>
-</form>
-
-<div style="margin-top:20px; padding-top:16px; border-top:1px solid #eee; font-size:0.8em; color:#888;">
-<p>※ margin_scale / per-slide override は v0.2 で対応予定 (ROADMAP参照)</p>
-</div>
-</aside>
-
-<main>
-<h1>{{ filename }} — {{ slides|length }} slides</h1>
-<p style="color:#666; margin-bottom:20px">
-左のパネルで設定を調整 → 下部の「PPTX を生成」ボタンでダウンロード。
-</p>
-
-{% for s in slides %}
-<div class="slide-card {% if s.warning %}warning{% endif %}">
-<span class="slide-num">Slide {{ loop.index }}</span>
-<span class="slide-type">{{ s.type_display }}</span>
-{% if s.h1 %}<div class="slide-h1">{{ s.h1 }}</div>{% endif %}
-<div class="slide-stats">
-{% if s.h2 %}<span>H2: {{ s.h2 }}</span> · {% endif %}
-<span>{{ s.char_count }} chars</span>
-{% if s.bullet_count %} · <span>{{ s.bullet_count }} bullets</span>{% endif %}
-{% if s.table_rows %} · <span>{{ s.table_rows }} table rows</span>{% endif %}
-{% if s.has_image %} · <span>🖼 image</span>{% endif %}
-{% if s.has_math %} · <span>∑ math</span>{% endif %}
-</div>
-{% if s.warning %}<div style="color:#e07a5f; font-size:0.85em; margin-top:6px">⚠ {{ s.warning }}</div>{% endif %}
-</div>
-{% endfor %}
-</main>
-</div>
-
-<script>
-const range = document.getElementById('fs-range');
-const val = document.getElementById('fs-val');
-range.addEventListener('input', () => { val.textContent = parseFloat(range.value).toFixed(2); });
-</script>
-</body>
-</html>"""
+# Cache for rendered slide thumbnails (keyed by MD content hash + settings)
+_PREVIEW_CACHE_DIR = Path(tempfile.gettempdir()) / "marp_pptx_previews"
+_PREVIEW_CACHE_DIR.mkdir(exist_ok=True)
 
 
 # Session-based storage of uploaded MD files
@@ -222,7 +21,7 @@ _SESSIONS: dict[str, Path] = {}
 
 
 def create_app() -> Flask:
-    app = Flask(__name__)
+    app = Flask(__name__, template_folder="templates", static_folder="static")
     app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024  # 10MB
 
     def _palettes() -> list[str]:
@@ -234,13 +33,208 @@ def create_app() -> Flask:
 
     @app.route("/")
     def index():
-        return render_template_string(INDEX_HTML, palettes=_palettes())
+        return render_template("index.html", palettes=_palettes())
+
+    @app.route("/editor")
+    def editor():
+        return render_template("editor.html", palettes=_palettes())
+
+    @app.route("/editor/sample/<name>")
+    def editor_sample(name: str):
+        """Serve a preset starter deck, or the full type catalog (name='all')."""
+        from flask import Response
+
+        data_dir = Path(__file__).parent.parent / "data"
+        if name == "all":
+            # Concatenate every type template into one reference catalog.
+            parts = ["---\nmarp: true\n---\n"]
+            for tpl in sorted((data_dir / "templates").glob("*.md")):
+                text = tpl.read_text(encoding="utf-8")
+                if text.startswith("---"):
+                    end = text.find("---", 3)
+                    if end != -1:
+                        text = text[end + 3:]
+                parts.append(text.strip())
+            return Response("\n\n---\n\n".join(parts), mimetype="text/plain; charset=utf-8")
+
+        # Otherwise: a named preset deck from data/presets/<name>.md
+        if "/" in name or ".." in name:
+            return "bad name", 400
+        preset = data_dir / "presets" / f"{name}.md"
+        if not preset.is_file():
+            return "unknown sample", 404
+        return Response(preset.read_text(encoding="utf-8"), mimetype="text/plain; charset=utf-8")
+
+    @app.route("/api/presets")
+    def api_presets():
+        """List the curated starter decks (manifest metadata)."""
+        import json
+        manifest = Path(__file__).parent.parent / "data" / "presets" / "manifest.json"
+        try:
+            return jsonify(json.loads(manifest.read_text(encoding="utf-8")))
+        except (OSError, ValueError):
+            return jsonify([])
+
+    @app.route("/editor/preview", methods=["POST"])
+    def editor_preview():
+        """Render MD → PPTX → per-slide PNGs; return list of URLs."""
+        from marp_pptx.theme import ThemeConfig, get_default_theme_path, get_palette_path
+        from marp_pptx.parser import parse_marp
+        from marp_pptx.builder import PptxBuilder
+
+        md_text = request.form.get("markdown", "")
+        if not md_text.strip():
+            return jsonify({"slides": []})
+        palette_name = request.form.get("palette", "")
+        try:
+            font_scale = float(request.form.get("font_scale", 1.0))
+        except ValueError:
+            font_scale = 1.0
+
+        # Cache key based on content + settings
+        key_src = f"{md_text}|{palette_name}|{font_scale}|math=png".encode("utf-8")
+        key = hashlib.md5(key_src).hexdigest()
+        out_dir = _PREVIEW_CACHE_DIR / key
+        if out_dir.exists():
+            pngs = sorted(out_dir.glob("slide-*.png"))
+            if pngs:
+                return jsonify({"slides": [f"/editor/preview-img/{key}/{p.name}" for p in pngs]})
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        # Build PPTX (expose uploaded images via assets symlink)
+        _link_shared_assets_to(out_dir)
+        md_path = out_dir / "slides.md"
+        md_path.write_text(md_text, encoding="utf-8")
+        tc = ThemeConfig.from_css(get_default_theme_path())
+        tc.font_scale = max(0.5, min(2.0, font_scale))
+        # Force PNG math in the preview: LibreOffice's OMML renderer is
+        # unreliable. The download path (_do_convert) keeps OMML for
+        # PowerPoint-native editability.
+        tc.math_mode = "png"
+        if palette_name:
+            pp = get_palette_path(palette_name)
+            if pp:
+                tc.apply_palette(pp)
+        slides = parse_marp(str(md_path))
+        builder = PptxBuilder(base_path=out_dir, theme=tc)
+        builder.build_all(slides)
+        pptx_path = out_dir / "slides.pptx"
+        builder.save(str(pptx_path))
+
+        # Render to PNGs
+        pngs = pptx_to_pngs(pptx_path, out_dir, dpi=90)
+        if not pngs:
+            return jsonify({"error": "LibreOffice not available or render failed", "slides": []}), 500
+        return jsonify({"slides": [f"/editor/preview-img/{key}/{p.name}" for p in pngs]})
+
+    @app.route("/editor/preview-img/<key>/<name>")
+    def editor_preview_img(key: str, name: str):
+        """Serve a cached preview PNG."""
+        if not key.isalnum() or not name.startswith("slide-") or not name.endswith(".png"):
+            return "bad path", 400
+        png = _PREVIEW_CACHE_DIR / key / name
+        if not png.exists():
+            return "not found", 404
+        return send_file(str(png), mimetype="image/png")
+
+    @app.route("/editor/pptx-to-md", methods=["POST"])
+    def editor_pptx_to_md():
+        """Upload a PPTX, extract text+structure, return best-effort MD."""
+        from marp_pptx.pptx2md import pptx_to_md_with_report
+
+        f = request.files.get("file")
+        if not f:
+            return jsonify({"error": "no file"}), 400
+        tmpdir = Path(tempfile.mkdtemp(prefix="marp_pptx2md_"))
+        pptx_path = tmpdir / (f.filename or "input.pptx")
+        f.save(str(pptx_path))
+
+        # Extract images into the shared assets dir so the editor can reference them
+        assets_dir = _PREVIEW_CACHE_DIR / "shared_assets"
+        try:
+            report = pptx_to_md_with_report(pptx_path, extract_images_to=assets_dir)
+        except Exception as e:
+            return jsonify({"error": f"pptx parse failed: {e}"}), 500
+        return jsonify(report)
+
+    @app.route("/editor/upload-image", methods=["POST"])
+    def editor_upload_image():
+        """Receive an image upload, store in shared assets dir, return assets/<name>."""
+        f = request.files.get("file")
+        if not f:
+            return jsonify({"error": "no file"}), 400
+        name = (f.filename or "image").lower()
+        ext = name.rsplit(".", 1)[-1] if "." in name else ""
+        if ext not in ("png", "jpg", "jpeg", "gif", "svg", "webp"):
+            return jsonify({"error": "unsupported extension: " + ext}), 400
+
+        upload_dir = _PREVIEW_CACHE_DIR / "shared_assets"
+        upload_dir.mkdir(parents=True, exist_ok=True)
+
+        data = f.read()
+        digest = hashlib.md5(data).hexdigest()[:10]
+        safe_name = f"{digest}_{Path(name).stem[:40]}.{ext}"
+        dest = upload_dir / safe_name
+        dest.write_bytes(data)
+        return jsonify({
+            "path": f"assets/{safe_name}",
+            "url": f"/editor/asset/{safe_name}",
+        })
+
+    @app.route("/editor/asset/<name>")
+    def editor_asset_get(name: str):
+        if "/" in name or ".." in name:
+            return "bad path", 400
+        p = _PREVIEW_CACHE_DIR / "shared_assets" / name
+        if not p.exists():
+            return "not found", 404
+        return send_file(str(p))
+
+    def _link_shared_assets_to(out_dir: Path):
+        """Symlink uploaded assets into out_dir/assets/ so the builder can resolve
+        'assets/foo.png' paths during PPTX generation.
+        """
+        src = _PREVIEW_CACHE_DIR / "shared_assets"
+        if not src.exists():
+            return
+        dst = out_dir / "assets"
+        if dst.exists():
+            return
+        try:
+            dst.symlink_to(src, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            # fallback: copy (Windows etc.)
+            import shutil as _sh
+            _sh.copytree(src, dst)
+
+    @app.route("/editor/generate", methods=["POST"])
+    def editor_generate():
+        """Generate PPTX from raw Markdown text (no file upload)."""
+        md_text = request.form.get("markdown", "")
+        if not md_text.strip():
+            return "empty markdown", 400
+        palette_name = request.form.get("palette", "")
+        try:
+            font_scale = float(request.form.get("font_scale", 1.0))
+        except ValueError:
+            font_scale = 1.0
+        output_name = request.form.get("output_name") or "slides.pptx"
+
+        tmpdir = Path(tempfile.mkdtemp(prefix="marp_editor_"))
+        md_path = tmpdir / "slides.md"
+        md_path.write_text(md_text, encoding="utf-8")
+        return _do_convert(
+            md_path=md_path,
+            palette_name=palette_name,
+            font_scale=font_scale,
+            output_name=output_name,
+        )
 
     @app.route("/types-page")
     def types_page():
         from marp_pptx.types import TYPE_REGISTRY, CATEGORIES
-        return render_template_string(
-            TYPES_PAGE_HTML,
+        return render_template(
+            "types_page.html",
             types=TYPE_REGISTRY,
             categories=CATEGORIES,
         )
@@ -302,8 +296,8 @@ def create_app() -> Flask:
         filename = md_path.name
         filename_base = md_path.stem
 
-        return render_template_string(
-            PREVIEW_HTML,
+        return render_template(
+            "preview.html",
             slides=slides,
             palettes=_palettes(),
             session_id=session_id,
@@ -337,6 +331,9 @@ def create_app() -> Flask:
             tmpdir = Path(tempfile.mkdtemp())
             md_path = tmpdir / (f.filename or "slides.md")
             f.save(str(md_path))
+
+        # Expose uploaded images to the builder's base_path
+        _link_shared_assets_to(md_path.parent)
 
         tc = ThemeConfig.from_css(get_default_theme_path())
         tc.font_scale = max(0.5, min(2.0, font_scale))
