@@ -37,6 +37,7 @@ marp-pptx convert slides.md --font-scale 1.15       # フォント拡大（0.7�
 marp-pptx types                                     # 型一覧（-c でカテゴリ絞り / --json）
 marp-pptx themes                                    # テーマ・パレット一覧
 marp-pptx preview -o catalog.pptx                   # 全型のビジュアル例（カタログ PPTX）
+marp-pptx render-gallery                            # 全型のサムネ PNG を再生成（Web UI ギャラリー用）
 marp-pptx serve --port 8080                         # Web UI（フォーム編集＋ライブプレビュー）
 ```
 
@@ -600,6 +601,8 @@ marp-pptx convert slides.md -p navy    # 紺
 
 `pip install -e ".[web]"` の上で `marp-pptx serve`（既定 `127.0.0.1:8080`、`--host` / `--port`）。
 
+- **プリセットから開始**: 厳選スターターデッキ（最小雛形 / 学術発表 / プロダクト紹介 / 講義・勉強会）をワンクリックで読み込み（`data/presets/`）
+- **型ギャラリー**（`/types-page`）: 全52型をサムネ付きで一覧・検索。カードをクリックするとその型でエディタが開く
 - **フォーム編集**: 型を選んでフォームに入力 → Markdown を自動生成
 - **ライブプレビュー**: 各スライドを PNG で即時レンダ（互換性のため数式は内部的に `png` で表示）
 - **MD の保存／読み込み・オートセーブ**、スライドの並べ替え・削除
