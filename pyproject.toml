@@ -20,10 +20,12 @@ dependencies = [
 
 [project.optional-dependencies]
 web = ["flask>=3.0", "flask-cors>=4.0"]
+mcp = ["mcp>=1.2"]
 dev = ["pytest", "pytest-cov", "ruff"]
 
 [project.scripts]
 marp-pptx = "marp_pptx.cli:main"
+marp-pptx-mcp = "marp_pptx.mcp:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/marp_pptx"]
