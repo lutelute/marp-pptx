@@ -96,6 +96,32 @@ marp: true
 - **数式**: OMML（PowerPoint で編集可能, デフォルト）/ matplotlib PNG（`--math png`）
 - **編集可能性**: すべて実テキストボックス + 実テーブル + OMML。一枚絵の画像化はしない
 
+## AI から使う
+
+### Claude スキル
+`skills/marp-pptx/` は Claude にデッキの作り方（型選択フロー・正確な HTML 骨組み・落とし穴）を教える
+[Claude Code スキル](skills/README.md)。どのプロジェクトからでも使えるよう導入:
+
+```bash
+ln -s "$(pwd)/skills/marp-pptx" ~/.claude/skills/marp-pptx
+```
+
+### MCP サーバー
+`marp-pptx[mcp]` でエージェントが会話から**編集可能 PPTX を生成し、画像で自己確認**できる。
+
+```bash
+pip install -e ".[mcp]"
+```
+
+MCP クライアント設定（例: Claude Desktop / Claude Code）:
+
+```json
+{ "mcpServers": { "marp-pptx": { "command": "marp-pptx-mcp" } } }
+```
+
+公開ツール: `slide_types`（52型カタログ）/ `slide_template`（型の骨組み）/ `list_presets`・`get_preset` /
+`build_pptx`（MD→編集可能.pptx ＋ lint）/ **`preview_png`**（各スライドを画像で返す＝AI が下書きを見て直せる）。
+
 ## ドキュメント
 
 - 全機能・全 52 型の詳細は [USAGE.md](USAGE.md)
