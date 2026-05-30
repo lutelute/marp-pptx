@@ -24,6 +24,16 @@ from marp_pptx.types import TYPE_REGISTRY, CATEGORIES
 
 mcp = FastMCP("marp-pptx")
 
+# Guard against a runaway deck exhausting the local process.
+_MAX_MARKDOWN = 5_000_000  # ~5 MB of Marp markdown
+
+
+def _check_markdown(markdown: str) -> None:
+    if len(markdown) > _MAX_MARKDOWN:
+        raise RuntimeError(
+            f"markdown too large: {len(markdown)} bytes (limit {_MAX_MARKDOWN})"
+        )
+
 
 def _data_dir() -> Path:
     return Path(__file__).parent / "data"
@@ -159,6 +169,7 @@ def build_pptx(
     Returns {output_path, slide_count, lint_warnings}. Heed lint_warnings — they
     flag weak titles, missing structure, etc.
     """
+    _check_markdown(markdown)
     if output_path:
         out = Path(output_path).expanduser().resolve()
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -179,6 +190,7 @@ def preview_png(markdown: str, palette: str = "", max_slides: int = 12) -> list[
     text note as a single image-less result if those are missing."""
     from marp_pptx.render import pptx_to_pngs, tools_available
 
+    _check_markdown(markdown)
     if not tools_available():
         raise RuntimeError("preview_png needs LibreOffice (soffice) + pdftoppm installed")
     tc = _themed_config(palette, "png", "academic")

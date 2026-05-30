@@ -180,7 +180,14 @@ def get_default_theme_path() -> Path:
 
 
 def get_palette_path(name: str) -> Path | None:
-    """Return path to a named palette CSS file."""
+    """Return path to a named palette CSS file, or None.
+
+    Rejects names containing path separators / traversal so an
+    externally-supplied palette name (web form, MCP arg) can't escape the
+    palettes directory.
+    """
+    if not name or "/" in name or "\\" in name or ".." in name or "\x00" in name:
+        return None
     palettes_dir = Path(__file__).parent / "data" / "themes" / "palettes"
     css = palettes_dir / f"academic-{name}.css"
     if css.exists():

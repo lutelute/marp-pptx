@@ -64,6 +64,19 @@ marp: true
 全52型の意味は `marp-pptx types`（`--json` で機械可読、`-c <category>` で絞り込み）。
 **各型の正確な HTML 骨組みは `references/type-skeletons.md` を参照**（崩さず埋める）。
 
+### バリエーション（カタログ外・応用）
+
+`marp-pptx types` には出ないが、ビルダーが解釈する変種:
+
+| `_class` | 用途 | 構造 |
+|---|---|---|
+| `cols-2-wide-l` / `cols-2-wide-r` | 左/右を広くした 2 カラム（62:38） | `cols-2` と同じ |
+| `dark` | `statement` の暗背景版（1文を黒地に） | `statement` と同じ（本文1文） |
+| `big-statement` | より大きい `statement` | `statement` と同じ |
+| `big-number-dark` | `big-number` の暗背景版 | `big-number` と同じ |
+
+暗背景は各スライド先頭の `<!-- bg: dark -->` ディレクティブでも指定できる。
+
 ## よく使う骨組み（抜粋）
 
 ```markdown

@@ -25,6 +25,21 @@ def test_render_advanced_equation_after_sanitize():
     assert render_latex_png(tex, display=True) is not None
 
 
+def test_sanitize_terminates_on_malformed_input():
+    # unbalanced/truncated macros must not hang or raise
+    for bad in (r"\underbrace{X}_{", r"\colorbox{red}{", r"\underbrace{X",
+                r"\colorbox", r"\overbrace{Y}^"):
+        out = _sanitize_for_mathtext(bad)
+        assert isinstance(out, str)
+
+
+def test_matching_brace_skips_escaped_literals():
+    from marp_pptx.math.renderer import _matching_brace
+    s = r"{a \{ b \} c}"          # escaped literal braces inside
+    assert _matching_brace(s, 0) == len(s) - 1
+    assert _matching_brace("{x}", 0) == 2
+
+
 def test_render_simple_latex():
     result = render_latex_png(r"x^2 + y^2 = z^2", fontsize=20)
     assert result is not None
