@@ -2,30 +2,44 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>marp-pptx: Slide Types</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='css/types.css') }}">
 </head>
 <body>
 <div class="container">
-<h1>型一覧 ({{ types|length }})</h1>
+<h1>型ギャラリー <span class="count">{{ types|length }}</span></h1>
 <div class="tabs">
 <a href="/">変換</a>
+<a href="/editor">エディタ</a>
 <a href="/types-page" class="active">型一覧</a>
 </div>
-<table>
-<thead><tr><th>型</th><th>カテゴリ</th><th>図形</th><th>意味</th><th>使いどころ</th></tr></thead>
-<tbody>
-{% for t in types %}
-<tr>
-<td><code>{{ t.name }}</code></td>
-<td><span class="cat-badge">{{ categories[t.category] }}</span></td>
-<td>{{ t.geometry }}</td>
-<td>{{ t.meaning }}</td>
-<td>{{ t.use_when }}</td>
-</tr>
+<input type="text" id="gallery-search" placeholder="型名・意味・使いどころ・図形で検索 (例: 比較, 時間, KPI, □)" autofocus>
+<p class="hint">カードをクリックするとエディタでその型のスライドを追加できます。</p>
+
+{% for cat_key, cat_label in categories.items() %}
+<section class="gcat" data-cat="{{ cat_key }}">
+<h2>{{ cat_label }}</h2>
+<div class="gallery-grid">
+{% for t in types if t.category == cat_key %}
+<a class="gcard" href="/editor?type={{ t.css_class }}"
+   data-search="{{ t.name }} {{ t.meaning }} {{ t.use_when }} {{ t.geometry }} {{ cat_label }}">
+  <div class="gthumb"><img loading="lazy"
+       src="{{ url_for('static', filename='type-gallery/' + t.name + '.png') }}"
+       alt="{{ t.name }} のサンプル"></div>
+  <div class="gmeta">
+    <div class="gname"><code>{{ t.name }}</code> <span class="ggeom">{{ t.geometry }}</span></div>
+    <div class="gmeaning">{{ t.meaning }}</div>
+    <div class="guse">{{ t.use_when }}</div>
+  </div>
+</a>
 {% endfor %}
-</tbody>
-</table>
 </div>
+</section>
+{% endfor %}
+
+<p id="gallery-empty" class="empty" hidden>該当する型がありません。</p>
+</div>
+<script src="{{ url_for('static', filename='js/types.js') }}"></script>
 </body>
 </html>

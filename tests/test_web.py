@@ -46,6 +46,19 @@ def test_types_page_lists_types(client):
     assert b"kpi" in r.data
 
 
+def test_types_page_is_a_thumbnail_gallery(client):
+    body = client.get("/types-page").data
+    # gallery cards link into the editor and show per-type thumbnails
+    assert b"gcard" in body
+    assert b"type-gallery/funnel.png" in body
+    assert b"/editor?type=" in body
+    # every registered type's thumbnail exists on disk and serves
+    for name in ("title", "kpi", "statement", "chart", "sandwich-3col"):
+        img = client.get(f"/static/type-gallery/{name}.png")
+        assert img.status_code == 200, name
+        assert img.data[:8] == b"\x89PNG\r\n\x1a\n"
+
+
 def test_api_types(client):
     r = client.get("/api/types")
     assert r.status_code == 200

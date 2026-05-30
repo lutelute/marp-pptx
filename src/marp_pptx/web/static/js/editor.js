@@ -1727,7 +1727,12 @@ shortcutHint.innerHTML = '⌘S: MD保存 · ⌘P: プレビュー · ⌘K: 型�
 document.querySelector('.topbar .spacer')?.replaceWith(shortcutHint);
 
 // Initialize
-loadTypeMeta();
+loadTypeMeta().then(() => {
+    // Opened from the type gallery (/editor?type=<css_class>): jump straight
+    // into that type's form/snippet.
+    const t = new URLSearchParams(location.search).get('type');
+    if (t) selectType(t);
+});
 restoreFromStorage();
 updateStats();
 if (editor.value.trim()) triggerAutoPreview();
