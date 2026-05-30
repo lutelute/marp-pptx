@@ -3,27 +3,7 @@
 <head>
 <meta charset="utf-8">
 <title>marp-pptx Web UI</title>
-<style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: -apple-system, 'Segoe UI', 'Hiragino Sans', sans-serif; background: #fafaf8; color: #1c1c22; line-height: 1.6; }
-.container { max-width: 900px; margin: 40px auto; padding: 0 20px; }
-h1 { font-size: 1.8em; margin-bottom: 8px; }
-.subtitle { color: #999; margin-bottom: 32px; }
-.card { background: white; border-radius: 8px; padding: 32px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); margin-bottom: 24px; }
-label { display: block; font-weight: 600; margin-bottom: 8px; margin-top: 12px; }
-select, input[type="file"], input[type="text"] { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 16px; }
-button { background: #1c1c22; color: white; border: none; padding: 12px 32px; border-radius: 4px; font-size: 1em; cursor: pointer; margin-right: 8px; }
-button:hover { background: #333; }
-button.secondary { background: white; color: #1c1c22; border: 1px solid #ddd; }
-.types-table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
-.types-table th { background: #1c1c22; color: white; padding: 10px 12px; text-align: left; }
-.types-table td { padding: 8px 12px; border-bottom: 1px solid #eee; }
-.types-table tr:nth-child(even) { background: #f9f9f9; }
-.cat-badge { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 0.8em; background: #e8e8e8; }
-.tabs { display: flex; border-bottom: 2px solid #ddd; margin-bottom: 20px; }
-.tabs a { padding: 10px 20px; color: #666; text-decoration: none; border-bottom: 2px solid transparent; margin-bottom: -2px; }
-.tabs a.active { color: #1c1c22; border-color: #1c1c22; font-weight: 600; }
-</style>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/index.css') }}">
 </head>
 <body>
 <div class="container">

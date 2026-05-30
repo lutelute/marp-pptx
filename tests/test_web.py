@@ -63,6 +63,16 @@ def test_sample_markdown(client):
     assert b"_class: title" in r.data
 
 
+def test_external_css_served(client):
+    # editor links its stylesheet rather than inlining it, and the file serves
+    body = client.get("/editor").data
+    assert b"css/editor.css" in body
+    assert b"<style>" not in body
+    css = client.get("/static/css/editor.css")
+    assert css.status_code == 200
+    assert b"{" in css.data  # looks like CSS
+
+
 def test_preview_breakdown(client):
     md = (
         "---\nmarp: true\n---\n\n"

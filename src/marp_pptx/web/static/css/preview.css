@@ -1,0 +1,23 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, 'Segoe UI', 'Hiragino Sans', sans-serif; background: #fafaf8; color: #1c1c22; line-height: 1.6; }
+.layout { display: grid; grid-template-columns: 320px 1fr; min-height: 100vh; }
+aside { background: white; border-right: 1px solid #ddd; padding: 24px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+main { padding: 24px 32px; overflow-y: auto; }
+h1 { font-size: 1.4em; margin-bottom: 16px; }
+h2 { font-size: 1.1em; margin: 16px 0 8px; color: #555; }
+label { display: block; font-weight: 600; margin: 12px 0 6px; font-size: 0.9em; }
+select, input { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.9em; }
+input[type="range"] { padding: 0; }
+.slider-row { display: flex; align-items: center; gap: 8px; }
+.slider-val { min-width: 36px; font-variant-numeric: tabular-nums; font-size: 0.85em; color: #666; }
+button { width: 100%; background: #1c1c22; color: white; border: none; padding: 14px; border-radius: 4px; font-size: 1em; cursor: pointer; margin-top: 20px; font-weight: 600; }
+button:hover { background: #333; }
+button.secondary { background: white; color: #1c1c22; border: 1px solid #ddd; }
+.slide-card { background: white; border-radius: 6px; padding: 16px 20px; margin-bottom: 12px; border-left: 4px solid #c2410c; }
+.slide-card.warning { border-left-color: #e07a5f; }
+.slide-num { color: #999; font-size: 0.85em; }
+.slide-type { display: inline-block; background: #e8e8e8; padding: 2px 8px; border-radius: 3px; font-size: 0.8em; font-family: ui-monospace, monospace; margin-left: 6px; }
+.slide-h1 { font-size: 1.1em; font-weight: 600; margin: 6px 0; }
+.slide-stats { font-size: 0.85em; color: #666; }
+.back-link { color: #666; text-decoration: none; font-size: 0.9em; }
+.back-link:hover { color: #1c1c22; }
