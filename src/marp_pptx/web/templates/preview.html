@@ -64,10 +64,6 @@
 </main>
 </div>
 
-<script>
-const range = document.getElementById('fs-range');
-const val = document.getElementById('fs-val');
-range.addEventListener('input', () => { val.textContent = parseFloat(range.value).toFixed(2); });
-</script>
+<script src="{{ url_for('static', filename='js/preview.js') }}"></script>
 </body>
 </html>

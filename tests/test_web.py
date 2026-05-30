@@ -73,6 +73,16 @@ def test_external_css_served(client):
     assert b"{" in css.data  # looks like CSS
 
 
+def test_external_js_served(client):
+    # editor links its script rather than inlining it, and the file serves
+    body = client.get("/editor").data
+    assert b"js/editor.js" in body
+    assert b"<script>" not in body  # no inline script block remains
+    js = client.get("/static/js/editor.js")
+    assert js.status_code == 200
+    assert b"function" in js.data
+
+
 def test_preview_breakdown(client):
     md = (
         "---\nmarp: true\n---\n\n"
