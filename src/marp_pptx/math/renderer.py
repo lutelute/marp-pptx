@@ -5,12 +5,65 @@ Replaces the Node.js KaTeX+Playwright dependency entirely.
 from __future__ import annotations
 
 import hashlib
-import io
 import tempfile
 from pathlib import Path
 
 _CACHE_DIR = Path(tempfile.gettempdir()) / "marp_math_png"
 _CACHE_DIR.mkdir(exist_ok=True)
+
+
+def _matching_brace(s: str, open_idx: int) -> int:
+    """Index of the '}' matching the '{' at ``open_idx`` (handles nesting), or -1."""
+    depth = 0
+    for i in range(open_idx, len(s)):
+        if s[i] == "{":
+            depth += 1
+        elif s[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return i
+    return -1
+
+
+def _strip_colorbox(tex: str) -> str:
+    r"""``\colorbox{c}{X}`` -> ``X`` (drop the highlight box; mathtext has none)."""
+    while True:
+        i = tex.find("\\colorbox")
+        if i < 0:
+            return tex
+        b1 = tex.find("{", i)
+        e1 = _matching_brace(tex, b1) if b1 >= 0 else -1
+        b2 = tex.find("{", e1 + 1) if e1 >= 0 else -1
+        e2 = _matching_brace(tex, b2) if b2 >= 0 else -1
+        if e2 < 0:
+            return tex  # malformed — leave as-is rather than loop forever
+        content = tex[b2 + 1:e2].strip().strip("$")
+        tex = tex[:i] + content + tex[e2 + 1:]
+
+
+def _strip_brace_annotation(tex: str, cmd: str) -> str:
+    r"""``\underbrace{X}_{Y}`` / ``\overbrace{X}^{Y}`` -> ``X``.
+
+    mathtext supports neither macro, and the annotation Y is often CJK ``\text``
+    which mathtext can't render either — so collapse to the base term X.
+    """
+    token = "\\" + cmd
+    while True:
+        i = tex.find(token)
+        if i < 0:
+            return tex
+        b1 = tex.find("{", i)
+        e1 = _matching_brace(tex, b1) if b1 >= 0 else -1
+        if e1 < 0:
+            return tex
+        base = tex[b1 + 1:e1]
+        j = e1 + 1
+        # optionally consume a trailing _{...} or ^{...} annotation
+        if j < len(tex) and tex[j] in "_^" and j + 1 < len(tex) and tex[j + 1] == "{":
+            ann_end = _matching_brace(tex, j + 1)
+            if ann_end >= 0:
+                j = ann_end + 1
+        tex = tex[:i] + base + tex[j:]
 
 
 def _sanitize_for_mathtext(tex: str) -> str:
@@ -19,6 +72,9 @@ def _sanitize_for_mathtext(tex: str) -> str:
     mathtext is a subset of LaTeX: no \\tfrac, \\bigl, \\operatorname, etc.
     This keeps the common academic equations renderable without a TeX install."""
     import re as _re
+    tex = _strip_colorbox(tex)
+    tex = _strip_brace_annotation(tex, "underbrace")
+    tex = _strip_brace_annotation(tex, "overbrace")
     repl = [
         (r"\\tfrac", r"\\frac"),
         (r"\\dfrac", r"\\frac"),
@@ -62,7 +118,6 @@ def render_latex_png(
         import matplotlib
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
-        from matplotlib import mathtext
 
         # Sanitize unsupported macros, then wrap in math delimiters.
         # (mathtext has no \displaystyle; \sum already renders with limits.)

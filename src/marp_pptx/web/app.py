@@ -2,50 +2,18 @@
 from __future__ import annotations
 
 import hashlib
-import shutil
-import subprocess
 import tempfile
 import uuid
 from pathlib import Path
 
 from flask import Flask, request, send_file, render_template, jsonify
 
+from marp_pptx.render import pptx_to_pngs
+
 
 # Cache for rendered slide thumbnails (keyed by MD content hash + settings)
 _PREVIEW_CACHE_DIR = Path(tempfile.gettempdir()) / "marp_pptx_previews"
 _PREVIEW_CACHE_DIR.mkdir(exist_ok=True)
-
-_SOFFICE = shutil.which("soffice") or shutil.which("libreoffice")
-_PDFTOPPM = shutil.which("pdftoppm")
-
-
-def _render_pptx_to_pngs(pptx_path: Path, out_dir: Path, dpi: int = 100) -> list[Path]:
-    """Convert a PPTX file to per-slide PNG thumbnails using soffice + pdftoppm.
-
-    Returns the sorted list of PNG paths. Returns [] if tools unavailable
-    or conversion fails.
-    """
-    if _SOFFICE is None or _PDFTOPPM is None:
-        return []
-    out_dir.mkdir(parents=True, exist_ok=True)
-    try:
-        # Step 1: PPTX → PDF via LibreOffice
-        subprocess.run(
-            [_SOFFICE, "--headless", "--convert-to", "pdf",
-             "--outdir", str(out_dir), str(pptx_path)],
-            check=True, capture_output=True, timeout=60,
-        )
-        pdf = out_dir / (pptx_path.stem + ".pdf")
-        if not pdf.exists():
-            return []
-        # Step 2: PDF → PNG per page via pdftoppm
-        subprocess.run(
-            [_PDFTOPPM, "-png", "-r", str(dpi), str(pdf), str(out_dir / "slide")],
-            check=True, capture_output=True, timeout=60,
-        )
-        return sorted(out_dir.glob("slide-*.png"))
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
-        return []
 
 
 # Session-based storage of uploaded MD files
@@ -244,7 +212,7 @@ theme: academic
         builder.save(str(pptx_path))
 
         # Render to PNGs
-        pngs = _render_pptx_to_pngs(pptx_path, out_dir, dpi=90)
+        pngs = pptx_to_pngs(pptx_path, out_dir, dpi=90)
         if not pngs:
             return jsonify({"error": "LibreOffice not available or render failed", "slides": []}), 500
         return jsonify({"slides": [f"/editor/preview-img/{key}/{p.name}" for p in pngs]})
