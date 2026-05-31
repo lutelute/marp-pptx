@@ -21,6 +21,22 @@ description: "marp-pptx で「編集可能な PowerPoint(.pptx)」を作るた�
 > 速く始めるなら **プリセット**から: `marp-pptx serve` の Web UI 右「プリセットから開始」、
 > または `src/marp_pptx/data/presets/*.md`（academic-talk / product / lecture / minimal）を雛形に。
 
+## 論文・リポジトリからデッキを作る（グラウンディング必須）
+
+「この論文/リポを渡すのでスライドにして」と言われたら、**記憶で書かず、必ずソースから起こす**。
+MCP 接続時（`marp-pptx[mcp]`）は以下のツールを使う:
+
+1. **`read_paper(pdf_or_arxiv_url)`** — 論文を構造化抽出（title / abstract / sections / figures / **numbers**）。
+   - 各スライドは抽出された `sections` の文章から書く。数字（BLEU・精度・速度など）は**必ず `numbers` の値を使い、自分で発明しない**。
+   - 図は `figures[].path`（抽出済みPNG）を `![w:760](path)` で貼る。
+2. **`read_repo(path)`** — リポを要約（readme / tree / languages / key_files）。「何をするコードか」はここから書く。
+3. **下書き** — 抽出内容を `title → agenda → rq → before-after/method → equation → kpi/result → takeaway → references → end` に割り付け（型は下表）。
+4. **`check_deck_against_source(markdown, paper_path=...)`** — ★**出す前に必ず実行**。`unsupported` に出た数値は**ソースに無い＝ハルシネ**。論文を見直して直すか、その数値を落とす。`score` が 100 になるまで詰める。
+5. **`build_pptx(markdown, ...)`** → **`preview_png(markdown)`** で各スライドを画像確認 → レイアウト崩れ・溢れを直す。
+
+> MCP 無し（CLI のみ）の場合: 論文本文を自分で読み、`marp-pptx convert` で生成。**数値はソース文中に実在するか必ず照合**してから載せる（同じ規律）。
+> 図抽出・本文抽出は `pip install "marp-pptx[ingest]"`（PyMuPDF）が必要。
+
 ## 基本ルール（必須）
 
 ```markdown

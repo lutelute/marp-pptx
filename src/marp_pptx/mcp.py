@@ -205,6 +205,61 @@ def preview_png(markdown: str, palette: str = "", max_slides: int = 12) -> list[
         return [Image(data=p.read_bytes(), format="png") for p in pngs[:max_slides]]
 
 
+@mcp.tool()
+def read_paper(path: str, extract_figures: bool = True) -> dict:
+    """Ingest a paper PDF (local path or arXiv URL) into structured material to
+    draft a deck FROM (not from memory).
+
+    Returns {title, abstract, sections[{heading,text}], figures[{caption,path}],
+    numbers[{value,context}], page_count}. Draft each slide from these sections,
+    feature the extracted `numbers` as KPIs (never invent values), and reference
+    extracted figure `path`s with `![w:..](path)`. Then ground the draft with
+    check_deck_against_source(). full_text is omitted here to keep the response
+    small — pass paper_path to check_deck_against_source for grounding.
+    """
+    from marp_pptx.ingest import read_paper as _rp
+
+    r = _rp(path, extract_figures=extract_figures)
+    r.pop("full_text", None)  # large; grounding re-reads from paper_path
+    # trim section bodies so the response stays manageable
+    for s in r["sections"]:
+        s["text"] = s["text"][:2500]
+    return r
+
+
+@mcp.tool()
+def read_repo(path: str) -> dict:
+    """Summarize a local code repository for slide drafting.
+
+    Returns {name, readme, tree, languages, key_files, file_count, summary} so
+    an agent can describe what the project is/does without inventing it.
+    """
+    from marp_pptx.ingest import read_repo as _rr
+
+    return _rr(path)
+
+
+@mcp.tool()
+def check_deck_against_source(markdown: str, paper_path: str = "", source_text: str = "") -> dict:
+    """Ground a drafted deck: flag every result-number that does NOT appear in
+    the source paper.
+
+    Provide the paper via `paper_path` (a local PDF path; re-read server-side) or
+    inline `source_text`. Returns {score, supported[], unsupported[{value,slide,
+    context}]}. Treat each `unsupported` number as a likely hallucination — fix
+    it against the paper before finalizing. Always run this before build_pptx.
+    """
+    _check_markdown(markdown)
+    src = source_text
+    if paper_path:
+        from marp_pptx.ingest import read_paper as _rp
+        src = _rp(paper_path, extract_figures=False)["full_text"]
+    if not src:
+        raise RuntimeError("provide paper_path or source_text")
+    from marp_pptx.ingest import check_fidelity
+    return check_fidelity(markdown, src)
+
+
 def main() -> None:
     mcp.run()
 
