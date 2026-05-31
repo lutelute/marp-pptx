@@ -36,7 +36,7 @@ def test_loop_repairs_hallucinated_number(paper_pdf, tmp_path):
                     '<div><span class="kpi-value">99.9%</span><span class="kpi-label">acc</span></div>'
                     '<div><span class="kpi-value">28.4</span><span class="kpi-label">BLEU</span></div>'
                     "</div>\n```")
-        if "UNSUPPORTED" in prompt:  # repair — drop the unsupported number
+        if "HALLUCINATED" in prompt:  # repair — drop the unsupported number
             calls["fix"] += 1
             return ("---\nmarp: true\n---\n\n<!-- _class: kpi -->\n# Results\n"
                     '<div class="kpi-container">'
@@ -46,7 +46,8 @@ def test_loop_repairs_hallucinated_number(paper_pdf, tmp_path):
         return "OK"
 
     out = tmp_path / "deck.pptx"
-    res = build_deck_from_paper(paper_pdf, out=str(out), llm=stub_llm, n_slides=3)
+    res = build_deck_from_paper(paper_pdf, out=str(out), llm=stub_llm, n_slides=3,
+                                visual_polish=False)
 
     assert calls["draft"] == 1
     assert calls["fix"] == 1          # the loop repaired exactly once
@@ -56,3 +57,19 @@ def test_loop_repairs_hallucinated_number(paper_pdf, tmp_path):
     assert "99.9%" not in res["markdown"]     # hallucination removed
     assert "28.4" in res["markdown"]          # grounded number kept
     assert out.is_file() and res["slide_count"] >= 1
+
+
+def test_visual_polish_integration(paper_pdf, tmp_path):
+    from marp_pptx.render import tools_available
+    if not tools_available():
+        pytest.skip("LibreOffice/pdftoppm not installed")
+
+    def stub_llm(prompt: str) -> str:
+        deck = ("---\nmarp: true\n---\n\n<!-- _class: title -->\n"
+                "# Grounded Test Paper\n## from a tiny PDF\nme / 2026\n")
+        return deck if ("Write a" in prompt or "LAYOUT" in prompt) else "OK"
+
+    res = build_deck_from_paper(paper_pdf, out=str(tmp_path / "d.pptx"), llm=stub_llm,
+                                n_slides=2, semantic_review=False, visual_polish=True)
+    assert isinstance(res["visual"], list)   # deterministic visual lint ran
+    assert (tmp_path / "d.pptx").is_file()

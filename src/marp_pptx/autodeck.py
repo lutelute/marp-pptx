@@ -90,13 +90,19 @@ SECTIONS:
 Output ONLY the Marp markdown (no commentary)."""
 
 
-def _fix_prompt(markdown: str, unsupported: list[dict]) -> str:
-    items = "\n".join(f"- slide {u['slide']}: value '{u['value']}' ({u['context']})"
-                      for u in unsupported)
-    return f"""The deck below contains numbers that do NOT appear in the source paper — they are likely hallucinations. Replace each with the correct value FROM THE PAPER, or remove the claim if no source value exists. Do not change anything else.
+def _fix_prompt(markdown: str, fidelity: dict) -> str:
+    uns = "\n".join(f"- slide {u['slide']}: '{u['value']}' NOT in paper ({u['context']})"
+                    for u in fidelity["unsupported"])
+    mis = "\n".join(f"- slide {m['slide']}: '{m['value']}' labelled '{m['label']}' but the"
+                    f" paper does not pair that value with that metric ({m['context']})"
+                    for m in fidelity.get("mislabeled", []))
+    return f"""The deck below has quantitative claims that don't trace back to the source paper. Fix EACH against the paper (use the correct value/metric, or drop the claim if no source value exists). Change nothing else.
 
-UNSUPPORTED NUMBERS:
-{items}
+HALLUCINATED NUMBERS (not in the paper):
+{uns or '(none)'}
+
+MISLABELLED NUMBERS (value present but wrong metric/pairing):
+{mis or '(none)'}
 
 DECK:
 {markdown}
@@ -117,6 +123,20 @@ DECK:
 Reply with a short bullet list of unsupported claims, or "OK"."""
 
 
+def _visual_fix_prompt(markdown: str, visual: list[dict]) -> str:
+    items = "\n".join(f"- slide {v['slide']} ({v['class']}): {'; '.join(v['warnings'])}"
+                      for v in visual)
+    return f"""A render of this deck flagged these LAYOUT problems. Revise the markdown to fix them — for SPARSE slides add substance or merge with a neighbour or pick a more fitting type; for OVERFLOW split or trim; for SKEW rebalance. Keep the content faithful and the type HTML valid. Change only what's needed.
+
+LAYOUT WARNINGS:
+{items}
+
+DECK:
+{markdown}
+
+Output ONLY the revised Marp markdown."""
+
+
 def build_deck_from_paper(
     paper_path: str,
     repo_path: str | None = None,
@@ -127,12 +147,16 @@ def build_deck_from_paper(
     n_slides: int = 10,
     max_rounds: int = 3,
     semantic_review: bool = True,
+    visual_polish: bool = True,
     llm=None,
     model: str = _DEFAULT_MODEL,
 ) -> dict:
     """Ingest a paper (+ repo), draft a grounded deck, auto-repair, and build it.
 
-    Returns {output_path, slide_count, markdown, fidelity, rounds, review}.
+    Content grounding (numeric + semantic) and — when LibreOffice is present —
+    a deterministic visual pass (overflow / sparse / skew) drive automatic
+    LLM repairs. Returns {output_path, slide_count, markdown, fidelity, rounds,
+    review, visual, lint_warnings}.
     """
     from marp_pptx.mcp import build_pptx  # reuse the themed build
 
@@ -144,10 +168,13 @@ def build_deck_from_paper(
 
     markdown = _strip_fences(call(skill + "\n\n" + _draft_prompt(paper, repo, n_slides)))
 
+    def _issues(f: dict) -> list:
+        return f["unsupported"] + f.get("mislabeled", [])
+
     rounds = 0
     fidelity = check_fidelity(markdown, source)
-    while fidelity["unsupported"] and rounds < max_rounds:
-        markdown = _strip_fences(call(_fix_prompt(markdown, fidelity["unsupported"])))
+    while _issues(fidelity) and rounds < max_rounds:
+        markdown = _strip_fences(call(_fix_prompt(markdown, fidelity)))
         fidelity = check_fidelity(markdown, source)
         rounds += 1
 
@@ -162,6 +189,27 @@ def build_deck_from_paper(
 
     out = out or str(Path(paper_path).with_suffix("").name + "_deck.pptx")
     res = build_pptx(markdown, output_path=out, palette=palette, math=math)
+
+    # Visual polish: deterministic lint is the "eyes"; the text LLM fixes the
+    # markdown from its warnings (no vision model needed). Skips if no soffice.
+    visual: list = []
+    if visual_polish:
+        try:
+            from marp_pptx.render import tools_available
+            from marp_pptx.visuallint import lint_deck
+            if tools_available():
+                for _ in range(2):
+                    visual = lint_deck(markdown, palette=palette)
+                    if not visual or rounds >= max_rounds:
+                        break
+                    markdown = _strip_fences(call(_visual_fix_prompt(markdown, visual)))
+                    res = build_pptx(markdown, output_path=out, palette=palette, math=math)
+                    fidelity = check_fidelity(markdown, source)
+                    rounds += 1
+                visual = lint_deck(markdown, palette=palette)
+        except Exception:  # noqa: BLE001 - polish is best-effort, never fatal
+            visual = []
+
     return {
         "output_path": res["output_path"],
         "slide_count": res["slide_count"],
@@ -169,5 +217,6 @@ def build_deck_from_paper(
         "fidelity": fidelity,
         "rounds": rounds,
         "review": review,
+        "visual": visual,
         "lint_warnings": res["lint_warnings"],
     }

@@ -340,5 +340,11 @@ def from_paper(paper, repo, output, palette, math, slides, model, no_review):
     if res["fidelity"]["unsupported"]:
         click.echo("  ⚠ still-unsupported numbers (verify against the paper): "
                    + ", ".join(u["value"] for u in res["fidelity"]["unsupported"]), err=True)
+    if res["fidelity"].get("mislabeled"):
+        click.echo("  ⚠ possibly-mislabelled numbers: "
+                   + ", ".join(f"{m['value']}({m['label']})" for m in res["fidelity"]["mislabeled"]), err=True)
+    if res.get("visual"):
+        click.echo("  ⚠ layout warnings remain on slides: "
+                   + ", ".join(str(v["slide"]) for v in res["visual"]), err=True)
     if res["review"] and res["review"].upper() != "OK":
         click.echo("  review notes:\n" + res["review"], err=True)
