@@ -13,9 +13,15 @@ _CACHE_DIR.mkdir(exist_ok=True)
 
 
 def _matching_brace(s: str, open_idx: int) -> int:
-    """Index of the '}' matching the '{' at ``open_idx`` (handles nesting), or -1."""
+    """Index of the '}' matching the '{' at ``open_idx`` (handles nesting), or -1.
+
+    Braces escaped as literal LaTeX (``\\{`` / ``\\}``) are skipped so they don't
+    throw off the depth count.
+    """
     depth = 0
     for i in range(open_idx, len(s)):
+        if i > 0 and s[i - 1] == "\\":  # escaped literal brace, not a delimiter
+            continue
         if s[i] == "{":
             depth += 1
         elif s[i] == "}":

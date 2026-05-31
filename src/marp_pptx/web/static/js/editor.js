@@ -31,8 +31,13 @@ async function loadTypeMeta() {
     } catch(e) { console.error('型一覧の取得に失敗', e); }
 }
 
-// Helpers for building MD
+// Helpers for building MD.
+// esc(): pass-through for Markdown emitted into the editor <textarea> value
+// (these slide types intentionally produce literal HTML, so it must NOT be
+// entity-encoded). escHtml(): real HTML-entity escaping for any value placed
+// into innerHTML / element content, to avoid DOM injection on re-render.
 function esc(s) { return String(s || ''); }
+function escHtml(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 function joinLines(arr) { return arr.filter(Boolean).join('\n'); }
 
 // Schema: { fields: [...], toMd: (data) => string }
@@ -1201,7 +1206,7 @@ function buildFieldHtml(f, value, path) {
     } else if (f.type === 'textarea') {
         return `<div class="form-row">
             <label>${f.label}</label>
-            <textarea oninput="setField('${path}', this.value)">${esc(value||'')}</textarea>
+            <textarea oninput="setField('${path}', this.value)">${escHtml(value||'')}</textarea>
             ${f.hint ? `<div class="hint">${f.hint}</div>` : ''}
         </div>`;
     } else if (f.type === 'checkbox') {
@@ -1363,9 +1368,9 @@ async function loadPresets() {
     try {
         const presets = await (await fetch('/api/presets')).json();
         host.innerHTML = presets.map(p =>
-            `<button class="preset-btn" onclick="loadSample('${p.id}')" title="${esc(p.description)}">`
-            + `<span class="preset-title">${esc(p.icon || '')} ${esc(p.title)}</span>`
-            + `<span class="preset-desc">${esc(p.description)}</span></button>`
+            `<button class="preset-btn" onclick="loadSample('${escAttr(p.id)}')" title="${escAttr(p.description)}">`
+            + `<span class="preset-title">${escHtml(p.icon || '')} ${escHtml(p.title)}</span>`
+            + `<span class="preset-desc">${escHtml(p.description)}</span></button>`
         ).join('');
     } catch(e) {
         host.innerHTML = '<p class="muted">プリセットの取得に失敗しました</p>';

@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import hashlib
+import shutil
 import tempfile
 import uuid
+from io import BytesIO
 from pathlib import Path
 
 from flask import Flask, request, send_file, render_template, jsonify
@@ -16,8 +18,9 @@ _PREVIEW_CACHE_DIR = Path(tempfile.gettempdir()) / "marp_pptx_previews"
 _PREVIEW_CACHE_DIR.mkdir(exist_ok=True)
 
 
-# Session-based storage of uploaded MD files
+# Session-based storage of uploaded MD files (bounded; oldest evicted)
 _SESSIONS: dict[str, Path] = {}
+_MAX_SESSIONS = 50
 
 
 def create_app() -> Flask:
@@ -155,6 +158,8 @@ def create_app() -> Flask:
             report = pptx_to_md_with_report(pptx_path, extract_images_to=assets_dir)
         except Exception as e:
             return jsonify({"error": f"pptx parse failed: {e}"}), 500
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
         return jsonify(report)
 
     @app.route("/editor/upload-image", methods=["POST"])
@@ -221,14 +226,19 @@ def create_app() -> Flask:
         output_name = request.form.get("output_name") or "slides.pptx"
 
         tmpdir = Path(tempfile.mkdtemp(prefix="marp_editor_"))
-        md_path = tmpdir / "slides.md"
-        md_path.write_text(md_text, encoding="utf-8")
-        return _do_convert(
-            md_path=md_path,
-            palette_name=palette_name,
-            font_scale=font_scale,
-            output_name=output_name,
-        )
+        try:
+            md_path = tmpdir / "slides.md"
+            md_path.write_text(md_text, encoding="utf-8")
+            # _do_convert reads the result into memory, so the temp dir is safe
+            # to remove once it returns.
+            return _do_convert(
+                md_path=md_path,
+                palette_name=palette_name,
+                font_scale=font_scale,
+                output_name=output_name,
+            )
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
 
     @app.route("/types-page")
     def types_page():
@@ -250,23 +260,27 @@ def create_app() -> Flask:
     @app.route("/preview", methods=["POST"])
     def preview():
         from marp_pptx.parser import parse_marp
-        from marp_pptx.types import get_type_info
+        from marp_pptx.builder import PptxBuilder
 
         f = request.files.get("file")
         if not f:
             return "No file uploaded", 400
 
-        # Save to session
+        # Save to session (kept so /generate can reuse the uploaded MD)
         session_id = uuid.uuid4().hex
         tmpdir = Path(tempfile.mkdtemp(prefix="marp_preview_"))
         md_path = tmpdir / (f.filename or "slides.md")
         f.save(str(md_path))
         _SESSIONS[session_id] = md_path
+        # Bound session storage: evict oldest entries and their temp dirs.
+        while len(_SESSIONS) > _MAX_SESSIONS:
+            old_id, old_path = next(iter(_SESSIONS.items()))
+            _SESSIONS.pop(old_id, None)
+            shutil.rmtree(old_path.parent, ignore_errors=True)
 
         slides_data = parse_marp(str(md_path))
         slides = []
         for sd in slides_data:
-            info = get_type_info(sd.slide_class) if sd.slide_class else None
             type_display = sd.slide_class or "default"
             char_count = len(sd.raw)
             bullet_count = sum(
@@ -276,10 +290,11 @@ def create_app() -> Flask:
             table_rows = len(sd.table_rows)
             has_image = bool(sd.image_path) or bool(sd.annotation_figure) or bool(sd.result_figure) or bool(sd.gallery_items)
             has_math = bool(sd.eq_main) or bool(sd.eq_system) or "$" in sd.raw
+            # Warn only for classes the builder genuinely can't render — not for
+            # renderable variants (cols-2-wide-l/r, dark, big-statement, …) that
+            # are valid builder classes without a TYPE_REGISTRY catalog entry.
             warning = None
-            if sd.slide_class and not info and sd.slide_class not in (
-                "cols-2-wide-l", "cols-2-wide-r",
-            ):
+            if sd.slide_class and sd.slide_class not in PptxBuilder.BUILDERS:
                 warning = f"未知の型: {sd.slide_class}"
             slides.append({
                 "type_display": type_display,
@@ -324,34 +339,40 @@ def create_app() -> Flask:
         from marp_pptx.parser import parse_marp
         from marp_pptx.builder import PptxBuilder
 
+        own_tmp = None
         if md_path is None:
             f = request.files.get("file")
             if not f:
                 return "No file uploaded", 400
-            tmpdir = Path(tempfile.mkdtemp())
-            md_path = tmpdir / (f.filename or "slides.md")
+            own_tmp = Path(tempfile.mkdtemp())
+            md_path = own_tmp / (f.filename or "slides.md")
             f.save(str(md_path))
 
-        # Expose uploaded images to the builder's base_path
-        _link_shared_assets_to(md_path.parent)
+        try:
+            # Expose uploaded images to the builder's base_path
+            _link_shared_assets_to(md_path.parent)
 
-        tc = ThemeConfig.from_css(get_default_theme_path())
-        tc.font_scale = max(0.5, min(2.0, font_scale))
-        if palette_name:
-            pp = get_palette_path(palette_name)
-            if pp:
-                tc.apply_palette(pp)
+            tc = ThemeConfig.from_css(get_default_theme_path())
+            tc.font_scale = max(0.5, min(2.0, font_scale))
+            if palette_name:
+                pp = get_palette_path(palette_name)
+                if pp:
+                    tc.apply_palette(pp)
 
-        slides = parse_marp(str(md_path))
-        builder = PptxBuilder(base_path=md_path.parent, theme=tc)
-        builder.build_all(slides)
+            slides = parse_marp(str(md_path))
+            builder = PptxBuilder(base_path=md_path.parent, theme=tc)
+            builder.build_all(slides)
 
-        out_name = output_name or (md_path.stem + "_editable.pptx")
-        out_path = md_path.parent / out_name
-        builder.save(str(out_path))
+            out_name = output_name or (md_path.stem + "_editable.pptx")
+            out_path = md_path.parent / out_name
+            builder.save(str(out_path))
+            data = out_path.read_bytes()  # read into memory so the temp dir can go
+        finally:
+            if own_tmp is not None:
+                shutil.rmtree(own_tmp, ignore_errors=True)
 
         return send_file(
-            str(out_path),
+            BytesIO(data),
             as_attachment=True,
             download_name=out_name,
             mimetype="application/vnd.openxmlformats-officedocument.presentationml.presentation",

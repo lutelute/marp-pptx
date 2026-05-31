@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "marp-pptx"
-version = "0.2.0"
+version = "0.3.0"
 description = "Convert Marp markdown to editable PowerPoint with 50+ semantic slide types"
 readme = "README.md"
 license = "MIT"
@@ -20,7 +20,9 @@ dependencies = [
 
 [project.optional-dependencies]
 web = ["flask>=3.0", "flask-cors>=4.0"]
-mcp = ["mcp>=1.2"]
+ingest = ["pymupdf>=1.23"]
+mcp = ["mcp>=1.2", "pymupdf>=1.23"]
+ai = ["anthropic>=0.40", "pymupdf>=1.23"]
 dev = ["pytest", "pytest-cov", "ruff"]
 
 [project.scripts]

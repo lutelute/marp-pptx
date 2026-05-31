@@ -1,0 +1,173 @@
+"""Turnkey: a paper (+ repo) -> a grounded, editable .pptx in one call.
+
+`build_deck_from_paper` is the single entry point the toolkit was missing:
+ingest the source, have an LLM draft the deck *grounded* in the extracted text,
+auto-repair any number that doesn't trace back to the paper (and, optionally,
+any claim a reviewer LLM finds unsupported), then build the editable PPTX.
+
+The LLM is injectable (`llm=` is a ``str -> str`` callable) so the orchestration
+is testable without a network. The default backend uses the Anthropic API and
+needs ``pip install "marp-pptx[ai]"`` + ``ANTHROPIC_API_KEY``.
+"""
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+from marp_pptx.ingest import read_paper, read_repo, check_fidelity
+
+_DEFAULT_MODEL = "claude-sonnet-4-6"
+_SKILL_DIR = Path(__file__).parent.parent.parent / "skills" / "marp-pptx"
+
+
+def _skill_context() -> str:
+    """The authoring guide + per-type HTML skeletons, used as the LLM's rules."""
+    parts = []
+    for rel in ("SKILL.md", "references/type-skeletons.md"):
+        p = _SKILL_DIR / rel
+        if p.is_file():
+            parts.append(p.read_text(encoding="utf-8"))
+    if not parts:  # installed without the skill tree → fall back to the registry
+        from marp_pptx.types import TYPE_REGISTRY
+        parts.append("Slide types:\n" + "\n".join(
+            f"- {t.name}: {t.meaning} ({t.use_when})" for t in TYPE_REGISTRY))
+    return "\n\n".join(parts)
+
+
+def _anthropic_llm(model: str = _DEFAULT_MODEL):
+    try:
+        from anthropic import Anthropic
+    except ImportError as e:  # pragma: no cover - env dependent
+        raise RuntimeError('default LLM needs: pip install "marp-pptx[ai]" + ANTHROPIC_API_KEY') from e
+    client = Anthropic()
+
+    def _call(prompt: str) -> str:  # pragma: no cover - network
+        msg = client.messages.create(
+            model=model, max_tokens=8000,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
+
+    return _call
+
+
+def _strip_fences(text: str) -> str:
+    """Pull the Marp markdown out of an LLM reply (handle ```markdown fences)."""
+    m = re.search(r"```(?:markdown|md)?\s*\n(.*?)```", text, re.S)
+    body = m.group(1) if m else text
+    body = body.strip()
+    # ensure a frontmatter marker exists
+    if not body.lstrip().startswith("---"):
+        body = "---\nmarp: true\n---\n\n" + body
+    return body
+
+
+def _draft_prompt(paper: dict, repo: dict | None, n_slides: int) -> str:
+    nums = ", ".join(n["value"] for n in paper["numbers"][:40])
+    secs = "\n\n".join(
+        f"## {s['heading']}\n{s['text'][:1200]}" for s in paper["sections"][:12])
+    figs = "\n".join(
+        f"- {f['caption'][:80] or 'figure'} -> {f['path']}" for f in paper["figures"][:6])
+    repo_block = ""
+    if repo:
+        repo_block = (
+            f"\n\nCODE REPOSITORY (describe what it does from THIS, do not invent):\n"
+            f"name: {repo['name']}\nlanguages: {repo['languages']}\n"
+            f"key files: {repo['key_files']}\nREADME (excerpt):\n{repo['readme'][:1500]}")
+    return f"""Write a {n_slides}-slide conference-talk deck in **Marp markdown for marp-pptx**, following the authoring guide below EXACTLY (frontmatter `marp: true`, each slide `<!-- _class: type -->` + the type's exact HTML structure).
+
+CRITICAL GROUNDING RULE: use ONLY facts, claims, and numbers from the SOURCE below. Never invent a number. Feature the listed KEY NUMBERS as KPIs where appropriate. If you reference a figure, use its extracted path.
+
+=== SOURCE PAPER ===
+TITLE: {paper['title']}
+ABSTRACT: {paper['abstract'][:1200]}
+KEY NUMBERS (use these exact values only): {nums}
+FIGURES (path you may embed with ![w:760](path)):
+{figs or '(none extracted)'}
+SECTIONS:
+{secs}{repo_block}
+
+Output ONLY the Marp markdown (no commentary)."""
+
+
+def _fix_prompt(markdown: str, unsupported: list[dict]) -> str:
+    items = "\n".join(f"- slide {u['slide']}: value '{u['value']}' ({u['context']})"
+                      for u in unsupported)
+    return f"""The deck below contains numbers that do NOT appear in the source paper — they are likely hallucinations. Replace each with the correct value FROM THE PAPER, or remove the claim if no source value exists. Do not change anything else.
+
+UNSUPPORTED NUMBERS:
+{items}
+
+DECK:
+{markdown}
+
+Output ONLY the corrected Marp markdown."""
+
+
+def _review_prompt(markdown: str, paper: dict) -> str:
+    secs = "\n\n".join(f"## {s['heading']}\n{s['text'][:900]}" for s in paper["sections"][:12])
+    return f"""Review this deck for FAITHFULNESS to the source paper. List any slide whose claim/method/result is NOT supported by the source sections (misstatements, wrong attributions, invented contributions). If everything is supported, reply exactly "OK".
+
+SOURCE SECTIONS:
+{secs}
+
+DECK:
+{markdown}
+
+Reply with a short bullet list of unsupported claims, or "OK"."""
+
+
+def build_deck_from_paper(
+    paper_path: str,
+    repo_path: str | None = None,
+    *,
+    palette: str = "claude",
+    math: str = "omml",
+    out: str | None = None,
+    n_slides: int = 10,
+    max_rounds: int = 3,
+    semantic_review: bool = True,
+    llm=None,
+    model: str = _DEFAULT_MODEL,
+) -> dict:
+    """Ingest a paper (+ repo), draft a grounded deck, auto-repair, and build it.
+
+    Returns {output_path, slide_count, markdown, fidelity, rounds, review}.
+    """
+    from marp_pptx.mcp import build_pptx  # reuse the themed build
+
+    call = llm or _anthropic_llm(model)
+    paper = read_paper(paper_path, extract_figures=True)
+    repo = read_repo(repo_path) if repo_path else None
+    source = paper["full_text"]
+    skill = _skill_context()
+
+    markdown = _strip_fences(call(skill + "\n\n" + _draft_prompt(paper, repo, n_slides)))
+
+    rounds = 0
+    fidelity = check_fidelity(markdown, source)
+    while fidelity["unsupported"] and rounds < max_rounds:
+        markdown = _strip_fences(call(_fix_prompt(markdown, fidelity["unsupported"])))
+        fidelity = check_fidelity(markdown, source)
+        rounds += 1
+
+    review = ""
+    if semantic_review:
+        review = call(_review_prompt(markdown, paper)).strip()
+        if review and review.upper() != "OK" and rounds < max_rounds:
+            markdown = _strip_fences(call(
+                f"Fix these faithfulness issues against the paper, changing nothing else:\n{review}\n\nDECK:\n{markdown}\n\nOutput ONLY the corrected Marp markdown."))
+            fidelity = check_fidelity(markdown, source)
+            rounds += 1
+
+    out = out or str(Path(paper_path).with_suffix("").name + "_deck.pptx")
+    res = build_pptx(markdown, output_path=out, palette=palette, math=math)
+    return {
+        "output_path": res["output_path"],
+        "slide_count": res["slide_count"],
+        "markdown": markdown,
+        "fidelity": fidelity,
+        "rounds": rounds,
+        "review": review,
+        "lint_warnings": res["lint_warnings"],
+    }

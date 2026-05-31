@@ -308,3 +308,37 @@ def serve(host: str, port: int):
     app = create_app()
     click.echo(f"Starting marp-pptx web UI on http://{host}:{port}")
     app.run(host=host, port=port)
+
+
+@main.command("from-paper")
+@click.argument("paper")
+@click.option("--repo", default=None, help="Local repo path to summarize alongside the paper")
+@click.option("-o", "--output", default=None, help="Output .pptx (default: <paper>_deck.pptx)")
+@click.option("-p", "--palette", default="claude", help="Palette (default: claude)")
+@click.option("--math", type=click.Choice(["omml", "png"]), default="omml")
+@click.option("--slides", default=10, type=int, help="Target slide count")
+@click.option("--model", default="claude-sonnet-4-6", help="Anthropic model")
+@click.option("--no-review", is_flag=True, help="Skip the semantic faithfulness pass")
+def from_paper(paper, repo, output, palette, math, slides, model, no_review):
+    """Turnkey: a paper (PDF or arXiv URL) [+ repo] -> a grounded editable PPTX.
+
+    Ingests the source, drafts a deck grounded in the extracted text, auto-repairs
+    any number that doesn't trace back to the paper, then builds the PPTX.
+    Requires: pip install "marp-pptx[ai]" and ANTHROPIC_API_KEY.
+    """
+    from marp_pptx.autodeck import build_deck_from_paper
+
+    try:
+        res = build_deck_from_paper(
+            paper, repo_path=repo, palette=palette, math=math, out=output,
+            n_slides=slides, semantic_review=not no_review, model=model,
+        )
+    except RuntimeError as e:
+        raise SystemExit(str(e))
+    click.echo(f"Built {res['slide_count']} slides -> {res['output_path']}")
+    click.echo(f"  fidelity {res['fidelity']['score']}/100 (repair rounds: {res['rounds']})")
+    if res["fidelity"]["unsupported"]:
+        click.echo("  ⚠ still-unsupported numbers (verify against the paper): "
+                   + ", ".join(u["value"] for u in res["fidelity"]["unsupported"]), err=True)
+    if res["review"] and res["review"].upper() != "OK":
+        click.echo("  review notes:\n" + res["review"], err=True)

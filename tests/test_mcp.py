@@ -45,6 +45,19 @@ def test_tools_registered():
             "get_preset", "build_pptx", "preview_png"} <= names
 
 
+def test_build_pptx_rejects_oversized_markdown():
+    with pytest.raises(RuntimeError):
+        srv.build_pptx("x" * (srv._MAX_MARKDOWN + 1))
+
+
+def test_palette_name_traversal_rejected():
+    from marp_pptx.theme import get_palette_path
+    assert get_palette_path("../../etc/passwd") is None
+    assert get_palette_path("../academic") is None
+    assert get_palette_path("foo/bar") is None
+    assert get_palette_path("navy") is not None  # legit name still resolves
+
+
 @pytest.mark.skipif(not tools_available(), reason="LibreOffice/pdftoppm not installed")
 def test_preview_png_returns_images():
     imgs = srv.preview_png(srv.get_preset("minimal"), max_slides=2)

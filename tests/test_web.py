@@ -129,3 +129,21 @@ def test_preview_breakdown(client):
     # the breakdown table names each slide's type
     assert b"title" in r.data
     assert b"kpi" in r.data
+
+
+def test_sample_path_traversal_rejected(client):
+    # the '..' guard on /editor/sample/<name> and /editor/asset/<name>
+    assert client.get("/editor/sample/x..y").status_code == 400
+    assert client.get("/editor/asset/x..y").status_code == 400
+    assert client.get("/editor/sample/does-not-exist").status_code == 404
+
+
+def test_generate_does_not_leak_tempdirs(client):
+    import tempfile
+    from pathlib import Path
+    tmp = Path(tempfile.gettempdir())
+    before = set(tmp.glob("marp_editor_*"))
+    r = client.post("/editor/generate", data={"markdown": "---\nmarp: true\n---\n\n# T\n- a\n"})
+    assert r.status_code == 200
+    after = set(tmp.glob("marp_editor_*"))
+    assert after <= before, f"leaked temp dirs: {after - before}"
