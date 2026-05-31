@@ -128,6 +128,18 @@ MCP クライアント設定（例: Claude Desktop / Claude Code）:
 これで「論文＋リポを渡す → 抽出 → ソースから下書き → 数値照合 → 生成 → 画像で自己確認」のループが回る。
 PDF 取り込みは `pip install "marp-pptx[ingest]"`（PyMuPDF）。
 
+### ワンコマンド（ターンキー）
+論文を渡すだけで、ソースに基づいた編集可能デッキを 1 コマンドで:
+
+```bash
+pip install "marp-pptx[ai]"      # + export ANTHROPIC_API_KEY=...
+marp-pptx from-paper paper.pdf --repo . -o deck.pptx
+# arXiv URL も可: marp-pptx from-paper https://arxiv.org/abs/1706.03762
+```
+
+取り込み → ソース基準で LLM 下書き → **数値がソースに無ければ自動修正**（fidelity ループ）→
+意味的忠実性レビュー → ビルド。出力に `fidelity N/100` と未裏取り数値の警告が付く。
+
 ## ドキュメント
 
 - 全機能・全 52 型の詳細は [USAGE.md](USAGE.md)

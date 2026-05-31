@@ -36,6 +36,7 @@ MCP 接続時（`marp-pptx[mcp]`）は以下のツールを使う:
 
 > MCP 無し（CLI のみ）の場合: 論文本文を自分で読み、`marp-pptx convert` で生成。**数値はソース文中に実在するか必ず照合**してから載せる（同じ規律）。
 > 図抽出・本文抽出は `pip install "marp-pptx[ingest]"`（PyMuPDF）が必要。
+> 人間がエージェント無しで一発生成するなら **`marp-pptx from-paper paper.pdf --repo . -o deck.pptx`**（`marp-pptx[ai]` + `ANTHROPIC_API_KEY`）。上記の取り込み→下書き→数値自動修正→ビルドを内蔵。
 
 ## 基本ルール（必須）
 
