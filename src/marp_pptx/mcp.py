@@ -260,6 +260,18 @@ def check_deck_against_source(markdown: str, paper_path: str = "", source_text: 
     return check_fidelity(markdown, src)
 
 
+@mcp.tool()
+def visual_lint(markdown: str, palette: str = "claude") -> list:
+    """Render the deck and return deterministic LAYOUT warnings per slide
+    (overflow / very-sparse / top-or-bottom skew) — no AI. Use with preview_png:
+    this tells you WHICH slides look off; preview_png lets you SEE them. Fix the
+    flagged slides, then re-run. Requires LibreOffice + pdftoppm."""
+    _check_markdown(markdown)
+    from marp_pptx.visuallint import lint_deck
+
+    return lint_deck(markdown, palette=palette)
+
+
 def main() -> None:
     mcp.run()
 

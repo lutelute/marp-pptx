@@ -64,3 +64,17 @@ def test_check_fidelity_clean_deck_scores_100():
     source = "BLEU was 28.4 and 41.8."
     deck = "---\nmarp: true\n---\n\n# R\n<span>28.4</span>\n<span>41.8</span>\n"
     assert check_fidelity(deck, source)["score"] == 100
+
+
+def test_check_fidelity_flags_mislabeled_metric():
+    # 3.5 is a 'days' value in the source, not a BLEU score — wrong pairing
+    source = "We report 28.4 BLEU on the test set. Training took 3.5 days."
+    deck = ("---\nmarp: true\n---\n\n# R\n"
+            "<span class='kpi-value'>3.5</span><span class='kpi-label'>BLEU</span>\n")
+    r = check_fidelity(deck, source)
+    assert any(m["value"] == "3.5" and "BLEU" in m["label"] for m in r["mislabeled"])
+    assert r["score"] < 100
+    # the correctly-labelled value is not flagged
+    ok = check_fidelity(
+        "---\nmarp: true\n---\n\n# R\n<span>3.5</span><span>days</span>\n", source)
+    assert ok["mislabeled"] == []

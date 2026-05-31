@@ -282,35 +282,56 @@ _CLAIM_NUM_RE = re.compile(r"(\d+\.\d+\s?%?|\d+\s?%|\d+(?:\.\d+)?\s?[×x](?![a-z
 
 
 def check_fidelity(markdown: str, source_text: str) -> dict:
-    """Flag deck result-numbers that do NOT appear in the source text.
+    """Ground a deck against its source paper (deterministic — no AI/key).
 
-    The content-fidelity gate the renderer's lint lacks: every quantitative
-    claim (BLEU/accuracy/speedup/…) in the deck should trace back to the paper.
-    Returns {score, supported[], unsupported[{value, slide, context}]}. Any
-    unsupported number is a likely hallucination — re-check it against the paper
-    before shipping. Matches whole numeric tokens (no substring false hits);
-    bare integers and years are ignored as too noisy. Heuristic: verifies
-    numeric presence, not full semantics.
+    Two checks the renderer's lint lacks:
+    - **presence**: every result-number (BLEU/accuracy/speedup …) must appear as
+      a whole token in the source. Absent -> `unsupported` (likely hallucination).
+    - **neighborhood**: a present number whose deck label carries a distinctive
+      term (e.g. ``28.4 EN-DE BLEU``) must occur *near that term* in the source.
+      Present but never near its label -> `mislabeled` (likely a right-number /
+      wrong-metric mix-up, e.g. swapping EN-DE and EN-FR scores).
+
+    Returns {score, supported[], unsupported[], mislabeled[]}. Bare integers and
+    years are ignored as too noisy. Heuristic: checks numeric + lexical
+    proximity, not full semantics.
     """
-    # Whole numeric tokens present in the source.
     src_nums = {m.group(0) for m in re.finditer(r"\d+(?:\.\d+)?", source_text)}
+    label_re = re.compile(r"[A-Z]{2,}\d?|[A-Za-z][A-Za-z\-]{2,}")
+    stop = {"div", "span", "class", "value", "label", "kpi", "bn", "ta",
+            "main", "container", "caption", "the", "and", "for", "with"}
 
-    def _present(val: str) -> bool:
-        core = val.replace(" ", "").rstrip("%×x")
-        return core in src_nums
+    # In the source, map each metric word to the set of number-cores it labels,
+    # from "<number> <metric>" and "<metric> ... <number>" patterns.
+    src_metric_vals: dict[str, set] = {}
+    for m in re.finditer(r"(\d+(?:\.\d+)?)\s*%?\s+([A-Za-z][A-Za-z\-]{1,})", source_text):
+        src_metric_vals.setdefault(m.group(2).lower(), set()).add(m.group(1))
+    for m in re.finditer(r"([A-Za-z][A-Za-z\-]{1,})\s+(?:of|was|is|=|:)?\s*(\d+(?:\.\d+)?)", source_text):
+        src_metric_vals.setdefault(m.group(1).lower(), set()).add(m.group(2))
 
-    supported, unsupported = [], []
+    supported, unsupported, mislabeled = [], [], []
     for idx, slide in enumerate(_slides_of(markdown), 1):
         for m in _CLAIM_NUM_RE.finditer(slide):
             val = m.group(1).strip()
-            entry = {"value": val, "slide": idx}
-            if _present(val):
-                supported.append(entry)
+            core = re.sub(r"[%×x\s]+$", "", val.replace(" ", ""))
+            ctx = " ".join(slide[max(0, m.start() - 10):m.end() + 50].split())
+            labels = [t for t in label_re.findall(slide[m.end():m.end() + 60])
+                      if t.lower() not in stop][:3]
+            if core not in src_nums:
+                unsupported.append({"value": val, "slide": idx, "context": ctx})
+                continue
+            # mislabeled: a deck label is a real metric in the source, but this
+            # value is NOT one the source pairs with that metric (wrong pairing).
+            bad = next((t for t in labels
+                        if t.lower() in src_metric_vals
+                        and core not in src_metric_vals[t.lower()]), None)
+            if bad:
+                mislabeled.append({"value": val, "slide": idx, "context": ctx, "label": bad})
             else:
-                ctx = " ".join(slide[max(0, m.start() - 30):m.end() + 30].split())
-                unsupported.append({**entry, "context": ctx})
+                supported.append({"value": val, "slide": idx})
 
-    total = len(supported) + len(unsupported)
+    total = len(supported) + len(unsupported) + len(mislabeled)
     score = round(100 * len(supported) / total) if total else 100
-    return {"score": score, "supported": supported, "unsupported": unsupported}
+    return {"score": score, "supported": supported,
+            "unsupported": unsupported, "mislabeled": mislabeled}
 
