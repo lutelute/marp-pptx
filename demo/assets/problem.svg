@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 18 1200 596" font-family="Hiragino Sans, Avenir Next, sans-serif">
+  <!-- ============ upper half: one-line feeder diagram ============ -->
+  <text x="62" y="46" font-size="24" fill="#5A5852" letter-spacing="3">6.6 kV 配電フィーダ</text>
+
+  <!-- substation -->
+  <rect x="62" y="112" width="142" height="90" rx="10" fill="#FFFFFF" stroke="#141413" stroke-width="2.5"/>
+  <text x="133" y="152" font-size="26" font-weight="bold" fill="#141413" text-anchor="middle">変電所</text>
+  <text x="133" y="184" font-size="21" fill="#5A5852" text-anchor="middle">送出 6,600 V</text>
+
+  <!-- feeder line -->
+  <line x1="204" y1="157" x2="1108" y2="157" stroke="#141413" stroke-width="3"/>
+
+  <!-- nodes + drops + houses with PV -->
+  <g stroke-linejoin="round">
+    <!-- n1 -->
+    <line x1="310" y1="157" x2="310" y2="208" stroke="#5A5852" stroke-width="1.8"/>
+    <circle cx="310" cy="157" r="7" fill="#5A5852"/>
+    <rect x="286" y="234" width="48" height="36" fill="#FFFFFF" stroke="#5A5852" stroke-width="2"/>
+    <path d="M280 236 L310 208 L340 236 Z" fill="#FFFFFF" stroke="#5A5852" stroke-width="2"/>
+    <path d="M293 228 L307 215 L323 215 L309 228 Z" fill="#D97757" opacity="0.9"/>
+    <!-- n2 -->
+    <line x1="475" y1="157" x2="475" y2="208" stroke="#5A5852" stroke-width="1.8"/>
+    <circle cx="475" cy="157" r="7" fill="#5A5852"/>
+    <rect x="451" y="234" width="48" height="36" fill="#FFFFFF" stroke="#5A5852" stroke-width="2"/>
+    <path d="M445 236 L475 208 L505 236 Z" fill="#FFFFFF" stroke="#5A5852" stroke-width="2"/>
+    <path d="M458 228 L472 215 L488 215 L474 228 Z" fill="#D97757" opacity="0.9"/>
+    <!-- n3 -->
+    <line x1="640" y1="157" x2="640" y2="208" stroke="#5A5852" stroke-width="1.8"/>
+    <circle cx="640" cy="157" r="7" fill="#5A5852"/>
+    <rect x="616" y="234" width="48" height="36" fill="#FFFFFF" stroke="#5A5852" stroke-width="2"/>
+    <path d="M610 236 L640 208 L670 236 Z" fill="#FFFFFF" stroke="#5A5852" stroke-width="2"/>
+    <path d="M623 228 L637 215 L653 215 L639 228 Z" fill="#D97757" opacity="0.9"/>
+    <!-- n4 -->
+    <line x1="805" y1="157" x2="805" y2="208" stroke="#5A5852" stroke-width="1.8"/>
+    <circle cx="805" cy="157" r="7" fill="#5A5852"/>
+    <rect x="781" y="234" width="48" height="36" fill="#FFFFFF" stroke="#5A5852" stroke-width="2"/>
+    <path d="M775 236 L805 208 L835 236 Z" fill="#FFFFFF" stroke="#5A5852" stroke-width="2"/>
+    <path d="M788 228 L802 215 L818 215 L804 228 Z" fill="#D97757" opacity="0.9"/>
+    <!-- n5 : feeder end, accent -->
+    <line x1="1000" y1="157" x2="1000" y2="208" stroke="#D97757" stroke-width="2.2"/>
+    <circle cx="1000" cy="157" r="9" fill="#D97757"/>
+    <rect x="976" y="234" width="48" height="36" fill="#FBEEE8" stroke="#D97757" stroke-width="2.5"/>
+    <path d="M970 236 L1000 208 L1030 236 Z" fill="#FBEEE8" stroke="#D97757" stroke-width="2.5"/>
+    <path d="M983 228 L997 215 L1013 215 L999 228 Z" fill="#D97757"/>
+  </g>
+  <text x="1000" y="302" font-size="24" font-weight="bold" fill="#D97757" text-anchor="middle">末端ほど電圧が上がる</text>
+
+  <!-- ============ lower half: voltage profile ============ -->
+  <!-- axes -->
+  <line x1="204" y1="368" x2="204" y2="556" stroke="#5A5852" stroke-width="1.8"/>
+  <line x1="204" y1="556" x2="1108" y2="556" stroke="#5A5852" stroke-width="1.8"/>
+  <text x="172" y="468" font-size="22" fill="#5A5852" text-anchor="middle" transform="rotate(-90 172 468)">ノード電圧</text>
+  <text x="650" y="600" font-size="22" fill="#5A5852" text-anchor="middle">変電所からの距離</text>
+
+  <!-- Vmax limit -->
+  <line x1="204" y1="400" x2="1108" y2="400" stroke="#D97757" stroke-width="2.2" stroke-dasharray="9 7"/>
+  <text x="214" y="388" font-size="24" font-weight="bold" fill="#D97757">適正電圧の上限 Vmax</text>
+
+  <!-- curve: few PV -->
+  <path d="M204 538 Q650 520 1098 490" fill="none" stroke="#5A5852" stroke-width="2.5"/>
+  <text x="1112" y="497" font-size="22" fill="#5A5852">PV 少</text>
+
+  <!-- curve: many PV, touches Vmax at feeder end -->
+  <path d="M204 532 Q660 478 1094 404" fill="none" stroke="#D97757" stroke-width="3.5"/>
+  <text x="1112" y="408" font-size="22" font-weight="bold" fill="#D97757">PV 多</text>
+
+  <!-- limit point marker -->
+  <circle cx="1094" cy="404" r="9" fill="#FAF9F5" stroke="#D97757" stroke-width="3"/>
+  <line x1="1014" y1="356" x2="1076" y2="392" stroke="#141413" stroke-width="1.6"/>
+  <text x="1006" y="348" font-size="26" font-weight="bold" fill="#141413" text-anchor="end">上限に当たった量 = 受入限界（HC）</text>
+</svg>
