@@ -2,13 +2,30 @@
 
 from __future__ import annotations
 
+import html
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
 
 def strip_html(text: str) -> str:
-    return re.sub(r"<[^>]+>", "", text).strip()
+    # Unescape AFTER tag removal so entities like &ensp; / &amp; render as
+    # real characters instead of leaking into the slide text verbatim.
+    return html.unescape(re.sub(r"<[^>]+>", "", text)).strip()
+
+
+def text_with_breaks(fragment: str) -> str:
+    """Extract text from an HTML fragment, preserving <br> as newlines.
+
+    Other runs of whitespace collapse to a single space, so authored
+    indentation doesn't leak into the slide while explicit <br> line
+    breaks survive (the builders rely on python-pptx turning \\n into
+    <a:br/> line breaks).
+    """
+    s = re.sub(r"<br\s*/?>", "\n", fragment, flags=re.IGNORECASE)
+    s = strip_html(s)
+    s = re.sub(r"[ \t]+", " ", s)
+    return re.sub(r" *\n *", "\n", s).strip()
 
 
 def html_lists_to_bullets(text: str) -> str:
@@ -60,7 +77,11 @@ def extract_child_divs(text: str) -> list[str]:
             no = text.find("<div", scan)
             nc = text.find("</div>", scan)
             if nc == -1:
-                break
+                # Unclosed <div>: salvage the rest as this child and stop.
+                # Breaking without advancing `pos` here used to loop forever
+                # (the outer loop kept re-finding the same opening tag).
+                children.append(text[ds:].strip())
+                return children
             if no != -1 and no < nc:
                 depth += 1
                 scan = no + 4
@@ -404,7 +425,7 @@ def parse_slide(index: int, raw: str) -> SlideData:
                 sd.timeline_items.append({
                     "year": strip_html(ym.group(1)) if ym else "",
                     "text": strip_html(tm.group(1)) if tm else "",
-                    "detail": re.sub(r"\s+", " ", strip_html(dm.group(1))) if dm else "",
+                    "detail": text_with_breaks(dm.group(1)) if dm else "",
                     "highlight": "highlight" in item,
                 })
 
@@ -419,7 +440,7 @@ def parse_slide(index: int, raw: str) -> SlideData:
                 sd.timeline_items.append({
                     "year": strip_html(ym.group(1)) if ym else "",
                     "text": strip_html(tm.group(1)) if tm else "",
-                    "detail": strip_html(dm.group(1)) if dm else "",
+                    "detail": text_with_breaks(dm.group(1)) if dm else "",
                     "highlight": "highlight" in item,
                 })
 

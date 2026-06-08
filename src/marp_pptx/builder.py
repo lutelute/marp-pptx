@@ -582,25 +582,42 @@ class PptxBuilder:
         p.space_before = space_before
         return p
 
-    def _estimate_text_height(self, lines, size):
+    @staticmethod
+    def _visual_em_width(s: str) -> float:
+        """Approximate display width of a string in em units (CJK-aware:
+        full-width chars count 1.0 em, everything else ~0.55 em)."""
+        import unicodedata
+        return sum(1.0 if unicodedata.east_asian_width(c) in ("W", "F") else 0.55
+                   for c in s)
+
+    def _estimate_text_height(self, lines, size, width=None):
         """Tight height for a block of markdown lines at given font size.
 
         Slightly over-estimates so the shape hugs content but never clips.
+        When `width` (EMU) is given, soft wrapping of long lines is taken
+        into account, so callers stacking blocks below this one don't
+        overlap when a line wraps (e.g. a long Japanese takeaway).
         """
         from pptx.util import Pt as _Pt
         base = size.pt if hasattr(size, "pt") else float(size)
         scale = getattr(self.theme, "font_scale", 1.0)
         line_h = base * 1.25 * scale
+        cap_em = None
+        if width:
+            width_pt = width / 12700.0          # EMU -> pt
+            cap_em = max(4.0, width_pt / (base * scale))
         total = 0.0
         first = True
         for line in lines:
             s = line.strip()
             if not s:
                 continue
-            if s.startswith(("## ", "### ")):
-                total += line_h * 1.35
-            else:
-                total += line_h
+            mult = 1.35 if s.startswith(("## ", "### ")) else 1.0
+            wraps = 1
+            if cap_em:
+                plain = s.replace("**", "").replace("`", "")
+                wraps = max(1, -(-int(self._visual_em_width(plain) * 100) // int(cap_em * 100)))
+            total += line_h * mult * wraps
             if not first:
                 total += 4 * scale
             first = False
@@ -1069,15 +1086,14 @@ class PptxBuilder:
         p.font.name = self.FONT_HEAD; p.font.size = self._fs(SZ_DISPLAY)
         p.font.bold = True; p.font.color.rgb = h_color; p.alignment = align
         p.line_spacing = LINE_TITLE
-        # (4) subtitle
+        # (4) subtitle — rich text so $math$ (e.g. author superscripts) renders
         if subs:
             sb = self._add_textbox(slide, int(Inches(1.2)), int(Inches(5.05)),
                                    int(SW - Inches(2.4)), int(Inches(0.95)))
             sb.text_frame.word_wrap = True
             for i, line in enumerate(subs[:3]):
                 sp = sb.text_frame.paragraphs[0] if i == 0 else sb.text_frame.add_paragraph()
-                sp.text = line; sp.font.name = self.FONT
-                sp.font.size = self._fs(SZ_BODY); sp.font.color.rgb = sub_color
+                self._set_rich_text(sp, line, SZ_BODY, sub_color)
                 sp.alignment = align
                 if i:
                     sp.space_before = Pt(4)
@@ -1086,9 +1102,8 @@ class PptxBuilder:
             mb = self._add_textbox(slide, int(Inches(1.0)), int(Inches(6.35)),
                                    int(SW - Inches(2.0)), int(Inches(0.45)))
             mp = mb.text_frame.paragraphs[0]
-            mp.text = "   ·   ".join(meta)
-            mp.font.name = self.FONT; mp.font.size = self._fs(SZ_SMALL)
-            mp.font.color.rgb = sub_color; mp.alignment = align
+            self._set_rich_text(mp, "   ·   ".join(meta), SZ_SMALL, sub_color)
+            mp.alignment = align
 
     def build_divider(self, sd: SlideData):
         slide = self._blank_slide()
@@ -1412,7 +1427,9 @@ class PptxBuilder:
         blocks = []
         if sd.h2:
             blocks.append(("sub", int(Inches(0.4))))
-        blocks.append(("table", int(min(Inches(4.6), Inches(0.5) * len(sd.table_rows)))))
+        # +0.25in headroom: renderers grow rows to fit CJK line height, so a
+        # bare 0.5in/row estimate lets the real table eat the gap below it.
+        blocks.append(("table", int(min(Inches(4.8), Inches(0.5) * len(sd.table_rows) + Inches(0.25)))))
         if sd.bottom_text:
             blocks.append(("accent", int(Inches(0.9))))
         tops = self._stack_tops([h for _, h in blocks], region, mode="center",
@@ -1849,7 +1866,23 @@ class PptxBuilder:
             self._kicker_para(lbl.text_frame.paragraphs[0], sd.appendix_label,
                               color=self.MUTED, align=PP_ALIGN.RIGHT)
         if sd.table_rows:
-            self.build_table(sd)
+            # Render the table on THIS slide — delegating to build_table()
+            # would open a fresh slide and split the appendix in two.
+            region = self._content_region(has_title=bool(sd.h1))
+            left, _, width, _ = region
+            th = int(min(Inches(4.8), Inches(0.5) * len(sd.table_rows) + Inches(0.25)))
+            blocks = [("table", th)]
+            if sd.bottom_text:
+                blocks.append(("accent", int(Inches(0.9))))
+            tops = self._stack_tops([h for _, h in blocks], region, mode="center",
+                                    gap=int(Inches(0.25)))
+            for (kind, h), t in zip(blocks, tops):
+                if kind == "table":
+                    self._styled_table(slide, sd.table_rows, left, t, width, h)
+                else:
+                    self._add_accent_box(slide, sd.bottom_text, left, t, width, h)
+            if sd.footnote:
+                self._add_footnote(slide, sd.footnote)
         elif sd.body_lines:
             region = self._content_region(has_title=bool(sd.h1))
             left, _, width, _ = region
@@ -2487,8 +2520,10 @@ class PptxBuilder:
         if sd.h1:
             self._add_title(slide, sd.h1)
         rleft, rtop, rwidth, rheight = self._content_region(has_title=bool(sd.h1))
-        main_h = int(self._estimate_text_height([sd.takeaway_main], Pt(28))) if sd.takeaway_main else 0
-        pts_h = int(self._estimate_text_height([f"\u2022 {p}" for p in sd.takeaway_points], SZ_H3)) if sd.takeaway_points else 0
+        main_w = rwidth - int(Inches(1.0))
+        pts_w = rwidth - int(Inches(2.8))
+        main_h = int(self._estimate_text_height([sd.takeaway_main], Pt(28), width=main_w)) if sd.takeaway_main else 0
+        pts_h = int(self._estimate_text_height([f"\u2022 {p}" for p in sd.takeaway_points], SZ_H3, width=pts_w)) if sd.takeaway_points else 0
         gap = int(Inches(0.4)) if (main_h and pts_h) else 0
         block_h = main_h + gap + pts_h
         top = rtop + max(0, (rheight - block_h) // 2)
@@ -2497,7 +2532,7 @@ class PptxBuilder:
             self._hairline(slide, cx - int(Inches(0.6)), top - int(Inches(0.22)),
                            Inches(1.2), thickness=ACCENT_RULE_W, color=self.ACCENT)
             tb = self._add_textbox(slide, rleft + int(Inches(0.5)), top,
-                                   rwidth - int(Inches(1.0)), main_h)
+                                   main_w, main_h)
             tf = tb.text_frame; tf.word_wrap = True
             p = tf.paragraphs[0]
             self._set_rich_text(p, sd.takeaway_main, Pt(28), self.PRIMARY)
@@ -2506,7 +2541,7 @@ class PptxBuilder:
             p.alignment = PP_ALIGN.CENTER; p.line_spacing = LINE_TITLE
         if sd.takeaway_points:
             ptb = self._add_textbox(slide, rleft + int(Inches(1.4)), top + main_h + gap,
-                                    rwidth - int(Inches(2.8)), pts_h)
+                                    pts_w, pts_h)
             tf = ptb.text_frame; tf.word_wrap = True
             for i, pt in enumerate(sd.takeaway_points):
                 p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
