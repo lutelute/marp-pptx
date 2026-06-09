@@ -34,3 +34,6 @@ assets/
 
 # Learning data (collected third-party templates, not redistributable)
 learning-data/
+
+# Per-session handover notes (personal work log, not for the repo)
+.claude/
