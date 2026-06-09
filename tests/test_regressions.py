@@ -377,3 +377,58 @@ def test_highlight_band_fits_long_text():
     # the band/textbox must be tall enough for >= 3 wrapped lines at 30pt
     # (was sized for ~1 line, so text spilled out and the rule hit the text)
     assert box.height >= int(Pt(30 * 1.25 * 3))
+
+
+# --- 16. geometric text-collision detector ----------------------------------
+
+def _mk_textbox(slide, l, t, w, h, text, pt):
+    from pptx.util import Inches as _In, Pt as _Pt
+    tb = slide.shapes.add_textbox(_In(l), _In(t), _In(w), _In(h))
+    tb.text_frame.word_wrap = True
+    r = tb.text_frame.paragraphs[0].add_run()
+    r.text = text
+    r.font.size = _Pt(pt)
+    return tb
+
+
+def test_collision_detector_flags_real_overflow():
+    from pptx import Presentation
+    from marp_pptx.visuallint import detect_text_collisions
+    prs = Presentation()
+    s = prs.slides.add_slide(prs.slide_layouts[6])
+    _mk_textbox(s, 1, 1, 8, 0.5, "とても長い文章で必ず複数行に折り返してしまう" * 3, 24)  # short box
+    _mk_textbox(s, 1, 1.7, 8, 0.5, "下に置かれた別の要素", 18)
+    hits = detect_text_collisions(prs)
+    assert hits and hits[0]["slide"] == 1
+
+
+def test_collision_detector_clean_when_box_fits():
+    from pptx import Presentation
+    from marp_pptx.visuallint import detect_text_collisions
+    prs = Presentation()
+    s = prs.slides.add_slide(prs.slide_layouts[6])
+    _mk_textbox(s, 1, 1, 8, 2.0, "短い文", 24)        # box has room
+    _mk_textbox(s, 1, 3.2, 8, 0.5, "下の要素", 18)
+    assert detect_text_collisions(prs) == []
+
+
+def test_collision_detector_ignores_page_number_chrome():
+    from pptx import Presentation
+    from marp_pptx.visuallint import detect_text_collisions
+    prs = Presentation()
+    s = prs.slides.add_slide(prs.slide_layouts[6])
+    # a full-width footnote whose box spans the page number must NOT collide
+    _mk_textbox(s, 0.5, 6.8, 9, 0.4, "脚注テキストがここに入る", 12)
+    _mk_textbox(s, 8.5, 6.9, 1, 0.3, "7 / 14", 11)   # page-number chrome
+    assert detect_text_collisions(prs) == []
+
+
+def test_builder_self_check_clean_on_all_skeletons():
+    import glob
+    from marp_pptx.parser import parse_marp
+    base = Path(__file__).resolve().parents[1] / "src/marp_pptx/data/templates"
+    for f in sorted(glob.glob(str(base / "*.md"))):
+        b = PptxBuilder(base_path=base, theme=ThemeConfig())
+        b.build_all(parse_marp(f))
+        bad = [w for w in b.warnings if "overflows onto" in w]
+        assert not bad, f"{Path(f).name}: {bad}"

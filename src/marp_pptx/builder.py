@@ -2942,6 +2942,19 @@ class PptxBuilder:
                 self._write_notes(self.prs.slides[i], cls,
                                   user_note if i == before_n else "")
         self._add_global_footer()
+        self._warn_text_collisions()
+
+    def _warn_text_collisions(self):
+        """Post-build geometric self-check: flag any text that overflows its
+        box onto the element below it (the wrap-overlap bug class). Surfaces
+        through self.warnings → CLI summary / MCP authoring_warnings."""
+        try:
+            from marp_pptx.visuallint import detect_text_collisions
+            for c in detect_text_collisions(self.prs):
+                self._warn(f"slide {c['slide']}: text overflows onto the element "
+                           f"below it — \"{c['over'][:24]}\" runs into \"{c['onto'][:24]}\"")
+        except Exception:
+            pass  # a self-check must never break a build
 
     def _write_notes(self, slide, cls: str, user_note: str = ""):
         """Write speaker notes: user note first (what the presenter reads),

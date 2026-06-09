@@ -126,3 +126,78 @@ def lint_deck(markdown: str, palette: str = "claude", dpi: int = 96,
             if warns:
                 out.append({"slide": i, "class": cls or "default", "warnings": warns})
         return out
+
+
+# --- geometric text-collision detector --------------------------------------
+# Deterministic, no rendering: catches the "wrap-overlap" bug class (a text box
+# sized too short for its wrapped content, so the text spills onto the element
+# below it). Operates on a built python-pptx Presentation by re-estimating each
+# text box's required height at its own width and checking whether that height
+# intrudes into a lower text box that shares its horizontal span.
+
+import re as _re
+import math as _math
+import unicodedata as _ud
+
+_PAGE_NO = _re.compile(r"\d+\s*/\s*\d+")  # footer chrome — never a collision target
+
+
+def _em_width(s: str) -> float:
+    """Approximate display width in em units (CJK full-width = 1.0, else 0.55)."""
+    return sum(1.0 if _ud.east_asian_width(c) in ("W", "F") else 0.55 for c in s)
+
+
+def _para_pt(paragraph, default: float = 18.0) -> float:
+    sz = None
+    for r in paragraph.runs:
+        if r.font.size is not None:
+            v = r.font.size.pt
+            sz = v if sz is None else max(sz, v)
+    return sz if sz is not None else default
+
+
+def _needed_height_emu(shape) -> int:
+    """Height the shape's text actually needs, wrapping each paragraph at the
+    shape's width using its own font size (mixed sizes handled per-paragraph)."""
+    box_w_pt = shape.width / 12700.0
+    total_pt = 0.0
+    for p in shape.text_frame.paragraphs:
+        sz = _para_pt(p)
+        cap_em = max(4.0, box_w_pt / sz)
+        if not p.text.strip():
+            total_pt += sz * 0.6
+            continue
+        lines = max(1, _math.ceil(_em_width(p.text) / cap_em))
+        total_pt += lines * sz * 1.25
+    return int(total_pt * 12700)
+
+
+def detect_text_collisions(prs, *, intrude_emu: int = 152400) -> list[dict]:
+    """Flag text boxes whose wrapped content overflows onto a lower text box.
+
+    `intrude_emu` (default 0.12in) is how far the overflow must reach into the
+    box below before it counts — tuned to ignore intentionally-tight label
+    placements (eyebrows above their heading) while catching real spill-over.
+
+    Returns [{slide, over, onto}] where `over` is the overflowing text and
+    `onto` is the text it collides with. Empty list = clean. Pure geometry.
+    """
+    out: list[dict] = []
+    for i, slide in enumerate(prs.slides, 1):
+        boxes = [s for s in slide.shapes
+                 if getattr(s, "has_text_frame", False)
+                 and s.text_frame.text.strip()
+                 and not _PAGE_NO.fullmatch(s.text_frame.text.strip())]
+        for a in boxes:
+            a_bottom = a.top + _needed_height_emu(a)
+            for b in boxes:
+                if b is a or b.top < a.top + 6350:          # b must sit below a
+                    continue
+                if a.left >= b.left + b.width or b.left >= a.left + a.width:
+                    continue                                 # no horizontal overlap
+                if a_bottom > b.top + intrude_emu:
+                    out.append({"slide": i,
+                                "over": a.text_frame.text.strip()[:40],
+                                "onto": b.text_frame.text.strip()[:40]})
+                    break
+    return out
