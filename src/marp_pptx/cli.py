@@ -76,6 +76,10 @@ def convert(input_file: str, output: str | None, palette: str | None, theme: str
     # Parse
     slides = parse_marp(str(input_path))
     click.echo(f"Parsed {len(slides)} slides", err=True)
+    if not slides:
+        click.echo("Warning: no slides found — is this a Marp deck? "
+                   "(slides are separated by '---'; the first '---' block is "
+                   "front matter). Writing an empty presentation.", err=True)
 
     # Build
     builder = PptxBuilder(base_path=input_path.parent, theme=tc)
@@ -87,6 +91,9 @@ def convert(input_file: str, output: str | None, palette: str | None, theme: str
 
     click.echo(f"Saved: {output_path}", err=True)
     click.echo(f"  {len(slides)} slides, all editable text boxes", err=True)
+    if builder.warnings:
+        click.echo(f"  {len(builder.warnings)} warning(s) — see [warn] lines above",
+                   err=True)
 
 
 @main.command("types")

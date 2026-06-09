@@ -144,3 +144,31 @@ def test_unclosed_div_terminates_and_salvages():
           '<span class="kpi-label">answer</span>\n')
     sd = parse_slide(0, md)                  # must not hang
     assert sd.slide_class == "kpi"
+
+
+# --- 7. non-fatal authoring warnings are surfaced, not silent ---------------
+
+def test_unknown_slide_type_warns():
+    b = _make_builder()
+    b.build_all([parse_slide(0, "<!-- _class: no-such-type -->\n# H\n\nbody")])
+    assert any("unknown type" in w and "no-such-type" in w for w in b.warnings)
+    assert len(b.prs.slides) == 1            # still renders (as plain slide)
+
+
+def test_missing_image_warns():
+    b = _make_builder()
+    assert b._resolve_image("does-not-exist.png") is None
+    assert any("image not found" in w for w in b.warnings)
+
+
+def test_warnings_are_deduplicated():
+    b = _make_builder()
+    b._resolve_image("nope.png")
+    b._resolve_image("nope.png")
+    assert sum("nope.png" in w for w in b.warnings) == 1
+
+
+def test_known_type_does_not_warn():
+    b = _make_builder()
+    b.build_all([parse_slide(0, "<!-- _class: title -->\n# T\n## sub")])
+    assert b.warnings == []

@@ -67,8 +67,13 @@ def visual_lint(png_path: str, slide_class: str | None = None, *, edge: float = 
     return warns
 
 
-def lint_deck(markdown: str, palette: str = "claude", dpi: int = 96) -> list[dict]:
+def lint_deck(markdown: str, palette: str = "claude", dpi: int = 96,
+              density: str = "academic") -> list[dict]:
     """Render a deck and visual-lint every slide. Requires LibreOffice + pdftoppm.
+
+    `density` must match what the deck is actually built with ("academic" or
+    "keynote") — linting a keynote deck under academic scaling reports false
+    overflow/skew because the type is larger in the real output.
 
     Returns [{slide, class, warnings}] for slides that have warnings.
     """
@@ -84,6 +89,11 @@ def lint_deck(markdown: str, palette: str = "claude", dpi: int = 96) -> list[dic
 
     tc = ThemeConfig.from_css(get_default_theme_path())
     tc.math_mode = "png"
+    tc.density = density
+    # Mirror the CLI's keynote scaling so the linted render matches the deck.
+    if density == "keynote":
+        tc.font_scale = getattr(tc, "font_scale", 1.0) * 1.22
+        tc.margin_scale = 1.12
     pp = get_palette_path(palette)
     if pp:
         tc.apply_palette(pp)

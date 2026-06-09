@@ -50,6 +50,21 @@ class PptxBuilder:
         self.theme = theme
         self._img_cache: dict = {}
         self._divider_no = 0
+        # Non-fatal authoring problems surfaced during build (unknown slide
+        # type, missing image, …). Printed once each to stderr and collected
+        # here so callers (CLI / web / tests) can report them.
+        self.warnings: list[str] = []
+        self._warned: set = set()
+
+    def _warn(self, msg: str):
+        """Record a non-fatal authoring warning (deduplicated) and echo it to
+        stderr. The build still succeeds — this just stops the tool from
+        silently producing something other than what the author wrote."""
+        if msg in self._warned:
+            return
+        self._warned.add(msg)
+        self.warnings.append(msg)
+        print(f"[warn] {msg}", file=sys.stderr)
 
     def _fs(self, pt_val):
         """Scale a Pt value by theme.font_scale. Min 8pt.
@@ -770,6 +785,7 @@ class PptxBuilder:
     def _resolve_image(self, img_path: str) -> str | None:
         p = self.base_path / img_path
         if not p.exists():
+            self._warn(f"image not found, skipping: {img_path}")
             return None
         if p.suffix.lower() == ".svg":
             png_path = p.with_suffix(".png")
@@ -777,6 +793,8 @@ class PptxBuilder:
                 if HAS_CAIROSVG:
                     cairosvg.svg2png(url=str(p), write_to=str(png_path), output_width=1400, dpi=300)
                 else:
+                    self._warn(f"SVG needs cairosvg to embed, skipping: {img_path} "
+                               "(install marp-pptx[ingest] or pre-render to PNG)")
                     return None
             return str(png_path)
         return str(p)
@@ -2840,6 +2858,11 @@ class PptxBuilder:
                 pass
             if sd.slide_class == "divider":
                 self._divider_no += 1
+            # A specified-but-unknown _class silently fell back to a plain
+            # bullet slide before — warn so typos in the type name surface.
+            if sd.slide_class and sd.slide_class not in self.BUILDERS:
+                self._warn(f"slide {n}: unknown type '{sd.slide_class}', "
+                           "rendered as a plain slide (check the _class name)")
             method_name = self.BUILDERS.get(sd.slide_class, "build_default")
             before_n = len(self.prs.slides)
             getattr(self, method_name)(sd)
