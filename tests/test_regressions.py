@@ -363,3 +363,17 @@ def test_definition_long_body_no_overlap_with_note():
     body = next(s for s in sh if "入力系列" in s.text_frame.text)
     note = next(s for s in sh if "NOTE_TOKEN" in s.text_frame.text)
     assert note.top >= body.top + body.height - int(Inches(0.05))
+
+
+# --- 15. highlight band must grow for a long (wrapping) message --------------
+
+def test_highlight_band_fits_long_text():
+    long_h = "動的スパースマスクの導入により計算量を大幅に削減しながら推論精度を維持できる" * 2
+    md = f'<!-- _class: highlight -->\n# H\n<div class="hl-text">{long_h}</div>'
+    b = _make_builder()
+    b.build_highlight(parse_slide(0, md))
+    box = next(s for s in b.prs.slides[0].shapes
+               if getattr(s, "has_text_frame", False) and "動的スパース" in s.text_frame.text)
+    # the band/textbox must be tall enough for >= 3 wrapped lines at 30pt
+    # (was sized for ~1 line, so text spilled out and the rule hit the text)
+    assert box.height >= int(Pt(30 * 1.25 * 3))

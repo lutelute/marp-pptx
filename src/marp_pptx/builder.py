@@ -2321,7 +2321,11 @@ class PptxBuilder:
         if not sd.highlight_text:
             return
         rleft, rtop, rwidth, rheight = self._content_region(has_title=bool(sd.h1))
-        text_h = int(self._estimate_text_height([sd.highlight_text], Pt(30)))
+        # width-aware: a long highlight wraps to several lines; an under-estimate
+        # made the band too short, so the text spilled out and the accent rule
+        # landed on top of the first line.
+        text_h = int(self._estimate_text_height([sd.highlight_text], Pt(30),
+                                                width=rwidth - int(Inches(1.0))))
         band_h = min(rheight, text_h + int(Inches(1.0)))
         band_top = rtop + max(0, (rheight - band_h) // 2)
         # soft surface band
