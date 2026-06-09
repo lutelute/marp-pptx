@@ -8,7 +8,7 @@
 ## TL;DR
 
 > **作れる。型の文字数予算に収めれば学会発表級、図解とメッセージラインを足せば博士発表級。**
-> 検証の過程で実バグ 6 件を発見・全件修正し、さらに無言フォールバック 4 種に警告を追加・`lint_deck` に density 引数を追加。リグレッションテストで固定した(**108 passed**)。
+> 検証の過程で実バグ15件(原検証6+自己改善ループ9)を発見・全件修正し、さらに無言フォールバック警告/lint偽陽性/MCP警告伝播を改善・`lint_deck` に density 引数を追加。リグレッションテストで固定した(**112 passed**)。
 > 残る弱点は「溢れたときの耐性」(visual lint が要素間重なりを検出できない)。
 
 ## 1. 検証方法
@@ -48,7 +48,7 @@
 
 共通の教訓: **1〜2, 5 は「スキル文書(skeleton)に載っている書き方」が壊れる実装乖離**だった。6 は実ユーザーが最も踏みやすいミス(div 閉じ忘れ)で最悪の挙動(ハング)。
 
-リグレッションテスト: `tests/test_regressions.py`(14 テスト＝バグ固定 10＋警告 4)。全テスト **108 passed**。
+リグレッションテスト: `tests/test_regressions.py`(23 テスト)。全テスト **112 passed**。（このうち §8 の自己改善ループで追加された分を含む）
 
 ## 4. エラーハンドリング試験(11 ケース)
 
@@ -73,7 +73,7 @@
 1. **visual lint は要素間の重なりを検出できない**(検出は blank / edge-overflow / sparse / 上下偏りの 4 種のみ)。バグ 3 の重なりを 0 警告で通した。【未修正】
 2. ~~**`lint_deck()` に density 引数がない**~~ → **本検証で `density=` 引数を追加**(keynote 成果物を keynote 設定でレンダ)。default は academic で後方互換。【修正済み】
    - ⚠️ **自己レビューで判明した誤り＋バグ修正**: density 追加直後、keynote で 11 枚中 9 枚に edge 警告が出たのを「字が大きく端に寄るため正しい挙動」と一旦結論づけたが**これは誤り**だった。実体は `visual_lint` が**右下のページ番号(builder が描く chrome)を本文として bbox に含めていた**ため(全枚 maxy=0.967、本文は除けば 0.60–0.92)。footer 隅(y>0.93 ∧ x>0.78)を bbox から除外する修正で 9→0。広い下溢れ・左右溢れの検出は合成画像テストで温存を確認。【修正済み】
-3. `_estimate_text_height` の `width=`(折返し考慮)を渡しているのは takeaway のみ。同じ重なりリスクが rq / profile 等に残る(同じ直し方で対処可能)。【未修正・横展開は要視覚検証のため保留】
+3. ~~`_estimate_text_height` の `width=` を渡しているのは takeaway のみ~~ → **§8 のループで rq/quote/definition/highlight にも展開**（全17呼び出しを精査、statement は実レンダで重なり無し確認、columns は低risk）。【修正済み】
 4. `eq-desc` の説明文は keynote 密度で約 20 字/行を超えると折り返して凡例の対応が崩れる(コンテンツ側で短く書いて回避)。
 5. title の kicker(H2)は**空白区切り 6 語以下**のみ。日本語は詰めて書く(超えると kicker ごと消える)。
 
@@ -106,7 +106,7 @@ soffice --headless --convert-to pdf /tmp/check.pptx --outdir /tmp
 pdftoppm -png -r 90 /tmp/check.pdf /tmp/slide
 
 # テスト
-python -m pytest tests/  # 108 passed
+python -m pytest tests/  # 112 passed
 ```
 
 ## 8. 自己改善ループ（レポート後の継続改善, 2026-06-09〜10）
@@ -126,14 +126,18 @@ python -m pytest tests/  # 108 passed
 | 9 | builder | zone-matrix の**両軸ラベル**が描画されない（2軸図の定義的機能） | builder がセルだけ描き x/y_label を無視 | 54251b9 |
 | 10 | builder | overview/result の図キャプションが落ちる | 共有 `_build_image_points` が `sd.caption` 未描画 | b5ed6aa |
 | 11 | builder | gallery-img の各画像キャプションが全部落ちる | `build_gallery_img` が `item["caption"]` 未描画 | dd80514 |
+| 12-15 | builder | rq/quote/definition/highlight で**折返した本文が下の要素に重なる/バンドからはみ出す**（バグ3 takeaway と同クラス） | width 非考慮の `_estimate_text_height` が1行分で見積もり | f39144d, 420c5f8 |
 | L1 | lint | visual_lint がほぼ全スライドで偽の edge 警告 | 右下のページ番号 chrome を本文として bbox に算入（keynote で顕著） | 3c04a4c |
 | G1 | mcp | エージェントが build_pptx の警告（未知型/画像不在）を受け取れない | 返り値に authoring_warnings が無く stderr で握り潰し | 12f8e13 |
 
+各 wrap-overlap 修正は**長文を実レンダリングして重なり解消を目視確認**した。
+
 ### 8.3 系統監査の負の結果（クリーン確認）
 
+- **wrap-overlap クラスの網羅**: `_estimate_text_height` の全17呼び出しを精査。「折返す単一長文の高さで下に別要素を積む」5型（takeaway/rq/quote/definition/highlight）を修正。`statement` は accent 線がテキスト上端に追従し長文でフォント自動縮小するため**実レンダで重なり無しを確認（許容）**。`columns` は箇条書き横並び（行数計上済・縦積み無し）で低risk。
 - パーサ全体の exact-quote `class="X"` 正規表現を監査 → 残るは references/checklist のみで、両 skeleton は2クラスを使わず現状バグ無し（投機的変更は見送り）。
 - 52-skeleton 監査の残り信号（equation の LaTeX 断片・chart 系列名）は OMML/chart-XML 行きの**偽陽性**で実害なし。
 
 ### 8.4 累積
 
-原検証6件 + ループ5件（builder/parser）= **実バグ11件修正**、加えて lint 偽陽性・MCP 警告伝播を改善。テスト **108 passed**（うち test_regressions.py が 19）。残候補: `_estimate_text_height(width=)` の rq/profile 等への横展開（要視覚検証で保留）、visual lint への要素間重なり検出。
+原検証6件 + ループ9件（builder/parser）= **実バグ15件修正**、加えて lint 偽陽性・MCP 警告伝播を改善。テスト **112 passed**（うち test_regressions.py が 23）。残候補: visual lint への要素間重なり検出（現状の唯一の盲点・要設計）。
