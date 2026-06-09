@@ -36,6 +36,20 @@ def test_build_pptx(tmp_path):
     assert res["slide_count"] == 3
     assert out.is_file()
     assert isinstance(res["lint_warnings"], list)
+    assert isinstance(res["authoring_warnings"], list)
+
+
+def test_build_pptx_surfaces_authoring_warnings(tmp_path):
+    # An agent building via MCP must learn when the tool couldn't honour the
+    # deck: an unknown _class and a missing image both surface (they used to
+    # be swallowed on stderr, leaving the agent with a silently-wrong deck).
+    md = ("---\nmarp: true\n---\n\n"
+          "<!-- _class: bogus-type -->\n# Hi\n\n---\n\n"
+          "<!-- _class: diagram -->\n# Fig\n\n![w:800](nope.png)\n")
+    res = srv.build_pptx(md, math="png", output_path=str(tmp_path / "d.pptx"))
+    aw = res["authoring_warnings"]
+    assert any("unknown type" in w and "bogus-type" in w for w in aw)
+    assert any("image not found" in w for w in aw)
 
 
 def test_tools_registered():

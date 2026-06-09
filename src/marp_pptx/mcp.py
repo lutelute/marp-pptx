@@ -166,8 +166,12 @@ def build_pptx(
       LibreOffice/Keynote).
     - density: 'academic' (default) or 'keynote' (bigger for projection).
 
-    Returns {output_path, slide_count, lint_warnings}. Heed lint_warnings — they
-    flag weak titles, missing structure, etc.
+    Returns {output_path, slide_count, lint_warnings, authoring_warnings}.
+    Heed lint_warnings (weak titles, missing structure, …) AND
+    authoring_warnings — the latter flag content the tool could not honour:
+    an unknown `_class` (rendered as a plain slide → likely a typo), a missing
+    image (silently skipped), or an SVG that needs cairosvg. A non-empty
+    authoring_warnings almost always means the deck is not what you intended.
     """
     _check_markdown(markdown)
     if output_path:
@@ -179,7 +183,8 @@ def build_pptx(
     with tempfile.TemporaryDirectory() as td:
         builder, slides, warnings = _build(markdown, Path(td), tc)
         builder.save(str(out))
-    return {"output_path": str(out), "slide_count": len(slides), "lint_warnings": warnings}
+    return {"output_path": str(out), "slide_count": len(slides),
+            "lint_warnings": warnings, "authoring_warnings": list(builder.warnings)}
 
 
 @mcp.tool(structured_output=False)
