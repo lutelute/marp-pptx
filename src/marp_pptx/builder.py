@@ -2281,18 +2281,30 @@ class PptxBuilder:
             card.fill.solid(); card.fill.fore_color.rgb = self.SURFACE
             card.line.color.rgb = self.HAIRLINE; card.line.width = HAIRLINE_W
             self._no_shadow(card)
+            cap_text = item.get("caption", "")
+            cap_h = int(Inches(0.34)) if cap_text else 0
             img_file = self._resolve_image(item.get("image", ""))
             if img_file:
                 from PIL import Image
                 with Image.open(img_file) as im:
                     iw, ih = im.size
                 max_w = int(cell_w * 0.86)
-                max_h = int(cell_h * 0.82)
+                max_h = int((cell_h - cap_h) * 0.82)
                 scale = min(max_w / (iw * 914400 / 96), max_h / (ih * 914400 / 96))
                 pw = int(iw * scale * 914400 / 96); ph = int(ih * scale * 914400 / 96)
                 ix = int(x) + (int(cell_w) - pw) // 2
-                iy = int(y) + (int(cell_h) - ph) // 2
+                iy = int(y) + (int(cell_h) - cap_h - ph) // 2
                 slide.shapes.add_picture(img_file, ix, iy, pw, ph)
+            # per-image caption — was dropped entirely (only the title showed)
+            if cap_text:
+                cb = self._add_textbox(slide, int(x) + int(Inches(0.1)),
+                                       int(y) + int(cell_h) - cap_h,
+                                       int(cell_w) - int(Inches(0.2)), cap_h)
+                cp = cb.text_frame.paragraphs[0]; cp.text = cap_text
+                cp.font.name = self.FONT; cp.font.size = self._fs(SZ_FOOT)
+                cp.font.color.rgb = self.MUTED; cp.alignment = PP_ALIGN.CENTER
+                cb.text_frame.word_wrap = True
+                cb.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
 
     def build_highlight(self, sd: SlideData):
         slide = self._blank_slide()

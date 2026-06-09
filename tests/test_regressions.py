@@ -293,3 +293,23 @@ def test_overview_renders_figure_caption():
     txt = "".join(s.text_frame.text for sl in b.prs.slides
                   for s in sl.shapes if getattr(s, "has_text_frame", False))
     assert "CAPTION_TOKEN" in txt      # caption was dropped by _build_image_points
+
+
+# --- 12. gallery-img must render each image's caption -----------------------
+
+def test_gallery_img_renders_captions():
+    from PIL import Image
+    d = Path(tempfile.mkdtemp())
+    Image.new("RGB", (300, 200), (235, 235, 240)).save(d / "g.png")
+    md = ("<!-- _class: gallery-img -->\n# G\n"
+          '<div class="gi-container">\n'
+          '<div class="gi-item">\n\n![w:300](g.png)\n\n'
+          '<div class="gi-caption">CAP_ALPHA</div>\n</div>\n'
+          '<div class="gi-item">\n\n![w:300](g.png)\n\n'
+          '<div class="gi-caption">CAP_BETA</div>\n</div>\n'
+          '</div>')
+    b = PptxBuilder(base_path=d, theme=ThemeConfig())
+    b.build_all([parse_slide(0, md)])
+    txt = "".join(s.text_frame.text for sl in b.prs.slides
+                  for s in sl.shapes if getattr(s, "has_text_frame", False))
+    assert "CAP_ALPHA" in txt and "CAP_BETA" in txt   # captions were dropped
