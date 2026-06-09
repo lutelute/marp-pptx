@@ -172,3 +172,38 @@ def test_known_type_does_not_warn():
     b = _make_builder()
     b.build_all([parse_slide(0, "<!-- _class: title -->\n# T\n## sub")])
     assert b.warnings == []
+
+
+# --- 8. visual_lint must ignore the page-number footer chrome ---------------
+
+def _synth_png(rects, size=(1280, 720), bg=(250, 249, 245)):
+    """White slide with black rects [(x0,y0,x1,y1), …]. Returns a temp path."""
+    from PIL import Image
+    im = Image.new("RGB", size, bg)
+    px = im.load()
+    for x0, y0, x1, y1 in rects:
+        for y in range(y0, y1):
+            for x in range(x0, x1):
+                px[x, y] = (20, 20, 20)
+    p = tempfile.mktemp(suffix=".png")
+    im.save(p)
+    return p
+
+
+def test_visual_lint_ignores_page_number_corner():
+    from marp_pptx.visuallint import visual_lint
+    # A page-number-like blob in the bottom-right corner + normal centered
+    # content must NOT be flagged as edge overflow (regression: it was).
+    png = _synth_png([(400, 250, 880, 470),      # centered content, well inside
+                      (1180, 690, 1260, 712)])    # "N / M" footer chrome
+    warns = visual_lint(png, "kpi")
+    assert not any("reaches the slide edge" in w for w in warns)
+
+
+def test_visual_lint_still_flags_real_bottom_overflow():
+    from marp_pptx.visuallint import visual_lint
+    # Content spanning most of the width and running to the bottom edge is a
+    # genuine overflow and must still be flagged.
+    png = _synth_png([(100, 400, 900, 718)])
+    warns = visual_lint(png, "kpi")
+    assert any("reaches the slide edge" in w for w in warns)

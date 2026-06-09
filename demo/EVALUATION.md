@@ -8,7 +8,7 @@
 ## TL;DR
 
 > **作れる。型の文字数予算に収めれば学会発表級、図解とメッセージラインを足せば博士発表級。**
-> 検証の過程で実バグ 6 件を発見・全件修正し、さらに無言フォールバック 4 種に警告を追加・`lint_deck` に density 引数を追加。リグレッションテストで固定した(**100 passed**)。
+> 検証の過程で実バグ 6 件を発見・全件修正し、さらに無言フォールバック 4 種に警告を追加・`lint_deck` に density 引数を追加。リグレッションテストで固定した(**102 passed**)。
 > 残る弱点は「溢れたときの耐性」(visual lint が要素間重なりを検出できない)。
 
 ## 1. 検証方法
@@ -48,7 +48,7 @@
 
 共通の教訓: **1〜2, 5 は「スキル文書(skeleton)に載っている書き方」が壊れる実装乖離**だった。6 は実ユーザーが最も踏みやすいミス(div 閉じ忘れ)で最悪の挙動(ハング)。
 
-リグレッションテスト: `tests/test_regressions.py`(14 テスト＝バグ固定 10＋警告 4)。全テスト **100 passed**。
+リグレッションテスト: `tests/test_regressions.py`(14 テスト＝バグ固定 10＋警告 4)。全テスト **102 passed**。
 
 ## 4. エラーハンドリング試験(11 ケース)
 
@@ -71,7 +71,8 @@
 ## 5. 既知の制限
 
 1. **visual lint は要素間の重なりを検出できない**(検出は blank / edge-overflow / sparse / 上下偏りの 4 種のみ)。バグ 3 の重なりを 0 警告で通した。【未修正】
-2. ~~**`lint_deck()` に density 引数がない**~~ → **本検証で `density=` 引数を追加**(keynote 成果物を keynote 設定でレンダ)。default は academic で後方互換。なお keynote は字が大きく端に寄るため edge 警告が増えるのは正しい挙動。【修正済み】
+2. ~~**`lint_deck()` に density 引数がない**~~ → **本検証で `density=` 引数を追加**(keynote 成果物を keynote 設定でレンダ)。default は academic で後方互換。【修正済み】
+   - ⚠️ **自己レビューで判明した誤り＋バグ修正**: density 追加直後、keynote で 11 枚中 9 枚に edge 警告が出たのを「字が大きく端に寄るため正しい挙動」と一旦結論づけたが**これは誤り**だった。実体は `visual_lint` が**右下のページ番号(builder が描く chrome)を本文として bbox に含めていた**ため(全枚 maxy=0.967、本文は除けば 0.60–0.92)。footer 隅(y>0.93 ∧ x>0.78)を bbox から除外する修正で 9→0。広い下溢れ・左右溢れの検出は合成画像テストで温存を確認。【修正済み】
 3. `_estimate_text_height` の `width=`(折返し考慮)を渡しているのは takeaway のみ。同じ重なりリスクが rq / profile 等に残る(同じ直し方で対処可能)。【未修正・横展開は要視覚検証のため保留】
 4. `eq-desc` の説明文は keynote 密度で約 20 字/行を超えると折り返して凡例の対応が崩れる(コンテンツ側で短く書いて回避)。
 5. title の kicker(H2)は**空白区切り 6 語以下**のみ。日本語は詰めて書く(超えると kicker ごと消える)。
@@ -105,5 +106,5 @@ soffice --headless --convert-to pdf /tmp/check.pptx --outdir /tmp
 pdftoppm -png -r 90 /tmp/check.pdf /tmp/slide
 
 # テスト
-python -m pytest tests/  # 100 passed
+python -m pytest tests/  # 102 passed
 ```

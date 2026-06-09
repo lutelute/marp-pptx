@@ -29,12 +29,22 @@ def visual_lint(png_path: str, slide_class: str | None = None, *, edge: float = 
     bg = px[2, 2]
     tol = 42  # sum-of-abs-channel-diff threshold for "this pixel is content"
 
+    # The builder stamps a right-aligned page number ("N / M") in the
+    # bottom-right corner of every interior slide. That chrome sits ~3% from
+    # the bottom edge and used to trip the edge-overflow check on essentially
+    # every slide (worse at keynote density, where the bigger type pushes it
+    # past the threshold) — a false positive that drowned out real overflow.
+    # Skip that corner so the lint measures the AUTHOR's content, not chrome.
+    foot_y = h * 0.93
+    foot_x = w * 0.78
     step = max(1, w // 380)
     minx = miny = 10 ** 9
     maxx = maxy = -1
     content = total = ysum = 0
     for y in range(0, h, step):
         for x in range(0, w, step):
+            if y > foot_y and x > foot_x:
+                continue  # page-number footer chrome, not content
             r, g, b = px[x, y]
             if abs(r - bg[0]) + abs(g - bg[1]) + abs(b - bg[2]) > tol:
                 content += 1
