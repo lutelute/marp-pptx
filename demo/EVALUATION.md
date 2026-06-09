@@ -8,7 +8,7 @@
 ## TL;DR
 
 > **作れる。型の文字数予算に収めれば学会発表級、図解とメッセージラインを足せば博士発表級。**
-> 検証の過程で実バグ 6 件を発見・全件修正し、さらに無言フォールバック 4 種に警告を追加・`lint_deck` に density 引数を追加。リグレッションテストで固定した(**102 passed**)。
+> 検証の過程で実バグ 6 件を発見・全件修正し、さらに無言フォールバック 4 種に警告を追加・`lint_deck` に density 引数を追加。リグレッションテストで固定した(**108 passed**)。
 > 残る弱点は「溢れたときの耐性」(visual lint が要素間重なりを検出できない)。
 
 ## 1. 検証方法
@@ -48,7 +48,7 @@
 
 共通の教訓: **1〜2, 5 は「スキル文書(skeleton)に載っている書き方」が壊れる実装乖離**だった。6 は実ユーザーが最も踏みやすいミス(div 閉じ忘れ)で最悪の挙動(ハング)。
 
-リグレッションテスト: `tests/test_regressions.py`(14 テスト＝バグ固定 10＋警告 4)。全テスト **102 passed**。
+リグレッションテスト: `tests/test_regressions.py`(14 テスト＝バグ固定 10＋警告 4)。全テスト **108 passed**。
 
 ## 4. エラーハンドリング試験(11 ケース)
 
@@ -106,5 +106,34 @@ soffice --headless --convert-to pdf /tmp/check.pptx --outdir /tmp
 pdftoppm -png -r 90 /tmp/check.pdf /tmp/slide
 
 # テスト
-python -m pytest tests/  # 102 passed
+python -m pytest tests/  # 108 passed
 ```
+
+## 8. 自己改善ループ（レポート後の継続改善, 2026-06-09〜10）
+
+レポート後、「完了と思っても粗を探し続ける」方針で批判的自己レビューを反復した。各周＝1実バグ発見→修正→テスト→push。
+
+### 8.1 新手法: 52-skeleton コンテンツ忠実度監査
+
+全 52 型の公式 skeleton を1枚ずつビルドし、**入力の可視テキストトークンが出力 pptx に現れるか**を機械照合（大文字小文字無視・frontmatter/数式/chart-XML を除外）。「skeleton どおり書いたのに内容が落ちる」型を網羅的に炙り出す。これで builder/parser 側の**サイレントなコンテンツ欠落**を5件発見した。
+
+### 8.2 ループで見つけ・直した問題
+
+| # | 種別 | 症状 | 真因 | commit |
+|---|---|---|---|---|
+| 7 | parser | timeline の強調項目テキスト（通常「本研究」）が消える | `class="tl-h-text bold"`（2クラス）を exact-quote 正規表現が拾えず | 1363ddf |
+| 8 | parser | timeline の highlight（accent 強調）が一度も効かない | `extract_child_divs` が item の class を捨て `"highlight" in item` が常に偽 | 1363ddf |
+| 9 | builder | zone-matrix の**両軸ラベル**が描画されない（2軸図の定義的機能） | builder がセルだけ描き x/y_label を無視 | 54251b9 |
+| 10 | builder | overview/result の図キャプションが落ちる | 共有 `_build_image_points` が `sd.caption` 未描画 | b5ed6aa |
+| 11 | builder | gallery-img の各画像キャプションが全部落ちる | `build_gallery_img` が `item["caption"]` 未描画 | dd80514 |
+| L1 | lint | visual_lint がほぼ全スライドで偽の edge 警告 | 右下のページ番号 chrome を本文として bbox に算入（keynote で顕著） | 3c04a4c |
+| G1 | mcp | エージェントが build_pptx の警告（未知型/画像不在）を受け取れない | 返り値に authoring_warnings が無く stderr で握り潰し | 12f8e13 |
+
+### 8.3 系統監査の負の結果（クリーン確認）
+
+- パーサ全体の exact-quote `class="X"` 正規表現を監査 → 残るは references/checklist のみで、両 skeleton は2クラスを使わず現状バグ無し（投機的変更は見送り）。
+- 52-skeleton 監査の残り信号（equation の LaTeX 断片・chart 系列名）は OMML/chart-XML 行きの**偽陽性**で実害なし。
+
+### 8.4 累積
+
+原検証6件 + ループ5件（builder/parser）= **実バグ11件修正**、加えて lint 偽陽性・MCP 警告伝播を改善。テスト **108 passed**（うち test_regressions.py が 19）。残候補: `_estimate_text_height(width=)` の rq/profile 等への横展開（要視覚検証で保留）、visual lint への要素間重なり検出。
