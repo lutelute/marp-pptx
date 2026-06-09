@@ -1703,21 +1703,55 @@ class PptxBuilder:
         if sd.h1:
             self._add_title(slide, sd.h1)
         cells = sd.zone_matrix.get("cells", [{}, {}, {}, {}])
+        x_label = sd.zone_matrix.get("x_label", "")
+        y_label = sd.zone_matrix.get("y_label", "")
         rleft, rtop, rwidth, rheight = self._content_region(has_title=bool(sd.h1))
+        # Reserve strips for the axis labels (the defining feature of a 2-axis
+        # matrix). Only when present, so label-less decks are unaffected.
+        strip = int(Inches(0.42))
+        lblgap = int(Inches(0.12))
+        gleft, gtop, gwidth, gheight = rleft, rtop, rwidth, rheight
+        if y_label:
+            gleft += strip + lblgap
+            gwidth -= strip + lblgap
+        if x_label:
+            gheight -= strip + lblgap
         gap = int(CARD_GAP)
-        cell_w = (rwidth - gap) // 2
-        cell_h = (rheight - gap) // 2
+        cell_w = (gwidth - gap) // 2
+        cell_h = (gheight - gap) // 2
         positions = [
-            (rleft, rtop),
-            (int(rleft + cell_w + gap), rtop),
-            (rleft, int(rtop + cell_h + gap)),
-            (int(rleft + cell_w + gap), int(rtop + cell_h + gap)),
+            (gleft, gtop),
+            (int(gleft + cell_w + gap), gtop),
+            (gleft, int(gtop + cell_h + gap)),
+            (int(gleft + cell_w + gap), int(gtop + cell_h + gap)),
         ]
         for i, (x, y) in enumerate(positions):
             if i < len(cells):
                 self._add_zone_box(slide, int(x), int(y), int(cell_w), int(cell_h),
                                   label=cells[i].get("label", ""),
                                   body=cells[i].get("body", ""))
+        # y-axis label: vertical (rotated 270°) along the left of the grid.
+        if y_label:
+            yb = self._add_textbox(slide, int(gleft - strip - lblgap + (strip - gheight) // 2),
+                                   int(gtop + gheight // 2 - strip // 2),
+                                   int(gheight), int(strip))
+            yb.rotation = 270
+            yp = yb.text_frame.paragraphs[0]
+            yp.text = y_label
+            yp.font.name = self.FONT_HEAD; yp.font.size = self._fs(SZ_SMALL)
+            yp.font.bold = True; yp.font.color.rgb = self.MUTED
+            yp.alignment = PP_ALIGN.CENTER
+            yb.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
+        # x-axis label: horizontal, centered under the grid.
+        if x_label:
+            xb = self._add_textbox(slide, int(gleft), int(gtop + gheight + lblgap),
+                                   int(gwidth), int(strip))
+            xp = xb.text_frame.paragraphs[0]
+            xp.text = x_label
+            xp.font.name = self.FONT_HEAD; xp.font.size = self._fs(SZ_SMALL)
+            xp.font.bold = True; xp.font.color.rgb = self.MUTED
+            xp.alignment = PP_ALIGN.CENTER
+            xb.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
         if sd.footnote:
             self._add_footnote(slide, sd.footnote)
 

@@ -257,3 +257,21 @@ def test_timeline_v_two_class_text_and_highlight():
     assert hi[0]["text"] == "本研究"
     # the non-highlighted item must NOT be marked highlighted
     assert sum(it["highlight"] for it in sd.timeline_items) == 1
+
+
+# --- 10. zone-matrix must render BOTH axis labels ---------------------------
+
+def test_zone_matrix_renders_axis_labels():
+    md = ("<!-- _class: zone-matrix -->\n# M\n"
+          '<div class="zm-container">\n'
+          '<div class="zm-ylabel">YAXIS_PRECISION</div>\n'
+          '<div class="zm-xlabel">XAXIS_COST</div>\n'
+          '<div class="zm-cell zm-tl"><span class="zm-label">A</span>'
+          '<span class="zm-body">a</span></div>\n'
+          '</div>')
+    b = _make_builder()
+    b.build_zone_matrix(parse_slide(0, md))
+    txt = "".join(s.text_frame.text for sl in b.prs.slides
+                  for s in sl.shapes if getattr(s, "has_text_frame", False))
+    assert "XAXIS_COST" in txt      # x-axis label was dropped entirely
+    assert "YAXIS_PRECISION" in txt
