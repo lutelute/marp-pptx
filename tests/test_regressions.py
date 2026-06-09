@@ -313,3 +313,53 @@ def test_gallery_img_renders_captions():
     txt = "".join(s.text_frame.text for sl in b.prs.slides
                   for s in sl.shapes if getattr(s, "has_text_frame", False))
     assert "CAP_ALPHA" in txt and "CAP_BETA" in txt   # captions were dropped
+
+
+# --- 13. rq: a long question must not overflow the card onto rq_sub ----------
+
+def test_rq_long_main_does_not_overlap_sub():
+    long_q = "長系列データにおいて推論精度を維持したまま計算量を大幅に削減し" * 3 + "できるか"
+    md = ("<!-- _class: rq -->\n# RQ\n"
+          f'<div class="rq-main">\n{long_q}\n</div>\n'
+          '<div class="rq-sub">\n— サブ説明テキスト\n</div>')
+    b = _make_builder()
+    b.build_rq(parse_slide(0, md))
+    shapes = [s for s in b.prs.slides[0].shapes
+              if getattr(s, "has_text_frame", False) and s.text_frame.text.strip()]
+    main = next(s for s in shapes if "長系列" in s.text_frame.text)
+    sub = next(s for s in shapes if "サブ説明" in s.text_frame.text)
+    # the long question wraps to several lines, so the card must be sized for
+    # at least 2 lines (SZ_H2 = 24pt). The width-unaware estimate sized it for
+    # ~1 line + padding and the text spilled out the bottom onto rq_sub.
+    assert main.height >= int(Pt(24 * 1.25 * 2)) + int(Inches(0.4))
+    assert sub.top >= main.top + main.height - int(Inches(0.05))
+
+
+# --- 14. quote / definition: wrapped body must not collide with what's below
+
+def test_quote_long_text_no_overlap_with_source():
+    long_q = "科学とは単なる知識の集積ではなくむしろ世界を理解するための体系的な思考の方法であり" * 2
+    md = (f'<!-- _class: quote -->\n# Q\n<div class="qt-text">{long_q}</div>\n'
+          '<div class="qt-source">Carl Sagan (1995)</div>')
+    b = _make_builder()
+    b.build_quote(parse_slide(0, md))
+    sh = [s for s in b.prs.slides[0].shapes
+          if getattr(s, "has_text_frame", False) and s.text_frame.text.strip()]
+    quote = next(s for s in sh if "科学とは" in s.text_frame.text)
+    src = next(s for s in sh if "Carl Sagan" in s.text_frame.text)
+    assert src.top >= quote.top + quote.height - int(Inches(0.05))
+
+
+def test_definition_long_body_no_overlap_with_note():
+    long_b = "入力系列の全要素ペア間ではなく選択的に注意重みを計算することで計算量を大幅に削減する手法" * 2
+    md = ('<!-- _class: definition -->\n# D\n'
+          '<div class="df-term">用語</div>\n'
+          f'<div class="df-body">{long_b}</div>\n'
+          '<div class="df-note">関連: NOTE_TOKEN</div>')
+    b = _make_builder()
+    b.build_definition(parse_slide(0, md))
+    sh = [s for s in b.prs.slides[0].shapes
+          if getattr(s, "has_text_frame", False) and s.text_frame.text.strip()]
+    body = next(s for s in sh if "入力系列" in s.text_frame.text)
+    note = next(s for s in sh if "NOTE_TOKEN" in s.text_frame.text)
+    assert note.top >= body.top + body.height - int(Inches(0.05))

@@ -1823,11 +1823,15 @@ class PptxBuilder:
         if sd.h1:
             self._add_title(slide, sd.h1)
         rleft, rtop, rwidth, rheight = self._content_region(has_title=bool(sd.h1))
-        main_h = int(self._estimate_text_height([sd.rq_main], SZ_H2)) + int(Inches(0.4)) if sd.rq_main else 0
-        sub_h = int(Inches(0.8)) if sd.rq_sub else 0
-        gap = int(Inches(0.3)) if sd.rq_sub else 0
         card_w = int(rwidth * 0.82)
         card_x = rleft + (rwidth - card_w) // 2
+        # Estimate at the card's INNER text width so a long question that wraps
+        # to 2-3 lines sizes the card tall enough — otherwise the text spilled
+        # out the bottom and collided with rq_sub.
+        main_tw = card_w - int(Inches(0.6))
+        main_h = int(self._estimate_text_height([sd.rq_main], SZ_H2, width=main_tw)) + int(Inches(0.4)) if sd.rq_main else 0
+        sub_h = int(Inches(0.8)) if sd.rq_sub else 0
+        gap = int(Inches(0.3)) if sd.rq_sub else 0
         block_h = main_h + gap + sub_h
         top = rtop + max(0, (rheight - block_h) // 2)
         if sd.rq_main:
@@ -2040,7 +2044,9 @@ class PptxBuilder:
         rleft, rtop, rwidth, rheight = self._content_region(has_title=bool(sd.h1))
         qx = rleft + int(Inches(1.0))
         qw = rwidth - int(Inches(1.6))
-        quote_h = int(self._estimate_text_height([sd.quote_text or ""], SZ_H2))
+        # width-aware so a long quote that wraps sizes its block correctly —
+        # otherwise the attribution landed on top of the wrapped quote text.
+        quote_h = int(self._estimate_text_height([sd.quote_text or ""], SZ_H2, width=qw))
         block_h = int(Inches(0.9)) + quote_h + (int(Inches(0.5)) if sd.quote_source else 0)
         top = rtop + max(0, (rheight - block_h) // 2)
         # opening quotation mark (ghost)
@@ -2198,7 +2204,9 @@ class PptxBuilder:
         tx = rleft + int(Inches(0.4))
         tw = rwidth - int(Inches(0.4))
         term_h = int(Inches(0.7)) if sd.def_term else 0
-        body_h = int(self._estimate_text_height([sd.def_body], SZ_BODY)) if sd.def_body else 0
+        # width-aware: a long definition wraps, and an under-estimate let the
+        # body text run under the note below it.
+        body_h = int(self._estimate_text_height([sd.def_body], SZ_BODY, width=tw)) if sd.def_body else 0
         note_h = int(Inches(0.6)) if sd.def_note else 0
         gaps = (int(Inches(0.2)) if sd.def_term and sd.def_body else 0) + \
                (int(Inches(0.3)) if sd.def_note else 0)
