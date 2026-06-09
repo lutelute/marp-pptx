@@ -8,8 +8,8 @@
 ## TL;DR
 
 > **作れる。型の文字数予算に収めれば学会発表級、図解とメッセージラインを足せば博士発表級。**
-> 検証の過程で実バグ15件(原検証6+自己改善ループ9)を発見・全件修正し、さらに無言フォールバック警告/lint偽陽性/MCP警告伝播を改善・`lint_deck` に density 引数を追加。リグレッションテストで固定した(**112 passed**)。
-> 残る弱点は「溢れたときの耐性」(visual lint が要素間重なりを検出できない)。
+> 検証の過程で実バグ15件(原検証6+自己改善ループ9)を発見・全件修正し、さらに無言フォールバック警告/lint偽陽性/MCP警告伝播を改善・`lint_deck` に density 引数を追加。リグレッションテストで固定した(**116 passed**)。
+> 当初の弱点「溢れたときの耐性」も、**幾何的 text-collision 検出器**を新設して wrap-overlap を自動検出するようにした(§5-1, §8)。
 
 ## 1. 検証方法
 
@@ -48,7 +48,7 @@
 
 共通の教訓: **1〜2, 5 は「スキル文書(skeleton)に載っている書き方」が壊れる実装乖離**だった。6 は実ユーザーが最も踏みやすいミス(div 閉じ忘れ)で最悪の挙動(ハング)。
 
-リグレッションテスト: `tests/test_regressions.py`(23 テスト)。全テスト **112 passed**。（このうち §8 の自己改善ループで追加された分を含む）
+リグレッションテスト: `tests/test_regressions.py`(27 テスト)。全テスト **116 passed**。（このうち §8 の自己改善ループで追加された分を含む）
 
 ## 4. エラーハンドリング試験(11 ケース)
 
@@ -70,7 +70,7 @@
 
 ## 5. 既知の制限
 
-1. **visual lint は要素間の重なりを検出できない**(検出は blank / edge-overflow / sparse / 上下偏りの 4 種のみ)。バグ 3 の重なりを 0 警告で通した。【未修正】
+1. ~~**visual lint は要素間の重なりを検出できない**~~ → **§8 のループで `detect_text_collisions()` を追加**(幾何的・決定論的。各テキストボックスの必要高さを箱幅で再推定し、下の要素に 0.12in 超侵入したら検出）。ビルド後の自己チェックとして `self.warnings`→CLI/MCP に流れる。バグ3/12-15 の wrap-overlap クラスを**将来自動で捕捉**する。52型全 skeleton＋デモ2本で誤検出ゼロを実証。【修正済み】
 2. ~~**`lint_deck()` に density 引数がない**~~ → **本検証で `density=` 引数を追加**(keynote 成果物を keynote 設定でレンダ)。default は academic で後方互換。【修正済み】
    - ⚠️ **自己レビューで判明した誤り＋バグ修正**: density 追加直後、keynote で 11 枚中 9 枚に edge 警告が出たのを「字が大きく端に寄るため正しい挙動」と一旦結論づけたが**これは誤り**だった。実体は `visual_lint` が**右下のページ番号(builder が描く chrome)を本文として bbox に含めていた**ため(全枚 maxy=0.967、本文は除けば 0.60–0.92)。footer 隅(y>0.93 ∧ x>0.78)を bbox から除外する修正で 9→0。広い下溢れ・左右溢れの検出は合成画像テストで温存を確認。【修正済み】
 3. ~~`_estimate_text_height` の `width=` を渡しているのは takeaway のみ~~ → **§8 のループで rq/quote/definition/highlight にも展開**（全17呼び出しを精査、statement は実レンダで重なり無し確認、columns は低risk）。【修正済み】
@@ -106,7 +106,7 @@ soffice --headless --convert-to pdf /tmp/check.pptx --outdir /tmp
 pdftoppm -png -r 90 /tmp/check.pdf /tmp/slide
 
 # テスト
-python -m pytest tests/  # 112 passed
+python -m pytest tests/  # 116 passed
 ```
 
 ## 8. 自己改善ループ（レポート後の継続改善, 2026-06-09〜10）
@@ -140,4 +140,6 @@ python -m pytest tests/  # 112 passed
 
 ### 8.4 累積
 
-原検証6件 + ループ9件（builder/parser）= **実バグ15件修正**、加えて lint 偽陽性・MCP 警告伝播を改善。テスト **112 passed**（うち test_regressions.py が 23）。残候補: visual lint への要素間重なり検出（現状の唯一の盲点・要設計）。
+原検証6件 + ループ9件（builder/parser）= **実バグ15件修正**、加えて lint 偽陽性・MCP 警告伝播を改善。**さらに capstone として幾何的 text-collision 検出器を新設**（手で直した wrap-overlap クラスを自動で捕捉する決定論的ガード、誤検出ゼロ実証）。テスト **116 passed**（うち test_regressions.py が 27）。
+
+これでループの当初の残候補（唯一の盲点だった「要素間重なり検出」）も解消。今後 wrap-overlap が再発すれば `convert` の `[warn]` と MCP `authoring_warnings` が自動で知らせる。
