@@ -1963,16 +1963,26 @@ class PptxBuilder:
         left_w = int(rwidth * 0.56)
         right_w = int(rwidth * 0.4)
         right_x = rleft + rwidth - right_w
+        # Reserve room for the figure caption — overview/result dropped it
+        # entirely (the figure showed, but `Fig. N. …` never rendered).
+        cap_h = int(Inches(0.5)) if sd.caption else 0
         img_file = self._resolve_image(image_path) if image_path else None
         if img_file:
             from PIL import Image
             with Image.open(img_file) as im:
                 iw, ih = im.size
-            max_w = int(left_w * 0.98); max_h = int(avail_h * 0.96)
+            max_w = int(left_w * 0.98); max_h = int((avail_h - cap_h) * 0.96)
             scale = min(max_w / (iw * 914400 / 96), max_h / (ih * 914400 / 96))
             pw = int(iw * scale * 914400 / 96); ph = int(ih * scale * 914400 / 96)
-            img_top = cur_top + max(0, (avail_h - ph) // 2)
+            img_top = cur_top + max(0, (avail_h - ph - cap_h) // 2)
             slide.shapes.add_picture(img_file, rleft, int(img_top), pw, ph)
+            if sd.caption:
+                ctb = self._add_textbox(slide, rleft, int(img_top + ph + Inches(0.1)),
+                                        left_w, cap_h)
+                cp = ctb.text_frame.paragraphs[0]; cp.text = sd.caption
+                cp.font.name = self.FONT; cp.font.size = self._fs(SZ_SMALL)
+                cp.font.color.rgb = self.MUTED; cp.alignment = PP_ALIGN.CENTER
+                ctb.text_frame.word_wrap = True
         if points:
             ph_pts = int(self._estimate_text_height([f"\u2022 {p}" for p in points], SZ_COL))
             pts_top = cur_top + max(0, (avail_h - min(ph_pts, avail_h)) // 2)

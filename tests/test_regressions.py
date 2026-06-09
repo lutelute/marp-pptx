@@ -275,3 +275,21 @@ def test_zone_matrix_renders_axis_labels():
                   for s in sl.shapes if getattr(s, "has_text_frame", False))
     assert "XAXIS_COST" in txt      # x-axis label was dropped entirely
     assert "YAXIS_PRECISION" in txt
+
+
+# --- 11. overview/result must render the figure caption ---------------------
+
+def test_overview_renders_figure_caption():
+    from PIL import Image
+    d = Path(tempfile.mkdtemp())
+    Image.new("RGB", (400, 260), (230, 235, 242)).save(d / "f.png")
+    md = ("<!-- _class: overview -->\n# O\n\n"
+          '<div class="ov-lead">lead</div>\n\n'
+          "![w:600](f.png)\n\n"
+          '<div class="caption">Fig. 1. CAPTION_TOKEN here</div>\n\n'
+          '<div class="ov-points">\n<li>p1</li>\n</div>')
+    b = PptxBuilder(base_path=d, theme=ThemeConfig())
+    b.build_all([parse_slide(0, md)])
+    txt = "".join(s.text_frame.text for sl in b.prs.slides
+                  for s in sl.shapes if getattr(s, "has_text_frame", False))
+    assert "CAPTION_TOKEN" in txt      # caption was dropped by _build_image_points
