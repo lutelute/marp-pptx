@@ -207,3 +207,53 @@ def test_visual_lint_still_flags_real_bottom_overflow():
     png = _synth_png([(100, 400, 900, 718)])
     warns = visual_lint(png, "kpi")
     assert any("reaches the slide edge" in w for w in warns)
+
+
+# --- 9. timeline: two-class spans + highlight on the item div ---------------
+
+_TL_H = """<!-- _class: timeline-h -->
+# H
+<div class="tl-h-container">
+<div class="tl-h-item">
+  <div class="tl-h-block">
+    <span class="tl-h-year">2012</span>
+    <span class="tl-h-text">AlexNet</span>
+  </div>
+</div>
+<div class="tl-h-item highlight">
+  <div class="tl-h-block">
+    <span class="tl-h-year">2024</span>
+    <span class="tl-h-text bold">本研究</span>
+  </div>
+</div>
+</div>"""
+
+_TL_V = """<!-- _class: timeline -->
+# V
+<div class="tl-container">
+<div class="tl-item">
+  <span class="tl-year">2012</span>
+  <span class="tl-text">AlexNet</span>
+</div>
+<div class="tl-item highlight">
+  <span class="tl-year">2024</span>
+  <span class="tl-text bold">本研究</span>
+</div>
+</div>"""
+
+
+def test_timeline_h_two_class_text_and_highlight():
+    sd = parse_slide(0, _TL_H)
+    hi = [it for it in sd.timeline_items if it["highlight"]]
+    assert len(hi) == 1
+    assert hi[0]["text"] == "本研究"      # was dropped (two-class regex)
+    assert hi[0]["year"] == "2024"
+
+
+def test_timeline_v_two_class_text_and_highlight():
+    sd = parse_slide(0, _TL_V)
+    hi = [it for it in sd.timeline_items if it["highlight"]]
+    assert len(hi) == 1
+    assert hi[0]["text"] == "本研究"
+    # the non-highlighted item must NOT be marked highlighted
+    assert sum(it["highlight"] for it in sd.timeline_items) == 1

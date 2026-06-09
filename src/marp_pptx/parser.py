@@ -416,32 +416,43 @@ def parse_slide(index: int, raw: str) -> SlideData:
         container = extract_div(content, "tl-h-container")
         if container:
             items = extract_child_divs(container)
-            for item in items:
+            # extract_child_divs returns each item's INNER html, dropping the
+            # `tl-h-item highlight` class on the item's own div — so capture the
+            # opening-tag classes separately (same order) to recover highlight.
+            item_classes = re.findall(r'<div\s+class="([^"]*tl-h-item[^"]*)"', container)
+            for i, item in enumerate(items):
                 block = extract_child_divs(item)
                 inner = block[0] if block else item
-                ym = re.search(r'class="tl-h-year"[^>]*>(.*?)</span>', inner, re.DOTALL)
-                tm = re.search(r'class="tl-h-text"[^>]*>(.*?)</span>', inner, re.DOTALL)
-                dm = re.search(r'class="tl-h-detail"[^>]*>(.*?)</div>', inner, re.DOTALL)
+                # Match the class token anywhere in the attribute so the
+                # highlighted item's `class="tl-h-text bold"` (two classes) is
+                # still captured — the old exact-quote regex dropped it, losing
+                # the most important entry (usually "our work / 本研究").
+                ym = re.search(r'class="[^"]*tl-h-year[^"]*"[^>]*>(.*?)</span>', inner, re.DOTALL)
+                tm = re.search(r'class="[^"]*tl-h-text[^"]*"[^>]*>(.*?)</span>', inner, re.DOTALL)
+                dm = re.search(r'class="[^"]*tl-h-detail[^"]*"[^>]*>(.*?)</div>', inner, re.DOTALL)
+                hl = "highlight" in (item_classes[i] if i < len(item_classes) else "")
                 sd.timeline_items.append({
                     "year": strip_html(ym.group(1)) if ym else "",
                     "text": strip_html(tm.group(1)) if tm else "",
                     "detail": text_with_breaks(dm.group(1)) if dm else "",
-                    "highlight": "highlight" in item,
+                    "highlight": hl,
                 })
 
     elif cls == "timeline":
         container = extract_div(content, "tl-container")
         if container:
             items = extract_child_divs(container)
-            for item in items:
-                ym = re.search(r'class="tl-year"[^>]*>(.*?)</span>', item, re.DOTALL)
-                tm = re.search(r'class="tl-text"[^>]*>(.*?)</span>', item, re.DOTALL)
-                dm = re.search(r'class="tl-detail"[^>]*>(.*?)</div>', item, re.DOTALL)
+            item_classes = re.findall(r'<div\s+class="([^"]*tl-item[^"]*)"', container)
+            for i, item in enumerate(items):
+                ym = re.search(r'class="[^"]*tl-year[^"]*"[^>]*>(.*?)</span>', item, re.DOTALL)
+                tm = re.search(r'class="[^"]*tl-text[^"]*"[^>]*>(.*?)</span>', item, re.DOTALL)
+                dm = re.search(r'class="[^"]*tl-detail[^"]*"[^>]*>(.*?)</div>', item, re.DOTALL)
+                hl = "highlight" in (item_classes[i] if i < len(item_classes) else "")
                 sd.timeline_items.append({
                     "year": strip_html(ym.group(1)) if ym else "",
                     "text": strip_html(tm.group(1)) if tm else "",
                     "detail": text_with_breaks(dm.group(1)) if dm else "",
-                    "highlight": "highlight" in item,
+                    "highlight": hl,
                 })
 
     elif cls == "zone-flow":
