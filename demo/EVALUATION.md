@@ -8,7 +8,7 @@
 ## TL;DR
 
 > **作れる。型の文字数予算に収めれば学会発表級、図解とメッセージラインを足せば博士発表級。**
-> 検証の過程で実バグ15件(原検証6+自己改善ループ9)を発見・全件修正し、さらに無言フォールバック警告/lint偽陽性/MCP警告伝播を改善・`lint_deck` に density 引数を追加。リグレッションテストで固定した(**116 passed**)。
+> 検証の過程で実バグ16件(原検証6+自己改善ループ10)を発見・全件修正し、さらに無言フォールバック警告/lint偽陽性/MCP警告伝播を改善・`lint_deck` に density 引数を追加。リグレッションテストで固定した(**119 passed**)。
 > 当初の弱点「溢れたときの耐性」も、**幾何的 text-collision 検出器**を新設して wrap-overlap を自動検出するようにした(§5-1, §8)。
 
 ## 1. 検証方法
@@ -48,7 +48,7 @@
 
 共通の教訓: **1〜2, 5 は「スキル文書(skeleton)に載っている書き方」が壊れる実装乖離**だった。6 は実ユーザーが最も踏みやすいミス(div 閉じ忘れ)で最悪の挙動(ハング)。
 
-リグレッションテスト: `tests/test_regressions.py`(27 テスト)。全テスト **116 passed**。（このうち §8 の自己改善ループで追加された分を含む）
+リグレッションテスト: `tests/test_regressions.py`(30 テスト)。全テスト **119 passed**。（このうち §8 の自己改善ループで追加された分を含む）
 
 ## 4. エラーハンドリング試験(11 ケース)
 
@@ -70,7 +70,7 @@
 
 ## 5. 既知の制限
 
-1. ~~**visual lint は要素間の重なりを検出できない**~~ → **§8 のループで `detect_text_collisions()` を追加**(幾何的・決定論的。各テキストボックスの必要高さを箱幅で再推定し、下の要素に 0.12in 超侵入したら検出）。ビルド後の自己チェックとして `self.warnings`→CLI/MCP に流れる。バグ3/12-15 の wrap-overlap クラスを**将来自動で捕捉**する。52型全 skeleton＋デモ2本で誤検出ゼロを実証。【修正済み】
+1. ~~**visual lint は要素間の重なりを検出できない**~~ → **§8 のループで `detect_text_collisions()` を追加**(幾何的・決定論的。各テキストボックスの必要高さを箱幅で再推定)。2系統で検出: (a)下のテキスト要素に 0.12in 超侵入＝**衝突**、(b)推定下端がスライド下端を 0.2in 超過＝**画面外溢れ**(profile の長 bio 等、下に要素が無い溢れ)。ビルド後の自己チェックとして `self.warnings`→CLI/MCP に流れる。バグ3/12-16 の wrap-overlap クラスを**将来自動で捕捉**する。52型全 skeleton＋デモ2本＋収まる profile で誤検出ゼロを実証。【修正済み】
 2. ~~**`lint_deck()` に density 引数がない**~~ → **本検証で `density=` 引数を追加**(keynote 成果物を keynote 設定でレンダ)。default は academic で後方互換。【修正済み】
    - ⚠️ **自己レビューで判明した誤り＋バグ修正**: density 追加直後、keynote で 11 枚中 9 枚に edge 警告が出たのを「字が大きく端に寄るため正しい挙動」と一旦結論づけたが**これは誤り**だった。実体は `visual_lint` が**右下のページ番号(builder が描く chrome)を本文として bbox に含めていた**ため(全枚 maxy=0.967、本文は除けば 0.60–0.92)。footer 隅(y>0.93 ∧ x>0.78)を bbox から除外する修正で 9→0。広い下溢れ・左右溢れの検出は合成画像テストで温存を確認。【修正済み】
 3. ~~`_estimate_text_height` の `width=` を渡しているのは takeaway のみ~~ → **§8 のループで rq/quote/definition/highlight にも展開**（全17呼び出しを精査、statement は実レンダで重なり無し確認、columns は低risk）。【修正済み】
@@ -106,7 +106,7 @@ soffice --headless --convert-to pdf /tmp/check.pptx --outdir /tmp
 pdftoppm -png -r 90 /tmp/check.pdf /tmp/slide
 
 # テスト
-python -m pytest tests/  # 116 passed
+python -m pytest tests/  # 119 passed
 ```
 
 ## 8. 自己改善ループ（レポート後の継続改善, 2026-06-09〜10）
@@ -127,6 +127,7 @@ python -m pytest tests/  # 116 passed
 | 10 | builder | overview/result の図キャプションが落ちる | 共有 `_build_image_points` が `sd.caption` 未描画 | b5ed6aa |
 | 11 | builder | gallery-img の各画像キャプションが全部落ちる | `build_gallery_img` が `item["caption"]` 未描画 | dd80514 |
 | 12-15 | builder | rq/quote/definition/highlight で**折返した本文が下の要素に重なる/バンドからはみ出す**（バグ3 takeaway と同クラス） | width 非考慮の `_estimate_text_height` が1行分で見積もり | f39144d, 420c5f8 |
+| 16 | builder | **profile** の長い bio が右カラムで折返すと block の中央化が崩れ／画面外へ溢れる | `bio_h` が width 非考慮（巡回指摘で発見） | 398908e |
 | L1 | lint | visual_lint がほぼ全スライドで偽の edge 警告 | 右下のページ番号 chrome を本文として bbox に算入（keynote で顕著） | 3c04a4c |
 | G1 | mcp | エージェントが build_pptx の警告（未知型/画像不在）を受け取れない | 返り値に authoring_warnings が無く stderr で握り潰し | 12f8e13 |
 
@@ -134,12 +135,12 @@ python -m pytest tests/  # 116 passed
 
 ### 8.3 系統監査の負の結果（クリーン確認）
 
-- **wrap-overlap クラスの網羅**: `_estimate_text_height` の全17呼び出しを精査。「折返す単一長文の高さで下に別要素を積む」5型（takeaway/rq/quote/definition/highlight）を修正。`statement` は accent 線がテキスト上端に追従し長文でフォント自動縮小するため**実レンダで重なり無しを確認（許容）**。`columns` は箇条書き横並び（行数計上済・縦積み無し）で低risk。
+- **wrap-overlap クラスの網羅**: `_estimate_text_height` の全17呼び出しを精査。「折返す単一長文の高さで下に別要素を積む」型を width 指定で修正 — takeaway/rq/quote/definition/highlight に加え、巡回指摘で **profile**（長い bio が右カラムで折返し、block_h 過小→中央化崩れ／画面外溢れ）も修正（commit 398908e）。`statement` は accent 線がテキスト上端に追従し長文でフォント自動縮小するため**実レンダで重なり無しを確認（許容）**。`columns` は箇条書き横並び（行数計上済・縦積み無し）で低risk。
 - パーサ全体の exact-quote `class="X"` 正規表現を監査 → 残るは references/checklist のみで、両 skeleton は2クラスを使わず現状バグ無し（投機的変更は見送り）。
 - 52-skeleton 監査の残り信号（equation の LaTeX 断片・chart 系列名）は OMML/chart-XML 行きの**偽陽性**で実害なし。
 
 ### 8.4 累積
 
-原検証6件 + ループ9件（builder/parser）= **実バグ15件修正**、加えて lint 偽陽性・MCP 警告伝播を改善。**さらに capstone として幾何的 text-collision 検出器を新設**（手で直した wrap-overlap クラスを自動で捕捉する決定論的ガード、誤検出ゼロ実証）。テスト **116 passed**（うち test_regressions.py が 27）。
+原検証6件 + ループ10件（builder/parser、profile 含む）= **実バグ16件修正**、加えて lint 偽陽性・MCP 警告伝播を改善。**さらに capstone として幾何的 text-collision 検出器を新設**（手で直した wrap-overlap クラスを自動で捕捉する決定論的ガード）。検出器は2系統:(1)テキスト同士の衝突、(2)**下に要素が無い画面外溢れ**（profile の長 bio など。0.2in マージンで脚注の誤検出を回避）。52型 skeleton＋デモ＋収まる profile で誤検出ゼロ、合成/実 profile 溢れで陽性を実証。テスト **119 passed**（うち test_regressions.py が 30）。
 
-これでループの当初の残候補（唯一の盲点だった「要素間重なり検出」）も解消。今後 wrap-overlap が再発すれば `convert` の `[warn]` と MCP `authoring_warnings` が自動で知らせる。
+これでループの残候補（profile の width 横展開＋唯一の盲点だった「要素間重なり／画面外溢れ検出」）をすべて解消。今後 wrap-overlap が再発すれば `convert` の `[warn]` と MCP `authoring_warnings` が build 時に自動で知らせる。
