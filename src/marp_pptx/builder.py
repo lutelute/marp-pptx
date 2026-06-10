@@ -2655,7 +2655,11 @@ class PptxBuilder:
         # Right column: name / affiliation / bio, vertically centered as a block
         name_h = int(Inches(0.6)) if sd.profile_name else 0
         affil_h = int(Inches(0.4)) if sd.profile_affiliation else 0
-        bio_h = int(self._estimate_text_height(["\u2022 " + b for b in sd.profile_bio], SZ_ZONE_B)) if sd.profile_bio else 0
+        # width-aware: long bio bullets wrap in the right column; a 1-line-each
+        # estimate under-sized the block, mis-centering it (pushed low / could
+        # run off the bottom).
+        bio_h = int(self._estimate_text_height(["\u2022 " + b for b in sd.profile_bio],
+                                               SZ_ZONE_B, width=right_w)) if sd.profile_bio else 0
         block_h = name_h + affil_h + (int(Inches(0.2)) if bio_h else 0) + bio_h
         cur_y = rtop + max(0, (rheight - block_h) // 2)
         if sd.profile_name:
@@ -2951,8 +2955,10 @@ class PptxBuilder:
         try:
             from marp_pptx.visuallint import detect_text_collisions
             for c in detect_text_collisions(self.prs):
-                self._warn(f"slide {c['slide']}: text overflows onto the element "
-                           f"below it — \"{c['over'][:24]}\" runs into \"{c['onto'][:24]}\"")
+                where = (c["onto"] if c["onto"].startswith("(")
+                         else f'onto "{c["onto"][:24]}"')
+                self._warn(f"slide {c['slide']}: text overflows {where} "
+                           f"— \"{c['over'][:24]}\" (box too short for its content)")
         except Exception:
             pass  # a self-check must never break a build
 

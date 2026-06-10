@@ -432,3 +432,46 @@ def test_builder_self_check_clean_on_all_skeletons():
         b.build_all(parse_marp(f))
         bad = [w for w in b.warnings if "overflows onto" in w]
         assert not bad, f"{Path(f).name}: {bad}"
+
+
+# --- 17. profile bio is width-aware; detector catches off-slide overflow -----
+
+def test_profile_long_bio_is_width_aware():
+    # A bio of long bullets wraps in the right column; the block height (hence
+    # vertical centering) must reflect the wrapped height, not 1 line each.
+    bio = "\n".join(f'<li>項目{k}: ' + "長い説明文がここに入って必ず折り返す" * 2 + "</li>"
+                    for k in range(4))
+    md = ("<!-- _class: profile -->\n# P\n"
+          '<div class="pf-container">\n'
+          '<div class="pf-name">山田 太郎</div>\n'
+          '<div class="pf-affiliation">所属</div>\n'
+          f'<div class="pf-bio">\n{bio}\n</div>\n</div>')
+    b = _make_builder()
+    b.build_profile(parse_slide(0, md))
+    bio_box = next(s for s in b.prs.slides[0].shapes
+                   if getattr(s, "has_text_frame", False) and "項目0" in s.text_frame.text)
+    # 4 bullets each wrapping to ~2 lines → box must be much taller than 4 lines
+    from marp_pptx.visuallint import _needed_height_emu
+    assert bio_box.height >= _needed_height_emu(bio_box) - int(Inches(0.05))
+
+
+def test_collision_detector_flags_off_slide_overflow():
+    from pptx import Presentation
+    from marp_pptx.visuallint import detect_text_collisions
+    prs = Presentation()
+    s = prs.slides.add_slide(prs.slide_layouts[6])
+    # box low on the slide with content that runs well past the bottom edge
+    _mk_textbox(s, 1, 6.5, 8, 0.4, "下端を確実に超える長い文章" * 6, 24)
+    hits = detect_text_collisions(prs)
+    assert any("off the slide bottom" in h["onto"] for h in hits)
+
+
+def test_collision_detector_ignores_bottom_footnote():
+    from pptx import Presentation
+    from marp_pptx.visuallint import detect_text_collisions
+    prs = Presentation()
+    s = prs.slides.add_slide(prs.slide_layouts[6])
+    # a one-line footnote anchored near the bottom must NOT trip the off-slide
+    # check (0.2in margin absorbs the estimate's slight over-count)
+    _mk_textbox(s, 0.5, 7.0, 9, 0.3, "脚注テキストが一行で入る程度の長さ", 11)
+    assert detect_text_collisions(prs) == []

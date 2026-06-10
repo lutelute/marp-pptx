@@ -173,16 +173,24 @@ def _needed_height_emu(shape) -> int:
 
 
 def detect_text_collisions(prs, *, intrude_emu: int = 152400) -> list[dict]:
-    """Flag text boxes whose wrapped content overflows onto a lower text box.
+    """Flag text whose wrapped content overflows where it shouldn't — either
+    onto a lower text box (collision) or off the bottom of the slide.
 
-    `intrude_emu` (default 0.12in) is how far the overflow must reach into the
-    box below before it counts — tuned to ignore intentionally-tight label
-    placements (eyebrows above their heading) while catching real spill-over.
+    Both come from the same root (a box estimated too short for its wrapped
+    content). The collision case catches stacked layouts (rq/takeaway/…); the
+    off-slide case catches single blocks with nothing below them but the slide
+    edge (e.g. a long profile bio that runs off the bottom) — which the
+    collision check alone cannot see.
 
-    Returns [{slide, over, onto}] where `over` is the overflowing text and
-    `onto` is the text it collides with. Empty list = clean. Pure geometry.
+    `intrude_emu` (default 0.12in) is how far a collision overflow must reach
+    into the box below before it counts — tuned to ignore intentionally-tight
+    label placements (eyebrows above their heading) while catching real spill.
+
+    Returns [{slide, over, onto}]. `onto` is the text it collides with, or
+    "(off the slide bottom)" for off-slide overflow. Empty list = clean.
     """
     out: list[dict] = []
+    sh = prs.slide_height
     for i, slide in enumerate(prs.slides, 1):
         boxes = [s for s in slide.shapes
                  if getattr(s, "has_text_frame", False)
@@ -190,6 +198,17 @@ def detect_text_collisions(prs, *, intrude_emu: int = 152400) -> list[dict]:
                  and not _PAGE_NO.fullmatch(s.text_frame.text.strip())]
         for a in boxes:
             a_bottom = a.top + _needed_height_emu(a)
+            # (1) off-slide bottom overflow — text runs past the slide edge with
+            #     nothing below it to collide with. +0.2in margin past the edge:
+            #     bottom-anchored footnotes over-estimate by ~0.07in (they fit on
+            #     one line), while a real run-off (e.g. a too-long profile bio)
+            #     clears the edge by ~0.4in — the margin separates them cleanly.
+            if a.top < sh and a_bottom > sh + 182880:
+                out.append({"slide": i,
+                            "over": a.text_frame.text.strip()[:40],
+                            "onto": "(off the slide bottom)"})
+                continue
+            # (2) collision onto a lower text box
             for b in boxes:
                 if b is a or b.top < a.top + 6350:          # b must sit below a
                     continue
