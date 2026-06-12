@@ -59,6 +59,7 @@ class ThemeLayout:
     accent_rule: str = "none"          # none / short-left / underline / top-tick
     table_header_style: str = "fill"   # fill / rule
     divider_number: bool = True        # giant ghost section number on dividers
+    footer_bar: bool = False           # beamer-style bar: deck title | section | page
 
 
 @dataclass

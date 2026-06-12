@@ -11,7 +11,7 @@ from marp_pptx.render import tools_available
 
 def test_slide_types():
     allt = srv.slide_types()
-    assert len(allt) == 52
+    assert len(allt) == 53
     assert {"name", "category", "meaning", "use_when", "geometry"} <= set(allt[0])
     evals = srv.slide_types("evaluation")
     assert evals and all(t["category"] == "evaluation" for t in evals)

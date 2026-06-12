@@ -151,6 +151,9 @@ def list_themes():
     click.echo("Themes (color + layout):")
     click.echo(f"  {'claude':<14} Anthropic cream + clay・中央バランス  accent #d97757   (default)")
     click.echo(f"  {'minimal':<14} 洗練ミニマル白基調・中央バランス      accent #c2410c")
+    click.echo(f"  {'tmu-cs':<14} TMU グリーン白地・学術 (緑見出し+細下線) accent #006543")
+    click.echo(f"  {'research':<14} PowerPoint マスタ灰・研究審査 (高密度・上詰め) accent #dd5400")
+    click.echo(f"  {'beamer':<14} LaTeX beamer 紺・定理ブロック+フッターバー    accent #b8860b")
 
     palettes_dir = Path(__file__).parent / "data" / "themes" / "palettes"
     pj = palettes_dir / "palettes.json"

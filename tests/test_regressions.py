@@ -475,3 +475,254 @@ def test_collision_detector_ignores_bottom_footnote():
     # check (0.2in margin absorbs the estimate's slight over-count)
     _mk_textbox(s, 0.5, 7.0, 9, 0.3, "脚注テキストが一行で入る程度の長さ", 11)
     assert detect_text_collisions(prs) == []
+
+
+# --- 17. diagram/chart captions must wrap instead of running off-slide ------
+# python-pptx textboxes default to wrap="none"; a multi-sentence CJK caption
+# rendered as one line past both slide edges.
+
+def _find_shape_with_text(slide, token):
+    for s in slide.shapes:
+        if getattr(s, "has_text_frame", False) and token in s.text_frame.text:
+            return s
+    return None
+
+
+def test_diagram_long_caption_wraps_and_grows():
+    long_cap = "PV の逆潮流で末端ほど電圧が上昇し、上限に触れた時点の合計連系量が受入限界を決める。" * 3
+    md = ('<!-- _class: diagram -->\n'
+          '# T\n\n'
+          f'<div class="caption">{long_cap}</div>')
+    b = _make_builder()
+    b.build_diagram(parse_slide(0, md))
+    cap = _find_shape_with_text(b.prs.slides[0], "逆潮流")
+    assert cap is not None
+    assert cap.text_frame.word_wrap
+    assert cap.height > int(Inches(0.5))
+
+
+def test_diagram_short_caption_keeps_legacy_height():
+    md = ('<!-- _class: diagram -->\n'
+          '# T\n\n'
+          '<div class="caption">短い一行キャプション</div>')
+    b = _make_builder()
+    b.build_diagram(parse_slide(0, md))
+    cap = _find_shape_with_text(b.prs.slides[0], "キャプション")
+    assert cap is not None
+    assert cap.height == int(Inches(0.5))
+
+
+def test_chart_long_caption_wraps_and_grows():
+    long_cap = "同一計算機・単スレッドでの実測。提案手法はノード数に対しほぼ線形にスケールする。" * 3
+    md = ('<!-- _class: chart -->\n'
+          '<!-- _chart: column -->\n'
+          '# T\n\n'
+          '| x | a | b |\n|---|---|---|\n| 1 | 2 | 3 |\n\n'
+          f'<div class="chart-caption">{long_cap}</div>')
+    b = _make_builder()
+    b.build_chart(parse_slide(0, md))
+    cap = _find_shape_with_text(b.prs.slides[0], "同一計算機")
+    assert cap is not None
+    assert cap.text_frame.word_wrap
+    assert cap.height > int(Inches(0.4))
+
+
+# --- 18. cols-2 column heads must start at one shared top --------------------
+# Per-column vertical centering put short and tall columns at different
+# heights, so the two column headings never lined up.
+
+def test_columns_share_one_top():
+    md = ('<!-- _class: cols-2 -->\n'
+          '# T\n\n'
+          '<div class="columns">\n<div>\n\n'
+          '## 短い列\n\n- 一行だけ\n\n'
+          '</div>\n<div>\n\n'
+          '## 長い列\n\n' + "\n".join(f"- 説明テキスト{i}が長く続く" for i in range(8)) + '\n\n'
+          '</div>\n</div>')
+    b = _make_builder()
+    b.build_columns(parse_slide(0, md))
+    short = _find_shape_with_text(b.prs.slides[0], "短い列")
+    long_ = _find_shape_with_text(b.prs.slides[0], "長い列")
+    assert short is not None and long_ is not None
+    assert short.top == long_.top
+
+
+# --- 19. png-mode inline-math fallback must unwrap \mathrm{...} --------------
+# \mathrm{pv} degraded to "mathrmpv" (the brace strip kept the command name).
+
+def test_math_text_fallback_unwraps_wrappers():
+    b = _make_builder()
+    assert b._math_text_fallback(r"P_{\mathrm{pv}}(t)") == "Ppv(t)"
+    assert b._math_text_fallback(r"\text{SOC}_{\min}") == "SOCmin"
+    assert b._math_text_fallback(r"\mathbf{x}^\top") == "x⊤"  # \top maps to the glyph
+
+
+# --- 20. title_align: left must left-align the whole hero stack --------------
+# ThemeLayout.title_align existed but build_title hardcoded CENTER.
+
+def test_math_annotate_directives_are_parsed():
+    md = ('<!-- _class: equation -->\n'
+          '# DFT\n\n'
+          '<div class="eq-main">\n\n'
+          '$$\n'
+          'X_k % [!math-annotate label="出力" note="k 番目の周波数成分"]\n'
+          '= \\sum_{n=0}^{N-1} % [!math-annotate note="全サンプルの総和"]\n'
+          'x_n e^{-i 2\\pi kn/N}\n'
+          '$$\n\n'
+          '</div>')
+    sd = parse_slide(0, md)
+    assert len(sd.eq_annotations) == 3
+    assert sd.eq_annotations[0] == ("X_k", "出力", "k 番目の周波数成分", None)
+    assert sd.eq_annotations[1][2] == "全サンプルの総和"
+    assert sd.eq_annotations[2][2] is None          # plain line keeps no note
+    assert "[!math-annotate" not in sd.eq_main      # directives stripped
+
+
+def test_math_annotate_builds_cards_and_connectors():
+    from pptx.enum.shapes import MSO_SHAPE_TYPE
+    md = ('<!-- _class: equation -->\n'
+          '# DFT\n\n'
+          '<div class="eq-main">\n\n'
+          '$$\n'
+          'X_k % [!math-annotate label="出力" note="k 番目の周波数成分"]\n'
+          '= \\sum_{n=0}^{N-1} x_n % [!math-annotate note="全サンプルの総和" color="#0d558e"]\n'
+          '$$\n\n'
+          '</div>')
+    b = _make_builder()
+    b.build_equation(parse_slide(0, md))
+    slide = b.prs.slides[0]
+    assert _find_shape_with_text(slide, "k 番目の周波数成分") is not None
+    assert _find_shape_with_text(slide, "全サンプルの総和") is not None
+    lines = [s for s in slide.shapes if s.shape_type == MSO_SHAPE_TYPE.LINE]
+    assert len(lines) == 2                          # one connector per note
+
+
+# --- 22. tmu-cs directive: code [!step N action[:M]] -------------------------
+
+def test_code_steps_parse_and_strip():
+    code = ('for i in range(10):   # ループ [!step 1 warning]\n'
+            '    print(i)          # [!step 2 info]\n'
+            'done = True')
+    md = ('<!-- _class: code -->\n# T\n\n<div class="cd-code">\n\n'
+          '```python\n' + code + '\n```\n\n</div>')
+    sd = parse_slide(0, md)
+    assert sd.code_steps == [(0, 1, "warning", 1), (1, 2, "info", 1)]
+    lines = sd.code_text.split("\n")
+    assert lines[0].endswith("# ループ")            # visible comment kept
+    assert lines[1] == "    print(i)"               # directive-only comment removed
+    assert "[!step" not in sd.code_text
+
+
+def test_step_slides_expand_per_step(tmp_path):
+    md = ("---\nmarp: true\n---\n\n"
+          '<!-- _class: code -->\n# T\n\n<div class="cd-code">\n\n'
+          '```python\na = 1  # [!step 1 highlight]\nb = 2  # [!step 2 focus]\n```\n\n</div>\n')
+    f = tmp_path / "t.md"
+    f.write_text(md, encoding="utf-8")
+    from marp_pptx.parser import parse_marp
+    slides = parse_marp(f)
+    assert len(slides) == 2                          # one slide per step
+    assert [s.active_step for s in slides] == [1, 2]
+    assert [s.index for s in slides] == [0, 1]
+
+
+def test_code_step_band_renders_behind_text():
+    md = ('<!-- _class: code -->\n# T\n\n<div class="cd-code">\n\n'
+          '```python\na = 1  # [!step 1 warning]\nb = 2\n```\n\n</div>')
+    sd = parse_slide(0, md)
+    sd.active_step = 1
+    b = _make_builder()
+    b.build_code(sd)
+    slide = b.prs.slides[0]
+    fills = []
+    for s in slide.shapes:
+        try:
+            fills.append(s.fill.fore_color.rgb)
+        except (TypeError, AttributeError):
+            pass
+    from pptx.dml.color import RGBColor as _C
+    assert _C(0x45, 0x3E, 0x28) in fills            # warning band
+    assert _C(0xF9, 0xE2, 0xAF) in fills            # warning tick bar
+    assert _find_shape_with_text(slide, "STEP 1 / 1") is not None
+
+
+def test_blocks_parse_variants_and_content():
+    md = ('<!-- _class: blocks -->\n# T\n\n'
+          '<div class="bk-container">\n\n'
+          '<div class="bk theorem">\n'
+          '  <span class="bk-title">定理 1</span>\n'
+          '  <span class="bk-body">本文 A</span>\n'
+          '</div>\n\n'
+          '<div class="bk alert">\n'
+          '  <span class="bk-title">注意</span>\n'
+          '  <span class="bk-body">本文 B</span>\n'
+          '</div>\n\n'
+          '</div>')
+    sd = parse_slide(0, md)
+    assert sd.block_items == [("theorem", "定理 1", "本文 A"),
+                              ("alert", "注意", "本文 B")]
+
+
+def test_blocks_render_with_variant_colors():
+    from pptx.dml.color import RGBColor as _C
+    md = ('<!-- _class: blocks -->\n# T\n\n'
+          '<div class="bk-container">\n\n'
+          '<div class="bk theorem">\n'
+          '  <span class="bk-title">定理 1</span>\n'
+          '  <span class="bk-body">本文 A</span>\n'
+          '</div>\n\n'
+          '<div class="bk alert">\n'
+          '  <span class="bk-title">注意</span>\n'
+          '  <span class="bk-body">本文 B</span>\n'
+          '</div>\n\n'
+          '</div>')
+    b = _make_builder()
+    b.build_blocks(parse_slide(0, md))
+    slide = b.prs.slides[0]
+    assert _find_shape_with_text(slide, "定理 1") is not None
+    assert _find_shape_with_text(slide, "本文 B") is not None
+    fills = []
+    for s in slide.shapes:
+        try:
+            fills.append(s.fill.fore_color.rgb)
+        except (TypeError, AttributeError):
+            pass
+    assert _C(0x9F, 0x1D, 0x1D) in fills        # alert bar keeps beamer red
+
+
+def test_footer_bar_renders_title_section_page():
+    from marp_pptx.theme import ThemeLayout
+    title_md = '<!-- _class: title -->\n# デッキ題名\n## サブ\n著者 / 2026'
+    div_md = '<!-- _class: divider -->\n# 1. 理論\n## 収束解析'
+    body_md = '<!-- _class: statement -->\n\n本文スライド。'
+    b = _make_builder()
+    b.theme.layout = ThemeLayout(footer_bar=True)
+    b.build_all([parse_slide(0, title_md), parse_slide(1, div_md),
+                 parse_slide(2, body_md)])
+    last = b.prs.slides[2]
+    assert _find_shape_with_text(last, "3 / 3") is not None
+    assert _find_shape_with_text(last, "理論") is not None    # section, no "1."
+    assert _find_shape_with_text(last, "デッキ題名") is not None
+    # the title slide keeps its hero layout (no bar text)
+    assert _find_shape_with_text(b.prs.slides[0], "1 / 3") is None
+
+
+def test_title_align_left_is_honored():
+    from pptx.enum.text import PP_ALIGN
+    from marp_pptx.theme import ThemeLayout
+    md = ('<!-- _class: title -->\n'
+          '# 左揃えタイトル\n'
+          '## キッカー行\n\n'
+          '著者名 / 2026')
+    b = _make_builder()
+    b.theme.layout = ThemeLayout(title_align="left")
+    b.build_title(parse_slide(0, md))
+    t = _find_shape_with_text(b.prs.slides[0], "左揃えタイトル")
+    assert t is not None
+    assert t.text_frame.paragraphs[0].alignment == PP_ALIGN.LEFT
+
+    b2 = _make_builder()  # default stays centered
+    b2.theme.layout = ThemeLayout(title_align="center")
+    b2.build_title(parse_slide(0, md))
+    t2 = _find_shape_with_text(b2.prs.slides[0], "左揃えタイトル")
+    assert t2.text_frame.paragraphs[0].alignment == PP_ALIGN.CENTER

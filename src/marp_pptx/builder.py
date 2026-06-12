@@ -9,13 +9,14 @@ import re
 import sys
 import tempfile
 import hashlib
+from dataclasses import replace as dc_replace
 from pathlib import Path
 
 from pptx import Presentation
 from pptx.util import Inches, Pt, Emu
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN, MSO_ANCHOR, MSO_AUTO_SIZE
-from pptx.enum.shapes import MSO_SHAPE
+from pptx.enum.shapes import MSO_SHAPE, MSO_CONNECTOR
 from pptx.oxml.ns import qn
 from lxml import etree
 
@@ -131,6 +132,8 @@ class PptxBuilder:
         left = int(MARGIN_L)
         width = int(CONTENT_W)
         footer = 0 if full else int(FOOTER_RESERVE)
+        if self.LAYOUT.footer_bar:
+            footer += int(Inches(0.30))   # the beamer bar claims the bottom band
         if has_title:
             top = int(MARGIN_T + TITLE_H + TITLE_GAP)
         else:
@@ -227,6 +230,18 @@ class PptxBuilder:
         """Approximate a LaTeX snippet as plain text/unicode (png-mode fallback
         when OMML is disabled). Maps common greek/operators, strips the rest."""
         s = latex
+        # Unwrap argument-carrying commands BEFORE the generic strip below —
+        # otherwise \mathrm{pv} degrades to "mathrmpv" instead of "pv".
+        wrapper = re.compile(
+            r"\\(?:mathrm|mathbf|mathit|mathcal|mathbb|mathsf|mathtt|text|textrm"
+            r"|textbf|textit|bm|boldsymbol|operatorname)\s*\{([^{}]*)\}")
+        for _ in range(3):  # a few rounds for nested wrappers
+            s2 = wrapper.sub(r"\1", s)
+            if s2 == s:
+                break
+            s = s2
+        # \frac{a}{b} -> a/b (otherwise the brace strip leaves "fracab")
+        s = re.sub(r"\\[td]?frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}", r"\1/\2", s)
         for name, ch in self._GREEK.items():
             s = re.sub(r"\\" + name + r"(?![a-zA-Z])", ch, s)
         s = s.replace("\\,", " ").replace("\\;", " ").replace("\\ ", " ")
@@ -889,6 +904,8 @@ class PptxBuilder:
     def _add_footnote(self, slide, text):
         left = int(MARGIN_L)
         top = int(SH - Inches(0.62))
+        if self.LAYOUT.footer_bar:
+            top -= int(Inches(0.30))      # sit above the beamer bar
         width = int(CONTENT_W)
         self._hairline(slide, left, top, Inches(2.8), color=self.HAIRLINE)
         tb = self._add_textbox(slide, left, top + int(Pt(5)), width, int(Inches(0.4)))
@@ -1080,7 +1097,9 @@ class PptxBuilder:
         accent = self.WHITE if is_dark else self.ACCENT           # for the rule (graphic)
         kicker_color = self.WHITE if is_dark else self.ACCENT_TEXT  # for small text
         cx = int(SW // 2)
-        align = PP_ALIGN.CENTER
+        is_left = self.LAYOUT.title_align == "left"
+        align = PP_ALIGN.LEFT if is_left else PP_ALIGN.CENTER
+        tx = int(MARGIN_L) if is_left else None  # shared left edge for the stack
 
         subs, meta = self._hero_meta(sd)
         kicker = sd.h2 if (sd.h2 and len(sd.h2.split()) <= 6) else None
@@ -1088,17 +1107,17 @@ class PptxBuilder:
         # Vertically center the kicker→title→rule→subtitle→meta stack.
         # (1) kicker
         if kicker:
-            kb = self._add_textbox(slide, int(Inches(1.0)), int(Inches(2.55)),
-                                   int(SW - Inches(2.0)), int(KICKER_H))
+            kb = self._add_textbox(slide, tx or int(Inches(1.0)), int(Inches(2.55)),
+                                   int(SW - (tx or int(Inches(1.0))) * 2), int(KICKER_H))
             self._kicker_para(kb.text_frame.paragraphs[0], kicker, color=kicker_color,
                               align=align, tracking=200)
         # (2) accent hairline above the title
-        self._hairline(slide, int(cx - Inches(0.55)), int(Inches(3.16)),
+        self._hairline(slide, tx if is_left else int(cx - Inches(0.55)), int(Inches(3.16)),
                        Inches(1.1), thickness=Pt(1.6), color=accent)
         # (3) title
         title_h = int(self._fs(Pt(SZ_DISPLAY.pt * 1.25 * 2)))
-        tb = self._add_textbox(slide, int(Inches(0.8)), int(Inches(3.34)),
-                               int(SW - Inches(1.6)), title_h)
+        tb = self._add_textbox(slide, tx or int(Inches(0.8)), int(Inches(3.34)),
+                               int(SW - (tx or int(Inches(0.8))) * 2), title_h)
         tf = tb.text_frame; tf.word_wrap = True; tf.vertical_anchor = MSO_ANCHOR.TOP
         p = tf.paragraphs[0]; p.text = sd.h1
         p.font.name = self.FONT_HEAD; p.font.size = self._fs(SZ_DISPLAY)
@@ -1106,8 +1125,8 @@ class PptxBuilder:
         p.line_spacing = LINE_TITLE
         # (4) subtitle — rich text so $math$ (e.g. author superscripts) renders
         if subs:
-            sb = self._add_textbox(slide, int(Inches(1.2)), int(Inches(5.05)),
-                                   int(SW - Inches(2.4)), int(Inches(0.95)))
+            sb = self._add_textbox(slide, tx or int(Inches(1.2)), int(Inches(5.05)),
+                                   int(SW - (tx or int(Inches(1.2))) * 2), int(Inches(0.95)))
             sb.text_frame.word_wrap = True
             for i, line in enumerate(subs[:3]):
                 sp = sb.text_frame.paragraphs[0] if i == 0 else sb.text_frame.add_paragraph()
@@ -1117,8 +1136,8 @@ class PptxBuilder:
                     sp.space_before = Pt(4)
         # (5) author / affiliation / date
         if meta:
-            mb = self._add_textbox(slide, int(Inches(1.0)), int(Inches(6.35)),
-                                   int(SW - Inches(2.0)), int(Inches(0.45)))
+            mb = self._add_textbox(slide, tx or int(Inches(1.0)), int(Inches(6.35)),
+                                   int(SW - (tx or int(Inches(1.0))) * 2), int(Inches(0.45)))
             mp = mb.text_frame.paragraphs[0]
             self._set_rich_text(mp, "   ·   ".join(meta), SZ_SMALL, sub_color)
             mp.alignment = align
@@ -1198,6 +1217,8 @@ class PptxBuilder:
             self._add_footnote(slide, sd.footnote)
 
     def build_equation(self, sd: SlideData):
+        if any(r[2] for r in sd.eq_annotations):
+            return self.build_equation_annotated_lines(sd)
         slide = self._blank_slide()
         if sd.h1:
             self._add_title(slide, sd.h1)
@@ -1233,6 +1254,124 @@ class PptxBuilder:
                 var_top = eq_top + Inches(1.6)
         if sd.eq_vars:
             self._add_var_legend(slide, sd.eq_vars, var_top, sym_pt=20, desc_pt=17)
+        if sd.footnote:
+            self._add_footnote(slide, sd.footnote)
+
+    def build_equation_annotated_lines(self, sd: SlideData):
+        """tmu-cs [!math-annotate]: the equation stays ONE line — segments are
+        measured and composed on a shared baseline, and note cards hang below
+        with a connector pointing at their own term (HTML sample #12 parity).
+
+        Pointing accuracy needs build-time term coordinates, so this mode
+        renders the math as measured PNG segments rather than OMML."""
+        from marp_pptx.math.renderer import render_latex_png_measured
+        from PIL import Image
+        rows = sd.eq_annotations
+        EQ_PT = 26
+        segs = []
+        for (tex, label, note, color) in rows:
+            r = render_latex_png_measured(tex, fontsize=EQ_PT,
+                                          color=f"#{self.FG}", dpi=self._MATH_DPI)
+            if r is None:
+                segs = None
+                break
+            png, depth = r
+            with Image.open(png) as im:
+                iw, ih = im.size
+            segs.append({"png": png, "w": iw, "h": ih, "depth": depth,
+                         "label": label, "note": note, "color": color})
+        if segs is None:
+            # mathtext failed on a segment — degrade to the plain equation
+            # with the notes as a variable legend so no content is dropped.
+            fb = dc_replace(sd, eq_annotations=[],
+                            eq_vars=sd.eq_vars or [(r[0], r[2]) for r in rows if r[2]])
+            self._warn(f"slide {sd.index + 1}: math-annotate segment failed; "
+                       "rendered as plain equation + legend")
+            return self.build_equation(fb)
+
+        slide = self._blank_slide()
+        if sd.h1:
+            self._add_title(slide, sd.h1)
+        rleft, rtop, rwidth, rheight = self._content_region(has_title=bool(sd.h1))
+
+        emu_per_px = 914400 / self._MATH_DPI
+        gap_px = self._MATH_DPI * 0.05
+        total_px = sum(s["w"] for s in segs) + gap_px * (len(segs) - 1)
+        fit = min(1.0, (rwidth * 0.96) / (total_px * emu_per_px))
+        asc = max(s["h"] - s["depth"] for s in segs)   # px above the baseline
+        dep = max(s["depth"] for s in segs)            # px below the baseline
+        line_h = int((asc + dep) * emu_per_px * fit)
+
+        annotated = [s for s in segs if s["note"]]
+        note_pt = 12
+        card_gap = int(Inches(0.25))
+        n = len(annotated)
+        card_w = int(min(Inches(3.4), (rwidth - card_gap * (n - 1)) / max(n, 1)))
+        card_h = 0
+        for s in annotated:
+            body_h = int(self._estimate_text_height(
+                [s["note"]], Pt(note_pt), width=card_w - int(Inches(0.35))))
+            s_h = body_h + (int(Inches(0.28)) if s["label"] else int(Inches(0.1)))
+            card_h = max(card_h, max(int(Inches(0.55)), s_h))
+        drop = int(Inches(0.55))                       # connector run below the row
+        block_h = line_h + ((drop + card_h) if n else 0)
+        eq_top = rtop + max(0, (rheight - block_h) // 2)
+
+        # Equation row, baseline-aligned.
+        x = rleft + max(0, (rwidth - int(total_px * emu_per_px * fit)) // 2)
+        for s in segs:
+            y = eq_top + int((asc - (s["h"] - s["depth"])) * emu_per_px * fit)
+            pw = int(s["w"] * emu_per_px * fit)
+            ph = int(s["h"] * emu_per_px * fit)
+            slide.shapes.add_picture(s["png"], int(x), int(y), pw, ph)
+            s["cx"] = int(x + pw / 2)
+            s["bottom"] = int(y + ph)
+            x += pw + int(gap_px * emu_per_px * fit)
+
+        # Note cards: centered under their own term where possible, nudged
+        # apart when neighbours collide, even spread as the last resort.
+        xs = []
+        cur = rleft
+        for s in annotated:
+            xi = max(int(s["cx"] - card_w // 2), int(cur))
+            xs.append(xi)
+            cur = xi + card_w + card_gap
+        if xs:
+            over = xs[-1] + card_w - (rleft + rwidth)
+            if over > 0:
+                xs = [xi - over for xi in xs]
+            if xs[0] < rleft:
+                spread = card_w * n + card_gap * (n - 1)
+                x0 = rleft + max(0, (rwidth - spread) // 2)
+                xs = [x0 + i * (card_w + card_gap) for i in range(n)]
+        card_top = int(eq_top + line_h + drop)
+        for s, card_x in zip(annotated, xs):
+            acc = self.ACCENT
+            if s["color"]:
+                hx = s["color"].lstrip("#")
+                try:
+                    acc = RGBColor(int(hx[0:2], 16), int(hx[2:4], 16), int(hx[4:6], 16))
+                except (ValueError, IndexError):
+                    pass
+            _, tb = self._add_card(slide, (card_x, card_top, card_w, card_h),
+                                   anchor="middle")
+            tf = tb.text_frame
+            p = tf.paragraphs[0]
+            if s["label"]:
+                self._kicker_para(p, s["label"], size=Pt(10), color=acc, tracking=120)
+                p2 = tf.add_paragraph()
+            else:
+                p2 = p
+            p2.text = s["note"]
+            p2.font.name = self.FONT
+            p2.font.size = self._fs(Pt(note_pt))
+            p2.font.color.rgb = self.FG
+            conn = slide.shapes.add_connector(
+                MSO_CONNECTOR.STRAIGHT,
+                s["cx"], int(s["bottom"] + Inches(0.03)),
+                int(card_x + card_w // 2), int(card_top - Inches(0.02)))
+            conn.line.color.rgb = acc
+            conn.line.width = Pt(1.1)
         if sd.footnote:
             self._add_footnote(slide, sd.footnote)
 
@@ -1357,15 +1496,22 @@ class PptxBuilder:
             cw = (rwidth - gap * (n - 1)) // n
             widths = [cw] * n
         size = SZ_COL
-        x = rleft
+        # Two passes: estimate every column first (wrap-aware), then place all
+        # of them from one shared top — per-column centering left the column
+        # heads at different heights whenever the contents were uneven.
+        heights = []
         for i, col_lines in enumerate(sd.columns):
             col_w = widths[i] if i < len(widths) else widths[-1]
             ch = int(self._estimate_text_height(
-                [l for l in col_lines if not l.strip().startswith("![")], size))
-            ch = min(ch, rheight)
-            col_top = rtop + max(0, (rheight - ch) // 2)
-            self._add_column_content(slide, col_lines, left=int(x), top=int(col_top),
-                                     width=int(col_w), height=int(ch), size=size)
+                [l for l in col_lines if not l.strip().startswith("![")], size,
+                width=col_w))
+            heights.append(min(ch, rheight))
+        top = rtop + max(0, (rheight - max(heights, default=0)) // 2)
+        x = rleft
+        for i, col_lines in enumerate(sd.columns):
+            col_w = widths[i] if i < len(widths) else widths[-1]
+            self._add_column_content(slide, col_lines, left=int(x), top=int(top),
+                                     width=int(col_w), height=int(heights[i]), size=size)
             x += col_w + gap
         if sd.footnote:
             self._add_footnote(slide, sd.footnote)
@@ -1483,6 +1629,8 @@ class PptxBuilder:
         def fill(col_items, start_idx, left):
             tb = self._add_textbox(slide, int(left), rtop, int(col_w), rheight)
             tf = tb.text_frame; tf.word_wrap = True
+            # Short lists sit vertically centered instead of hugging the top.
+            tf.vertical_anchor = MSO_ANCHOR.MIDDLE
             for j, (author, title, venue) in enumerate(col_items):
                 p = tf.paragraphs[0] if j == 0 else tf.add_paragraph()
                 p.space_before = PARA_GAP
@@ -2242,7 +2390,9 @@ class PptxBuilder:
         if sd.h1:
             self._add_title(slide, sd.h1)
         rleft, rtop, rwidth, rheight = self._content_region(has_title=bool(sd.h1), full=not sd.caption)
-        cap_h = int(Inches(0.5)) if sd.caption else 0
+        cap_h = (max(int(Inches(0.5)),
+                     int(self._estimate_text_height([sd.caption], SZ_SMALL, width=rwidth)))
+                 if sd.caption else 0)
         img_file = self._resolve_image(sd.image_path) if sd.image_path else None
         img_top = rtop; ph = 0
         if img_file:
@@ -2260,6 +2410,7 @@ class PptxBuilder:
         if sd.caption:
             ctb = self._add_textbox(slide, rleft, int(img_top + ph + Inches(0.12)),
                                     rwidth, cap_h)
+            ctb.text_frame.word_wrap = True
             p = ctb.text_frame.paragraphs[0]
             p.text = sd.caption
             p.font.name = self.FONT; p.font.size = self._fs(SZ_SMALL)
@@ -2532,18 +2683,97 @@ class PptxBuilder:
             self._add_zone_box(slide, int(x), rtop, int(half_w), rheight,
                                label=label, body=body, anchor="middle")
 
+    # beamer block conventions: structure color for theorem-likes (follows the
+    # theme), green for examples, red for alerts.
+    _BLOCK_COLORS = {
+        "example": RGBColor(0x14, 0x65, 0x3D),
+        "alert":   RGBColor(0x9F, 0x1D, 0x1D),
+    }
+
+    def build_blocks(self, sd: SlideData):
+        """beamer-style theorem environments: a colored title bar + tinted
+        body panel per block (theorem / definition / lemma / example / alert)."""
+        slide = self._blank_slide()
+        if sd.h1:
+            self._add_title(slide, sd.h1)
+        if not sd.block_items:
+            return
+        rleft, rtop, rwidth, rheight = self._content_region(has_title=bool(sd.h1))
+        bar_h = int(Inches(0.34))
+        gap = int(Inches(0.22))
+        items = []
+        for (variant, title, body) in sd.block_items:
+            bh = int(self._estimate_text_height([body], SZ_COL,
+                                                width=rwidth - int(Inches(0.5))))
+            items.append([variant, title, body,
+                          max(bh + int(Inches(0.14)), int(Inches(0.5)))])
+        total = sum(bar_h + it[3] for it in items) + gap * (len(items) - 1)
+        if total > rheight:                      # squeeze instead of overflowing
+            over = total - rheight
+            shrinkable = sum(it[3] for it in items)
+            for it in items:
+                it[3] = max(int(Inches(0.4)), int(it[3] - over * it[3] / shrinkable))
+            total = sum(bar_h + it[3] for it in items) + gap * (len(items) - 1)
+        cur = rtop + max(0, (rheight - total) // 2)
+        for (variant, title, body, body_h) in items:
+            head_c = self._BLOCK_COLORS.get(variant, self.SECONDARY)
+            bar = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE,
+                                         rleft, int(cur), rwidth, bar_h)
+            bar.adjustments[0] = 0.12
+            bar.fill.solid(); bar.fill.fore_color.rgb = head_c
+            bar.line.fill.background(); self._no_shadow(bar)
+            tb = self._add_textbox(slide, rleft + int(Inches(0.18)), int(cur),
+                                   rwidth - int(Inches(0.36)), bar_h)
+            tb.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
+            p = tb.text_frame.paragraphs[0]
+            p.text = title or variant.capitalize()
+            p.font.name = self.FONT_HEAD; p.font.size = self._fs(Pt(15))
+            p.font.bold = True; p.font.color.rgb = self.WHITE
+            cur += bar_h
+            panel = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE,
+                                           rleft, int(cur), rwidth, int(body_h))
+            panel.fill.solid(); panel.fill.fore_color.rgb = self._tint(head_c, 0.93)
+            panel.line.fill.background(); self._no_shadow(panel)
+            btb = self._add_textbox(slide, rleft + int(Inches(0.22)),
+                                    int(cur + Inches(0.05)),
+                                    rwidth - int(Inches(0.44)),
+                                    int(body_h - Inches(0.08)))
+            btb.text_frame.word_wrap = True
+            btb.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
+            self._set_text_with_inline_math(btb.text_frame.paragraphs[0], body,
+                                            SZ_COL, self.FG)
+            cur += body_h + gap
+        if sd.footnote:
+            self._add_footnote(slide, sd.footnote)
+
+    # tmu-cs [!step] actions → (tick bar, line band) on the dark code card.
+    # Hues follow the card's Catppuccin-leaning palette so bands read as
+    # state, not noise.
+    _STEP_STYLE = {
+        "highlight": (RGBColor(0xA6, 0xE3, 0xA1), RGBColor(0x2E, 0x3E, 0x30)),
+        "focus":     (RGBColor(0x89, 0xB4, 0xFA), RGBColor(0x2B, 0x33, 0x4A)),
+        "warning":   (RGBColor(0xF9, 0xE2, 0xAF), RGBColor(0x45, 0x3E, 0x28)),
+        "error":     (RGBColor(0xF3, 0x8B, 0xA8), RGBColor(0x46, 0x2A, 0x34)),
+        "info":      (RGBColor(0x74, 0xC7, 0xEC), RGBColor(0x28, 0x3C, 0x4A)),
+    }
+
     def build_code(self, sd: SlideData):
         slide = self._blank_slide()
         if sd.h1:
             self._add_title(slide, sd.h1)
         rleft, rtop, rwidth, rheight = self._content_region(has_title=bool(sd.h1))
         desc_h = int(Inches(0.7)) if sd.code_desc else 0
-        lines = (sd.code_text or "").count("\n") + 1
+        code_lines = (sd.code_text or "").split("\n")
+        n_lines = len(code_lines)
+        CODE_PT = 13
+        scale = getattr(self.theme, "font_scale", 1.0)
+        line_h = int(Pt(CODE_PT * 1.5 * scale))   # fixed line pitch so the
+        bar_h = int(Inches(0.34))                 # step bands can be placed
+        pad_top = int(Pt(6)); pad_bot = int(Pt(12))
         code_h = int(min(rheight - desc_h - (int(Inches(0.2)) if desc_h else 0),
-                         max(Inches(1.5), Inches(0.3) + Pt(14) * 1.5 * lines / 72 * 914400)))
+                         max(int(Inches(1.5)), bar_h + pad_top + line_h * n_lines + pad_bot)))
         block_h = code_h + (desc_h + int(Inches(0.2)) if desc_h else 0)
         top = rtop + max(0, (rheight - block_h) // 2)
-        bar_h = int(Inches(0.34))
         bg = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, rleft, top, rwidth, code_h)
         bg.adjustments[0] = 0.02
         bg.fill.solid(); bg.fill.fore_color.rgb = RGBColor(0x1E, 0x1E, 0x2E)
@@ -2556,12 +2786,50 @@ class PptxBuilder:
                                          top + int(Pt(11)), int(Pt(10)), int(Pt(10)))
             dot.fill.solid(); dot.fill.fore_color.rgb = col
             dot.line.fill.background(); self._no_shadow(dot)
-        tb = self._add_textbox(slide, rleft + int(Pt(20)), top + bar_h + int(Pt(6)),
-                               rwidth - int(Pt(40)), code_h - bar_h - int(Pt(14)))
-        tf = tb.text_frame; tf.word_wrap = True
-        p = tf.paragraphs[0]; p.text = sd.code_text
-        p.font.name = self.FONT_MONO; p.font.size = self._fs(Pt(13))
-        p.font.color.rgb = RGBColor(0xCD, 0xD6, 0xF4)
+        # Step emphasis: bands go in before the text box so they sit behind it.
+        stepping = bool(sd.code_steps) and sd.active_step is not None
+        active: dict[int, str] = {}
+        if stepping:
+            for (idx, step, action, span) in sd.code_steps:
+                if step == sd.active_step:
+                    for k in range(span):
+                        if idx + k < n_lines:
+                            active[idx + k] = action
+        text_top = top + bar_h + pad_top
+        for li, action in sorted(active.items()):
+            tick_c, band_c = self._STEP_STYLE.get(action, self._STEP_STYLE["highlight"])
+            band = slide.shapes.add_shape(
+                MSO_SHAPE.RECTANGLE, rleft + int(Pt(8)),
+                int(text_top + li * line_h), rwidth - int(Pt(16)), line_h)
+            band.fill.solid(); band.fill.fore_color.rgb = band_c
+            band.line.fill.background(); self._no_shadow(band)
+            tick = slide.shapes.add_shape(
+                MSO_SHAPE.RECTANGLE, rleft + int(Pt(8)),
+                int(text_top + li * line_h), int(Pt(3.5)), line_h)
+            tick.fill.solid(); tick.fill.fore_color.rgb = tick_c
+            tick.line.fill.background(); self._no_shadow(tick)
+        if stepping:
+            last = max(s for (_, s, _, _) in sd.code_steps)
+            sb = self._add_textbox(slide, rleft + rwidth - int(Inches(1.7)),
+                                   top + int(Pt(9)), int(Inches(1.5)), int(Pt(15)))
+            sp = sb.text_frame.paragraphs[0]
+            sp.text = f"STEP {sd.active_step} / {last}"
+            sp.alignment = PP_ALIGN.RIGHT
+            sp.font.name = self.FONT_HEAD; sp.font.size = self._fs(Pt(10))
+            sp.font.bold = True
+            sp.font.color.rgb = RGBColor(0x9C, 0xA0, 0xB0)
+        tb = self._add_textbox(slide, rleft + int(Pt(20)), int(text_top),
+                               rwidth - int(Pt(40)), code_h - bar_h - pad_top - pad_bot)
+        tf = tb.text_frame
+        tf.word_wrap = False   # line index must map 1:1 to band position
+        dim = RGBColor(0x6C, 0x70, 0x86)
+        normal = RGBColor(0xCD, 0xD6, 0xF4)
+        for i, ln in enumerate(code_lines):
+            p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+            p.text = ln if ln.strip() else " "   # keep blank lines tall
+            p.font.name = self.FONT_MONO; p.font.size = self._fs(Pt(CODE_PT))
+            p.font.color.rgb = normal if (not stepping or i in active) else dim
+            p.line_spacing = Pt(CODE_PT * 1.5 * scale)
         if sd.code_desc:
             dtb = self._add_textbox(slide, rleft, int(top + code_h + Inches(0.2)),
                                     rwidth, desc_h)
@@ -2773,7 +3041,10 @@ class PptxBuilder:
         data.categories = sd.chart_categories
         for name, vals in sd.chart_series:
             data.add_series(name, vals)
-        cap_h = int(Inches(0.4)) if (sd.chart_caption or sd.footnote) else 0
+        cap_text = sd.chart_caption or sd.footnote
+        cap_h = (max(int(Inches(0.4)),
+                     int(self._estimate_text_height([cap_text], SZ_SMALL, width=width)))
+                 if cap_text else 0)
         ch_h = rheight - cap_h
         gf = slide.shapes.add_chart(kind, left, rtop, width, ch_h, data)
         chart = gf.chart
@@ -2798,11 +3069,12 @@ class PptxBuilder:
                 ax.format.line.color.rgb = self.HAIRLINE
         except Exception:
             pass
-        if sd.chart_caption or sd.footnote:
+        if cap_text:
             cb = self._add_textbox(slide, left, int(rtop + ch_h + Inches(0.05)),
                                    width, cap_h)
+            cb.text_frame.word_wrap = True
             cp = cb.text_frame.paragraphs[0]
-            cp.text = sd.chart_caption or sd.footnote
+            cp.text = cap_text
             cp.font.name = self.FONT; cp.font.size = self._fs(SZ_SMALL)
             cp.font.color.rgb = self.MUTED; cp.alignment = PP_ALIGN.CENTER
 
@@ -2863,6 +3135,7 @@ class PptxBuilder:
         "big-number": "build_big_number",
         "big-number-dark": "build_big_number",
         "chart": "build_chart",
+        "blocks": "build_blocks",
     }
 
     # Generic noun-label titles that should be assertions instead.
@@ -2923,6 +3196,9 @@ class PptxBuilder:
 
     def build_all(self, slides: list[SlideData]):
         self._divider_no = 0
+        self._deck_title = ""
+        self._slide_sections: list[str] = []   # per-built-slide section name
+        current_section = ""
         for n, sd in enumerate(slides, 1):
             try:
                 self._lint_slide(sd, n)
@@ -2930,6 +3206,9 @@ class PptxBuilder:
                 pass
             if sd.slide_class == "divider":
                 self._divider_no += 1
+                current_section = re.sub(r"^\s*\d+[\.．]?\s*", "", sd.h1 or "")
+            if sd.slide_class == "title" and not self._deck_title:
+                self._deck_title = sd.h1 or ""
             # A specified-but-unknown _class silently fell back to a plain
             # bullet slide before — warn so typos in the type name surface.
             if sd.slide_class and sd.slide_class not in self.BUILDERS:
@@ -2945,6 +3224,7 @@ class PptxBuilder:
             for i in range(before_n, len(self.prs.slides)):
                 self._write_notes(self.prs.slides[i], cls,
                                   user_note if i == before_n else "")
+                self._slide_sections.append(current_section)
         self._add_global_footer()
         self._warn_text_collisions()
 
@@ -2986,6 +3266,8 @@ class PptxBuilder:
         self._write_notes(slide, cls, "")
 
     def _add_global_footer(self):
+        if self.LAYOUT.footer_bar:
+            return self._add_beamer_footer()
         n = len(self.prs.slides)
         for i, slide in enumerate(self.prs.slides):
             if i == 0 or i == n - 1:
@@ -2998,3 +3280,43 @@ class PptxBuilder:
             p.font.size = self._fs(SZ_FOOT)
             p.font.color.rgb = self.MUTED
             p.alignment = PP_ALIGN.RIGHT
+
+    def _add_beamer_footer(self):
+        """beamer-style footer bar: deck title | current section | page.
+
+        The middle cell is a slightly lighter tint of the structure color, the
+        classic Madrid three-cell look. The title slide keeps its hero layout."""
+        n = len(self.prs.slides)
+        bar_h = int(Inches(0.30))
+        sections = getattr(self, "_slide_sections", [])
+        deck_title = getattr(self, "_deck_title", "")
+        cell_pts = (0.0, 0.40, 0.74, 1.0)      # cell boundaries as SW fractions
+        for i, slide in enumerate(self.prs.slides):
+            if i == 0:
+                continue
+            mid = slide.shapes.add_shape(
+                MSO_SHAPE.RECTANGLE, int(SW * cell_pts[1]), int(SH - bar_h),
+                int(SW * (cell_pts[2] - cell_pts[1])), bar_h)
+            mid.fill.solid(); mid.fill.fore_color.rgb = self._tint(self.PRIMARY, 0.18)
+            mid.line.fill.background(); self._no_shadow(mid)
+            for cell, text, align in (
+                (0, deck_title, PP_ALIGN.LEFT),
+                (1, sections[i] if i < len(sections) else "", PP_ALIGN.CENTER),
+                (2, f"{i + 1} / {n}", PP_ALIGN.RIGHT),
+            ):
+                if cell != 1:   # outer cells share the solid structure color
+                    bgc = slide.shapes.add_shape(
+                        MSO_SHAPE.RECTANGLE, int(SW * cell_pts[cell]), int(SH - bar_h),
+                        int(SW * (cell_pts[cell + 1] - cell_pts[cell])), bar_h)
+                    bgc.fill.solid(); bgc.fill.fore_color.rgb = self.PRIMARY
+                    bgc.line.fill.background(); self._no_shadow(bgc)
+                tb = self._add_textbox(
+                    slide, int(SW * cell_pts[cell] + Inches(0.18)), int(SH - bar_h),
+                    int(SW * (cell_pts[cell + 1] - cell_pts[cell]) - Inches(0.36)), bar_h)
+                tb.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
+                p = tb.text_frame.paragraphs[0]
+                p.text = text
+                p.alignment = align
+                p.font.name = self.FONT
+                p.font.size = self._fs(Pt(9.5))
+                p.font.color.rgb = self.WHITE

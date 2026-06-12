@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import html
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 
@@ -241,6 +241,86 @@ class SlideData:
     chart_categories: list = field(default_factory=list)
     chart_series: list = field(default_factory=list)  # [(name, [floats]), ...]
     chart_caption: str = ""
+    # tmu-cs compatible directives (docs/FEATURE-DESIGN.md)
+    eq_annotations: list = field(default_factory=list)  # [(tex, label, note, color)] per display-math line
+    code_steps: list = field(default_factory=list)      # [(line_idx, step, action, span)]
+    active_step: int | None = None                      # set by expand_step_slides()
+    # beamer-style theorem blocks
+    block_items: list = field(default_factory=list)     # [(variant, title, body)]
+
+
+# tmu-cs compatible authoring directives (see docs/FEATURE-DESIGN.md).
+# Math: a TeX line may end with  % [!math-annotate note="..." label="..." color="#hex"]
+_MATH_ANN_RE = re.compile(r"%\s*\[!math-annotate\s+([^\]]*)\]\s*$")
+_ANN_ATTR_RE = re.compile(r'(\w+)="([^"]*)"')
+# Code: a code line may end with  // [!step N action[:M]]  (or # / -- comments)
+_STEP_RE = re.compile(
+    r"(?:(?://|#|--)\s*)?\[!step\s+(\d+)\s+(highlight|focus|warning|error|info)(?::(\d+))?\]\s*$")
+
+
+def extract_math_annotations(tex_block: str) -> list[tuple[str, str | None, str | None, str | None]]:
+    """Split display math into lines, pulling tmu-cs [!math-annotate] directives.
+
+    Returns one (tex, label, note, color) tuple per non-empty line; lines
+    without a directive get (tex, None, None, None). `note` is required by the
+    source spec — directives without it are treated as plain comments.
+    """
+    rows = []
+    for line in tex_block.split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        m = _MATH_ANN_RE.search(line)
+        label = note = color = None
+        if m:
+            attrs = dict(_ANN_ATTR_RE.findall(m.group(1)))
+            note = attrs.get("note")
+            if note:
+                label = attrs.get("label")
+                color = attrs.get("color")
+                line = line[:m.start()].rstrip()
+        rows.append((line, label, note, color))
+    return rows
+
+
+def extract_code_steps(code_text: str) -> tuple[str, list[tuple[int, int, str, int]]]:
+    """Strip tmu-cs [!step N action[:M]] directives from code lines.
+
+    Visible comment text before the directive is kept; a comment that holds
+    only the directive is removed entirely (matching the source engine).
+    """
+    steps = []
+    out = []
+    for i, line in enumerate(code_text.split("\n")):
+        m = _STEP_RE.search(line)
+        if m:
+            steps.append((i, int(m.group(1)), m.group(2), int(m.group(3) or 1)))
+            line = line[:m.start()].rstrip()
+            line = re.sub(r"(?://|#|--)\s*$", "", line).rstrip()
+        out.append(line)
+    return "\n".join(out), steps
+
+
+def expand_step_slides(slides: list[SlideData]) -> list[SlideData]:
+    """Duplicate a slide once per distinct step number (tmu-cs engine parity).
+
+    In PPTX the duplicates read as click-to-advance motion: each copy
+    emphasizes only its own step. Slides without step directives pass through
+    untouched, and a single-step slide just gets that step activated in place.
+    """
+    out: list[SlideData] = []
+    for sd in slides:
+        step_nos = sorted({s for (_, s, _, _) in sd.code_steps})
+        if len(step_nos) <= 1:
+            if step_nos:
+                sd.active_step = step_nos[0]
+            out.append(sd)
+            continue
+        for n in step_nos:
+            out.append(replace(sd, active_step=n, index=len(out)))
+    for i, sd in enumerate(out):
+        sd.index = i
+    return out
 
 
 def parse_slide(index: int, raw: str) -> SlideData:
@@ -291,6 +371,9 @@ def parse_slide(index: int, raw: str) -> SlideData:
         if eq:
             mm = re.search(r"\$\$(.*?)\$\$", eq, re.DOTALL)
             sd.eq_main = mm.group(1).strip() if mm else strip_html(eq)
+            if "[!math-annotate" in sd.eq_main:
+                sd.eq_annotations = extract_math_annotations(sd.eq_main)
+                sd.eq_main = "\n".join(r[0] for r in sd.eq_annotations)
         desc = extract_div(content, "eq-desc")
         if desc:
             spans = re.findall(r"<span[^>]*>(.*?)</span>", desc, re.DOTALL)
@@ -804,6 +887,29 @@ def parse_slide(index: int, raw: str) -> SlideData:
                     "body": strip_html(bm.group(1)) if bm else "",
                 })
 
+    elif cls == "blocks":
+        container = extract_div(content, "bk-container")
+        if container:
+            items = extract_child_divs(container)
+            # extract_child_divs drops the opening tag's class — recover the
+            # variants by scanning the opening tags in order (same lesson as
+            # the timeline highlight bug).
+            variants = re.findall(r'<div\s+class="bk(?:\s+([\w-]+))?\s*"', container)
+            for i, item in enumerate(items):
+                tm = re.search(r'class="[^"]*bk-title[^"]*"[^>]*>(.*?)</span>',
+                               item, re.DOTALL)
+                bm = re.search(r'class="[^"]*bk-body[^"]*"[^>]*>(.*?)</span>',
+                               item, re.DOTALL)
+                variant = (variants[i] if i < len(variants) else "") or "theorem"
+                sd.block_items.append((
+                    variant,
+                    strip_html(tm.group(1)) if tm else "",
+                    strip_html(bm.group(1)) if bm else strip_html(item),
+                ))
+        fn = extract_div(content, "footnote")
+        if fn:
+            sd.footnote = strip_html(fn)
+
     elif cls == "code":
         cd = extract_div(content, "cd-code")
         if cd:
@@ -812,6 +918,8 @@ def parse_slide(index: int, raw: str) -> SlideData:
                 sd.code_text = code_m.group(1).rstrip()
             else:
                 sd.code_text = strip_html(cd)
+            if "[!step" in sd.code_text:
+                sd.code_text, sd.code_steps = extract_code_steps(sd.code_text)
         desc = extract_div(content, "cd-desc")
         if desc:
             sd.code_desc = strip_html(desc)
@@ -976,4 +1084,4 @@ def parse_marp(path: str | Path) -> list[SlideData]:
         chunk = chunk.strip()
         if chunk:
             slides.append(parse_slide(i, chunk))
-    return slides
+    return expand_step_slides(slides)

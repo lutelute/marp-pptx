@@ -28,11 +28,10 @@ def create_app() -> Flask:
     app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024  # 10MB
 
     def _palettes() -> list[str]:
+        # Every palette CSS is selectable: standalone themes (claude, minimal,
+        # tmu-cs, research, …) plus the academic-<name> family.
         palettes_dir = Path(__file__).parent.parent / "data" / "themes" / "palettes"
-        return sorted(
-            p.stem.replace("academic-", "")
-            for p in palettes_dir.glob("academic-*.css")
-        )
+        return sorted({p.stem.replace("academic-", "") for p in palettes_dir.glob("*.css")})
 
     @app.route("/")
     def index():

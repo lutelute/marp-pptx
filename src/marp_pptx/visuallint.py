@@ -14,12 +14,21 @@ from __future__ import annotations
 from pathlib import Path
 
 # Types that are intentionally minimal / centered — don't flag them as sparse.
+# references is here because its fill is citation-count-dependent: 3 refs on a
+# vertically centered list is a normal deck, not a layout bug.
 _MINIMAL = {"title", "divider", "statement", "big-statement", "dark", "end",
-            "rq", "quote", "big-number", "big-number-dark", "takeaway", "section"}
+            "rq", "quote", "big-number", "big-number-dark", "takeaway", "section",
+            "references"}
 
 
-def visual_lint(png_path: str, slide_class: str | None = None, *, edge: float = 0.035) -> list[str]:
-    """Return design warnings for one rendered slide image (empty list = clean)."""
+def visual_lint(png_path: str, slide_class: str | None = None, *, edge: float = 0.035,
+                bottom_exclude: float = 0.0) -> list[str]:
+    """Return design warnings for one rendered slide image (empty list = clean).
+
+    bottom_exclude: fraction of the slide height to ignore at the bottom —
+    use ~0.05 for themes with a full-width footer bar (layout.footer_bar),
+    which is chrome, not author content.
+    """
     from PIL import Image
 
     im = Image.open(png_path).convert("RGB")
@@ -37,6 +46,7 @@ def visual_lint(png_path: str, slide_class: str | None = None, *, edge: float = 
     # Skip that corner so the lint measures the AUTHOR's content, not chrome.
     foot_y = h * 0.93
     foot_x = w * 0.78
+    band_y = h * (1.0 - bottom_exclude) if bottom_exclude else None
     step = max(1, w // 380)
     minx = miny = 10 ** 9
     maxx = maxy = -1
@@ -45,6 +55,8 @@ def visual_lint(png_path: str, slide_class: str | None = None, *, edge: float = 
         for x in range(0, w, step):
             if y > foot_y and x > foot_x:
                 continue  # page-number footer chrome, not content
+            if band_y is not None and y >= band_y:
+                continue  # full-width footer bar chrome (beamer themes)
             r, g, b = px[x, y]
             if abs(r - bg[0]) + abs(g - bg[1]) + abs(b - bg[2]) > tol:
                 content += 1
@@ -119,10 +131,12 @@ def lint_deck(markdown: str, palette: str = "claude", dpi: int = 96,
         builder.save(str(pptx))
         pngs = pptx_to_pngs(pptx, tdp, dpi=dpi)
 
+        # A full-width footer bar (beamer themes) is chrome — exclude its band.
+        bottom = 0.05 if getattr(tc.layout, "footer_bar", False) else 0.0
         out: list[dict] = []
         for i, (png, sd) in enumerate(zip(pngs, slides), 1):
             cls = getattr(sd, "slide_class", None)
-            warns = visual_lint(str(png), cls)
+            warns = visual_lint(str(png), cls, bottom_exclude=bottom)
             if warns:
                 out.append({"slide": i, "class": cls or "default", "warnings": warns})
         return out

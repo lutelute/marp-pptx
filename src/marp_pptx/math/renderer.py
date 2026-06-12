@@ -104,6 +104,46 @@ def _sanitize_for_mathtext(tex: str) -> str:
     return tex
 
 
+def render_latex_png_measured(
+    latex: str,
+    fontsize: int = 28,
+    color: str = "#1a1a2e",
+    dpi: int = 150,
+) -> tuple[str, float] | None:
+    """Render LaTeX to PNG and report its baseline depth.
+
+    Returns (path, depth_px) where depth is the offset of the baseline from
+    the bottom of the image in pixels. Needed when composing one equation
+    from individually rendered segments: aligning on the shared baseline is
+    what makes the row read as a single formula.
+    """
+    key = hashlib.md5(f"m:{latex}:{fontsize}:{dpi}:{color}".encode()).hexdigest()
+    png_path = _CACHE_DIR / f"{key}.png"
+    meta_path = _CACHE_DIR / f"{key}.depth"
+    if png_path.exists() and meta_path.exists():
+        return str(png_path), float(meta_path.read_text())
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        from matplotlib import mathtext
+        from matplotlib.font_manager import FontProperties
+
+        tex = _sanitize_for_mathtext(latex.strip())
+        if not tex.startswith("$"):
+            tex = f"${tex}$"
+        prop = FontProperties(size=fontsize, math_fontfamily="cm")
+        depth = mathtext.math_to_image(tex, str(png_path), prop=prop, dpi=dpi,
+                                       color=color)
+        if png_path.exists() and png_path.stat().st_size > 0:
+            meta_path.write_text(str(float(depth)))
+            return str(png_path), float(depth)
+        return None
+    except Exception as e:
+        import sys
+        print(f"  Math PNG render failed: {latex[:40]}... ({e})", file=sys.stderr)
+        return None
+
+
 def render_latex_png(
     latex: str,
     fontsize: int = 28,
