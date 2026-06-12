@@ -1,0 +1,33 @@
+name: tmu-cs
+title: TMU CS — 都立大グリーン
+description: 白地に TMU グリーン(#006543)の学術テーマ。緑見出し＋細下線、accent-border ボックス。marp-theme-tmu-cs (MIT, taishi-n) からの移植。
+colors:
+  primary:   '#006543'
+  secondary: '#006543'
+  accent:    '#006543'
+  fg:        '#1c2520'
+  bg:        '#ffffff'
+  muted:     '#5d6e65'
+  hairline:  '#bfd3ca'
+  light:     '#f3f7f5'
+  border:    '#bfd3ca'
+fonts:
+  head: "'Noto Sans JP', 'Hiragino Sans', 'Yu Gothic', sans-serif"
+  body: "'Noto Sans JP', 'Hiragino Sans', 'Yu Gothic', sans-serif"
+layout:
+  h1_deco: bottom-line     # tmu-cs h1 carries a thin pale-green under-rule
+  h1_deco_color: hairline
+  title_bg: white
+  title_align: left        # source title-slide is left-aligned, flex-start
+  divider_align: center    # source section-page is centered
+  end_bg: white
+  box_style: accent-border # tmu-cs blockquote: note tint + green left bar
+  box_radius: 0.03
+  card_shadow: false
+  spacing: normal
+  vertical_align: top      # source theme is top-anchored (justify-content: flex-start)
+  kicker: false
+  kicker_color: accent
+  accent_rule: none
+  table_header_style: rule
+  divider_number: false

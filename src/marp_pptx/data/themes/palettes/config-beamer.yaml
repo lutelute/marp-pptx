@@ -1,0 +1,33 @@
+name: beamer
+title: Beamer — LaTeX 紺
+description: LaTeX beamer（Madrid 風）の紺構造色。紺タイトル帯・フッターバー（タイトル｜セクション｜頁）・定理ブロック（blocks 型）。研究発表向け。
+colors:
+  primary:   '#273b81'
+  secondary: '#34499b'
+  accent:    '#b8860b'
+  fg:        '#1a1a2e'
+  bg:        '#ffffff'
+  muted:     '#6c757d'
+  hairline:  '#d8dcea'
+  light:     '#eef0f7'
+  border:    '#c9cfe4'
+fonts:
+  head: "'Helvetica Neue', 'Hiragino Sans', 'Noto Sans JP', sans-serif"
+  body: "'Helvetica Neue', 'Hiragino Sans', 'Noto Sans JP', sans-serif"
+layout:
+  h1_deco: none
+  title_bg: dark           # navy hero, the beamer title-page look
+  title_align: center
+  divider_align: center
+  end_bg: white
+  box_style: filled
+  box_radius: 0.02
+  card_shadow: false
+  spacing: compact
+  vertical_align: top
+  kicker: false
+  kicker_color: accent
+  accent_rule: none
+  table_header_style: fill
+  divider_number: false
+  footer_bar: true         # deck title | section | page, Madrid three cells

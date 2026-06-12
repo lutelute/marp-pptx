@@ -1,0 +1,33 @@
+name: research
+title: Research — PowerPoint マスタ灰
+description: 白地・本文＝罫線＝#404040 の研究審査テーマ。青グレー補助、茶はキー数値のみ。高密度・上詰め・左揃え。katsuzakitomohiro/marp-theme-dev (MIT) からの移植。
+colors:
+  primary:   '#404040'
+  secondary: '#0d558e'
+  accent:    '#dd5400'
+  fg:        '#404040'
+  bg:        '#ffffff'
+  muted:     '#767171'
+  hairline:  '#d9d9d9'
+  light:     '#f2f2f2'
+  border:    '#bfbfbf'
+fonts:
+  head: "'Segoe UI', 'Yu Gothic', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif"
+  body: "'Segoe UI', 'Yu Gothic', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif"
+layout:
+  h1_deco: bottom-line      # the master's 1px gray rule under every title
+  h1_deco_color: primary
+  title_bg: white
+  title_align: left
+  divider_align: left
+  end_bg: white
+  box_style: accent-border
+  box_radius: 0.015         # near-square boxes, matching the master
+  card_shadow: false
+  spacing: compact          # beamer-like density
+  vertical_align: top       # source is top-anchored (flex-start)
+  kicker: false
+  kicker_color: accent
+  accent_rule: none
+  table_header_style: rule
+  divider_number: false

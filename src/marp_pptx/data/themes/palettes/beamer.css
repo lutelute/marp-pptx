@@ -1,0 +1,23 @@
+/*!
+ * Beamer palette — LaTeX beamer (Madrid-like) navy structure color.
+ * White ground, navy headings and footer bar, theorem blocks via the
+ * `blocks` type (example = green, alert = red, rest = structure navy).
+ * Colors + fonts consumed by ThemeConfig.apply_palette().
+ * Layout tokens live in config-beamer.yaml alongside this file.
+ */
+:root {
+  --color-bg:        #ffffff;
+  --color-fg:        #1a1a2e;
+  --color-primary:   #273b81;   /* beamer structure navy */
+  --color-secondary: #34499b;   /* block title bars */
+  --color-accent:    #b8860b;   /* sparing gold highlight */
+  --color-accent-text: #8a6508;
+  --color-muted:     #6c757d;
+  --color-hairline:  #d8dcea;
+  --color-light:     #eef0f7;
+  --color-border:    #c9cfe4;
+
+  --font-head: 'Helvetica Neue', 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+  --font-body: 'Helvetica Neue', 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+  --font-ea:   'Hiragino Sans', 'Noto Sans JP', sans-serif;
+}

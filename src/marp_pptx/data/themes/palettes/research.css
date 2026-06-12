@@ -1,0 +1,26 @@
+/*!
+ * Research palette — PowerPoint-master gray for academic review decks.
+ * Ported from marp-theme by Tomohiro Katsuzaki (MIT):
+ *   https://github.com/katsuzakitomohiro/marp-theme-dev
+ * Design contract of the source: body text = rules = #404040 (black
+ * Lighter 25%), blue-gray support, restrained emphasis (bold stays body
+ * color; brown is reserved for key numbers / most-important results).
+ * Colors + fonts consumed by ThemeConfig.apply_palette().
+ * Layout tokens live in config-research.yaml alongside this file.
+ */
+:root {
+  --color-bg:        #ffffff;
+  --color-fg:        #404040;   /* tx1 Lighter 25% — body & rules */
+  --color-primary:   #404040;   /* h1: body-gray bold + gray under-rule */
+  --color-secondary: #0d558e;   /* h2 = accent1 (blue) Darker 25% */
+  --color-accent:    #dd5400;   /* accent2 brown — key numbers only */
+  --color-accent-text: #a63f00; /* brown Darker 25% for small labels (AA) */
+  --color-muted:     #767171;   /* bg2 Darker 50% — auxiliary text */
+  --color-hairline:  #d9d9d9;   /* bg1 Darker 15% — light dividers */
+  --color-light:     #f2f2f2;   /* bg1 Darker 5% — card / zebra surface */
+  --color-border:    #bfbfbf;   /* bg1 Darker 25% */
+
+  --font-head: 'Segoe UI', 'Yu Gothic', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif;
+  --font-body: 'Segoe UI', 'Yu Gothic', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif;
+  --font-ea:   'Yu Gothic', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif;
+}

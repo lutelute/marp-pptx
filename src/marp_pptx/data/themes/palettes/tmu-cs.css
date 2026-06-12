@@ -1,0 +1,24 @@
+/*!
+ * TMU CS palette — white ground + TMU green (#006543).
+ * Ported from marp-theme-tmu-cs by Taishi Nakashima (MIT):
+ *   https://github.com/taishi-n/marp-theme-tmu-cs
+ * Green headings with a thin under-rule, muted sage support colors,
+ * Noto Sans JP-first typography.
+ * Colors + fonts consumed by ThemeConfig.apply_palette().
+ * Layout tokens live in config-tmu-cs.yaml alongside this file.
+ */
+:root {
+  --color-bg:        #ffffff;
+  --color-fg:        #1c2520;   /* tmu-cs ink (green-tinged near-black) */
+  --color-primary:   #006543;   /* TMU green — all headings in the source theme */
+  --color-secondary: #006543;   /* subheads stay green, as in the source */
+  --color-accent:    #006543;
+  --color-muted:     #5d6e65;   /* sage gray */
+  --color-hairline:  #bfd3ca;   /* pale green border */
+  --color-light:     #f3f7f5;   /* tmu-cs note tint — card surfaces */
+  --color-border:    #bfd3ca;
+
+  --font-head: 'Noto Sans JP', 'Hiragino Sans', 'Yu Gothic', sans-serif;
+  --font-body: 'Noto Sans JP', 'Hiragino Sans', 'Yu Gothic', sans-serif;
+  --font-ea:   'Noto Sans JP', 'Hiragino Sans', 'Yu Gothic', sans-serif;
+}

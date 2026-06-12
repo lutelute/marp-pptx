@@ -14,6 +14,13 @@
     "file": "academic-talk.md"
   },
   {
+    "id": "academic-dense",
+    "title": "研究審査（高密度）",
+    "description": "背景→目的→モデル化→定式化→実験→考察→まとめ→文献。beamer 風の情報量、「セクション｜トピック（n／m）」タイトル規約。-p research と相性◎。",
+    "icon": "🔬",
+    "file": "academic-dense.md"
+  },
+  {
     "id": "product",
     "title": "プロダクト紹介",
     "description": "課題の断言→指標→グラフ→Before/After→比較→Takeaway。ピッチ向け。",
