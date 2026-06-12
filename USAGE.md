@@ -563,6 +563,8 @@ Questions?
 |---|---|---|
 | `claude` | デフォルト。Anthropic の温かいクリーム地（`#faf9f5`）＋クレイ | `#d97757` |
 | `minimal` | 洗練ミニマルな白基調・中央バランス | `#c2410c` |
+| `tmu-cs` | 白地＋TMU グリーンの学術テーマ。緑見出し＋細下線・左揃えタイトル。[marp-theme-tmu-cs](https://github.com/taishi-n/marp-theme-tmu-cs) (MIT) 移植 | `#006543` |
+| `research` | PowerPoint マスタ灰の研究審査テーマ。本文＝罫線＝`#404040`・高密度・上詰め。[marp-theme-dev](https://github.com/katsuzakitomohiro/marp-theme-dev) (MIT) 移植。プリセット「研究審査（高密度）」と相性◎ | `#dd5400` |
 
 ### academic 系パレット（配色のみ）
 
