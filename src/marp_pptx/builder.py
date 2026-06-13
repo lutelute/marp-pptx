@@ -135,7 +135,11 @@ class PptxBuilder:
         if self.LAYOUT.footer_bar:
             footer += int(Inches(0.30))   # the beamer bar claims the bottom band
         if has_title:
-            top = int(MARGIN_T + TITLE_H + TITLE_GAP)
+            if self.LAYOUT.h1_deco == "band":
+                # thin frametitle band → the body starts higher (denser canvas)
+                top = int(Inches(0.08) + TITLE_H + TITLE_GAP)
+            else:
+                top = int(MARGIN_T + TITLE_H + TITLE_GAP)
         else:
             top = int(MARGIN_T)
         height = int(SH - top - MARGIN_B - footer)
@@ -223,6 +227,7 @@ class PptxBuilder:
         "sqrt": "√", "odot": "⊙", "otimes": "⊗", "oplus": "⊕", "pm": "±",
         "cup": "∪", "cap": "∩", "subset": "⊂", "supset": "⊃", "propto": "∝",
         "sim": "∼", "equiv": "≡", "langle": "⟨", "rangle": "⟩", "prod": "∏",
+        "gtrsim": "≳", "lesssim": "≲", "ll": "≪", "gg": "≫",
         "int": "∫", "exists": "∃", "leftarrow": "←", "rightarrow": "→",
     }
 
@@ -555,10 +560,22 @@ class PptxBuilder:
         accent_rule='short-left' for a colored tick)."""
         if color is None:
             color = self.PRIMARY
+        band = self.LAYOUT.h1_deco == "band"
         if top is None:
-            top = TITLE_TOP
+            # The frametitle band hugs the top edge — pull the title up so the
+            # band stays thin (real beamer) and the body area grows below it.
+            top = int(Inches(0.08)) if band else TITLE_TOP
         text_left = int(MARGIN_L)
         text_w = int(CONTENT_W)
+
+        # Full-width headline band (beamer frametitle): the title sits in a
+        # structure-colored band flush with the top edge.
+        if band:
+            bb = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, int(SW),
+                                        int(top + TITLE_H + Inches(0.06)))
+            bb.fill.solid(); bb.fill.fore_color.rgb = self.PRIMARY
+            bb.line.fill.background(); self._no_shadow(bb)
+            color = self.WHITE
 
         # Small-caps eyebrow — the title's color accent without a line.
         if kicker:
@@ -1092,7 +1109,8 @@ class PptxBuilder:
         elif self.LAYOUT.title_bg == "light":
             self._set_bg(slide, self.LIGHT)
         is_dark = self.LAYOUT.title_bg in ("gradient", "dark")
-        h_color = self.WHITE if is_dark else self.PRIMARY
+        is_box = self.LAYOUT.title_bg == "box"   # Madrid: navy hero box on white
+        h_color = self.WHITE if (is_dark or is_box) else self.PRIMARY
         sub_color = RGBColor(0xD8, 0xD8, 0xDE) if is_dark else self.MUTED
         accent = self.WHITE if is_dark else self.ACCENT           # for the rule (graphic)
         kicker_color = self.WHITE if is_dark else self.ACCENT_TEXT  # for small text
@@ -1111,21 +1129,41 @@ class PptxBuilder:
                                    int(SW - (tx or int(Inches(1.0))) * 2), int(KICKER_H))
             self._kicker_para(kb.text_frame.paragraphs[0], kicker, color=kicker_color,
                               align=align, tracking=200)
-        # (2) accent hairline above the title
-        self._hairline(slide, tx if is_left else int(cx - Inches(0.55)), int(Inches(3.16)),
-                       Inches(1.1), thickness=Pt(1.6), color=accent)
+        # (2) accent hairline above the title (skipped for the hero box)
+        if not is_box:
+            self._hairline(slide, tx if is_left else int(cx - Inches(0.55)), int(Inches(3.16)),
+                           Inches(1.1), thickness=Pt(1.6), color=accent)
         # (3) title
         title_h = int(self._fs(Pt(SZ_DISPLAY.pt * 1.25 * 2)))
-        tb = self._add_textbox(slide, tx or int(Inches(0.8)), int(Inches(3.34)),
-                               int(SW - (tx or int(Inches(0.8))) * 2), title_h)
-        tf = tb.text_frame; tf.word_wrap = True; tf.vertical_anchor = MSO_ANCHOR.TOP
+        if is_box:
+            # Madrid title page: rounded structure-colored box, white title.
+            # Sized for two lines regardless — line-count estimates miss by a
+            # hair on borderline CJK titles, and a roomy box centers fine.
+            scale = getattr(self.theme, "font_scale", 1.0)
+            box_h = int(Pt(SZ_DISPLAY.pt * 1.25 * 2 * scale) + Inches(0.34))
+            box_y = int(Inches(3.30) + (title_h - box_h) // 2)
+            bx = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE,
+                                        int(Inches(0.95)), box_y,
+                                        int(SW - Inches(1.9)), box_h)
+            bx.adjustments[0] = 0.16
+            bx.fill.solid(); bx.fill.fore_color.rgb = self.PRIMARY
+            bx.line.fill.background(); self._no_shadow(bx)
+            tb = self._add_textbox(slide, int(Inches(1.15)), box_y,
+                                   int(SW - Inches(2.3)), box_h)
+            tf = tb.text_frame; tf.word_wrap = True
+            tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+        else:
+            tb = self._add_textbox(slide, tx or int(Inches(0.8)), int(Inches(3.34)),
+                                   int(SW - (tx or int(Inches(0.8))) * 2), title_h)
+            tf = tb.text_frame; tf.word_wrap = True; tf.vertical_anchor = MSO_ANCHOR.TOP
         p = tf.paragraphs[0]; p.text = sd.h1
         p.font.name = self.FONT_HEAD; p.font.size = self._fs(SZ_DISPLAY)
         p.font.bold = True; p.font.color.rgb = h_color; p.alignment = align
         p.line_spacing = LINE_TITLE
         # (4) subtitle — rich text so $math$ (e.g. author superscripts) renders
         if subs:
-            sb = self._add_textbox(slide, tx or int(Inches(1.2)), int(Inches(5.05)),
+            sub_y = Inches(5.18) if is_box else Inches(5.05)   # clear the hero box
+            sb = self._add_textbox(slide, tx or int(Inches(1.2)), int(sub_y),
                                    int(SW - (tx or int(Inches(1.2))) * 2), int(Inches(0.95)))
             sb.text_frame.word_wrap = True
             for i, line in enumerate(subs[:3]):
@@ -1267,7 +1305,7 @@ class PptxBuilder:
         from marp_pptx.math.renderer import render_latex_png_measured
         from PIL import Image
         rows = sd.eq_annotations
-        EQ_PT = 26
+        EQ_PT = 30
         segs = []
         for (tex, label, note, color) in rows:
             r = render_latex_png_measured(tex, fontsize=EQ_PT,
@@ -1306,7 +1344,20 @@ class PptxBuilder:
         note_pt = 12
         card_gap = int(Inches(0.25))
         n = len(annotated)
-        card_w = int(min(Inches(3.4), (rwidth - card_gap * (n - 1)) / max(n, 1)))
+        # Predict each segment's center (same arithmetic as placement below)
+        # so the card width can shrink to the pitch between annotated terms —
+        # wide cards shove each other sideways and the connectors degrade
+        # into long diagonals that no longer read as "pointing".
+        run = 0.0
+        for s in segs:
+            s["cx_pred"] = run + s["w"] / 2.0
+            run += s["w"] + gap_px
+        cap = int(Inches(3.4))
+        if n >= 2:
+            cs = sorted(s["cx_pred"] * emu_per_px * fit for s in annotated)
+            min_pitch = min(b - a for a, b in zip(cs, cs[1:]))
+            cap = min(cap, max(int(Inches(1.5)), int(min_pitch) - card_gap))
+        card_w = int(min(cap, (rwidth - card_gap * (n - 1)) / max(n, 1)))
         card_h = 0
         for s in annotated:
             body_h = int(self._estimate_text_height(
@@ -2717,9 +2768,9 @@ class PptxBuilder:
         cur = rtop + max(0, (rheight - total) // 2)
         for (variant, title, body, body_h) in items:
             head_c = self._BLOCK_COLORS.get(variant, self.SECONDARY)
-            bar = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE,
+            # sharp rectangles, flush bar+panel — the (non-rounded) beamer block
+            bar = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE,
                                          rleft, int(cur), rwidth, bar_h)
-            bar.adjustments[0] = 0.12
             bar.fill.solid(); bar.fill.fore_color.rgb = head_c
             bar.line.fill.background(); self._no_shadow(bar)
             tb = self._add_textbox(slide, rleft + int(Inches(0.18)), int(cur),
@@ -3304,11 +3355,13 @@ class PptxBuilder:
                 (1, sections[i] if i < len(sections) else "", PP_ALIGN.CENTER),
                 (2, f"{i + 1} / {n}", PP_ALIGN.RIGHT),
             ):
-                if cell != 1:   # outer cells share the solid structure color
+                if cell != 1:   # three tones, darkest at the left (Madrid)
                     bgc = slide.shapes.add_shape(
                         MSO_SHAPE.RECTANGLE, int(SW * cell_pts[cell]), int(SH - bar_h),
                         int(SW * (cell_pts[cell + 1] - cell_pts[cell])), bar_h)
-                    bgc.fill.solid(); bgc.fill.fore_color.rgb = self.PRIMARY
+                    bgc.fill.solid()
+                    bgc.fill.fore_color.rgb = (self.PRIMARY if cell == 0
+                                               else self._tint(self.PRIMARY, 0.35))
                     bgc.line.fill.background(); self._no_shadow(bgc)
                 tb = self._add_textbox(
                     slide, int(SW * cell_pts[cell] + Inches(0.18)), int(SH - bar_h),

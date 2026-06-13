@@ -15,8 +15,8 @@ fonts:
   head: "'Helvetica Neue', 'Hiragino Sans', 'Noto Sans JP', sans-serif"
   body: "'Helvetica Neue', 'Hiragino Sans', 'Noto Sans JP', sans-serif"
 layout:
-  h1_deco: none
-  title_bg: dark           # navy hero, the beamer title-page look
+  h1_deco: band            # full-width navy frametitle band (the beamer look)
+  title_bg: box            # Madrid: navy rounded hero box on white
   title_align: center
   divider_align: center
   end_bg: white

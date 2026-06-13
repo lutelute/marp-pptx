@@ -37,11 +37,11 @@ def _list_installed_fonts() -> set[str]:
 @dataclass
 class ThemeLayout:
     # Heading decoration
-    h1_deco: str = "left-bar"          # left-bar / bottom-line / top-line / double-bottom / none
+    h1_deco: str = "left-bar"          # left-bar / bottom-line / top-line / double-bottom / band / none
     h1_deco_width: int = 8             # Pt
     h1_deco_color: str = "primary"     # primary / secondary / accent / hairline
     # Slide-type background & alignment
-    title_bg: str = "white"            # white / gradient / dark / light
+    title_bg: str = "white"            # white / gradient / dark / light / box (navy hero box on white)
     title_align: str = "left"          # left / center
     divider_align: str = "left"
     end_bg: str = "white"

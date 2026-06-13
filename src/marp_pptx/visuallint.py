@@ -22,20 +22,24 @@ _MINIMAL = {"title", "divider", "statement", "big-statement", "dark", "end",
 
 
 def visual_lint(png_path: str, slide_class: str | None = None, *, edge: float = 0.035,
-                bottom_exclude: float = 0.0) -> list[str]:
+                bottom_exclude: float = 0.0, top_exclude: float = 0.0) -> list[str]:
     """Return design warnings for one rendered slide image (empty list = clean).
 
-    bottom_exclude: fraction of the slide height to ignore at the bottom —
-    use ~0.05 for themes with a full-width footer bar (layout.footer_bar),
-    which is chrome, not author content.
+    bottom_exclude / top_exclude: fraction of the slide height to ignore at
+    the bottom / top — chrome bands, not author content. Use ~0.05 at the
+    bottom for themes with a footer bar (layout.footer_bar) and ~0.16 at the
+    top for a full-width frametitle band (h1_deco: band).
     """
     from PIL import Image
 
     im = Image.open(png_path).convert("RGB")
     w, h = im.size
     px = im.load()
-    # background = the slide's corner colour (cream / white / dark all work)
-    bg = px[2, 2]
+    # background = a corner colour INSIDE the chrome-exclusion bands — with a
+    # full-width frametitle band the literal top-left corner is the band color,
+    # which would invert the content mask (everything white reads as content).
+    bg_y = min(h - 3, int(h * top_exclude) + 4 if top_exclude else 2)
+    bg = px[2, bg_y]
     tol = 42  # sum-of-abs-channel-diff threshold for "this pixel is content"
 
     # The builder stamps a right-aligned page number ("N / M") in the
@@ -47,6 +51,7 @@ def visual_lint(png_path: str, slide_class: str | None = None, *, edge: float = 
     foot_y = h * 0.93
     foot_x = w * 0.78
     band_y = h * (1.0 - bottom_exclude) if bottom_exclude else None
+    head_y = h * top_exclude if top_exclude else None
     step = max(1, w // 380)
     minx = miny = 10 ** 9
     maxx = maxy = -1
@@ -57,6 +62,8 @@ def visual_lint(png_path: str, slide_class: str | None = None, *, edge: float = 
                 continue  # page-number footer chrome, not content
             if band_y is not None and y >= band_y:
                 continue  # full-width footer bar chrome (beamer themes)
+            if head_y is not None and y <= head_y:
+                continue  # frametitle band chrome (h1_deco: band)
             r, g, b = px[x, y]
             if abs(r - bg[0]) + abs(g - bg[1]) + abs(b - bg[2]) > tol:
                 content += 1
@@ -131,12 +138,14 @@ def lint_deck(markdown: str, palette: str = "claude", dpi: int = 96,
         builder.save(str(pptx))
         pngs = pptx_to_pngs(pptx, tdp, dpi=dpi)
 
-        # A full-width footer bar (beamer themes) is chrome — exclude its band.
+        # Full-width chrome bands (beamer themes) are excluded from linting.
         bottom = 0.05 if getattr(tc.layout, "footer_bar", False) else 0.0
+        top = 0.13 if getattr(tc.layout, "h1_deco", "") == "band" else 0.0
         out: list[dict] = []
         for i, (png, sd) in enumerate(zip(pngs, slides), 1):
             cls = getattr(sd, "slide_class", None)
-            warns = visual_lint(str(png), cls, bottom_exclude=bottom)
+            warns = visual_lint(str(png), cls, bottom_exclude=bottom,
+                                top_exclude=top)
             if warns:
                 out.append({"slide": i, "class": cls or "default", "warnings": warns})
         return out
@@ -205,11 +214,16 @@ def detect_text_collisions(prs, *, intrude_emu: int = 152400) -> list[dict]:
     """
     out: list[dict] = []
     sh = prs.slide_height
+    # Text sitting in the bottom ~0.35in is footer-bar chrome (beamer themes):
+    # not author content, and its bar-height boxes false-trip the off-slide
+    # check when a long deck title wraps in the estimator.
+    bar_chrome = sh - 320040
     for i, slide in enumerate(prs.slides, 1):
         boxes = [s for s in slide.shapes
                  if getattr(s, "has_text_frame", False)
                  and s.text_frame.text.strip()
-                 and not _PAGE_NO.fullmatch(s.text_frame.text.strip())]
+                 and not _PAGE_NO.fullmatch(s.text_frame.text.strip())
+                 and s.top < bar_chrome]
         for a in boxes:
             a_bottom = a.top + _needed_height_emu(a)
             # (1) off-slide bottom overflow — text runs past the slide edge with
