@@ -228,5 +228,28 @@ def test_a_dense_deck_survives_every_theme(tmp_path, project_root, palette):
     assert not errors, format_findings(errors)
 
 
+def test_no_markdown_or_latex_reaches_the_slide(tmp_path, project_root):
+    """`**bold**` and `$x^2$` are instructions, not content. Any path that
+    writes a paragraph's text directly instead of going through the inline
+    renderer prints them verbatim — which is how theorem titles, footnotes,
+    numbered steps and definition notes used to ship."""
+    import re
+
+    from pptx import Presentation
+
+    leak = re.compile(r"\$[^$\n]{1,60}\$|\*\*\S")
+    bad = []
+    for name in _template_ids(project_root):
+        out = _build(project_root / "templates" / f"{name}.md", tmp_path)
+        for i, slide in enumerate(Presentation(str(out)).slides, 1):
+            for shape in slide.shapes:
+                if not getattr(shape, "has_text_frame", False):
+                    continue
+                text = shape.text_frame.text
+                if leak.search(text):
+                    bad.append(f"{name} slide {i}: {text.strip()[:60]}")
+    assert not bad, "\n".join(bad)
+
+
 def test_format_findings_says_so_when_clean():
     assert "clean" in format_findings([])

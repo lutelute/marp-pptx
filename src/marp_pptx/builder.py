@@ -861,6 +861,25 @@ class PptxBuilder:
             tf.auto_size = MSO_AUTO_SIZE.SHAPE_TO_FIT_TEXT
         return tb
 
+    def _rich_line(self, para, text, size=None, color=None, *, font=None,
+                   bold=False):
+        """Author prose into one paragraph, with the inline markup honoured.
+
+        Captions, notes, definitions and quotes are prose: they carry
+        `**bold**`, `` `code` `` and `$math$` like any other line, and setting
+        `para.text` directly puts the markup on the slide verbatim. Styles are
+        applied to the runs afterwards because `_set_rich_text` writes explicit
+        run properties that paragraph-level defaults no longer reach.
+        """
+        self._set_rich_text(para, text, size, color)
+        if font or bold:
+            for r in para.runs:
+                if font:
+                    r.font.name = font
+                if bold:
+                    r.font.bold = True
+        return para
+
     def _add_plain_run(self, para, text, size, color, bold=False, mono=False):
         """Append a single styled run to para. No-op if text is empty."""
         if not text:
@@ -1043,11 +1062,9 @@ class PptxBuilder:
         tb = self._add_textbox(slide, left, top + int(Pt(5)), width, int(Inches(0.4)))
         tf = tb.text_frame
         tf.word_wrap = True
-        p = tf.paragraphs[0]
-        p.text = text
-        p.font.name = self.FONT
-        p.font.size = self._fs(SZ_FOOT)
-        p.font.color.rgb = self.MUTED
+        # Footnotes cite formulas — "加速版は手順 4 の重み付けを $t_k^2$ に" —
+        # and used to print the dollar signs.
+        self._set_rich_text(tf.paragraphs[0], text, SZ_FOOT, self.MUTED)
         tf.auto_size = MSO_AUTO_SIZE.SHAPE_TO_FIT_TEXT
 
     def _add_zone_box(self, slide, left, top, width, height,
@@ -1542,10 +1559,7 @@ class PptxBuilder:
                 p2 = tf.add_paragraph()
             else:
                 p2 = p
-            p2.text = s["note"]
-            p2.font.name = self.FONT
-            p2.font.size = self._fs(Pt(note_pt))
-            p2.font.color.rgb = self.FG
+            self._rich_line(p2, s["note"], Pt(note_pt), self.FG)
             conn = slide.shapes.add_connector(
                 MSO_CONNECTOR.STRAIGHT,
                 s["cx"], int(s["bottom"] + Inches(0.03)),
@@ -1770,9 +1784,9 @@ class PptxBuilder:
         cap_top = img_top + ph + int(Inches(0.15))
         if sd.caption:
             tb = self._add_textbox(slide, rleft, int(cap_top), rwidth, cap_h)
-            p = tb.text_frame.paragraphs[0]; p.text = sd.caption
-            p.font.name = self.FONT; p.font.size = self._fs(SZ_SMALL)
-            p.font.color.rgb = self.MUTED; p.alignment = PP_ALIGN.CENTER
+            p = tb.text_frame.paragraphs[0]
+            self._rich_line(p, sd.caption, SZ_SMALL, self.MUTED)
+            p.alignment = PP_ALIGN.CENTER
             tb.text_frame.word_wrap = True
         if sd.body_lines:
             self._add_body_text(slide, sd.body_lines, left=rleft,
@@ -1897,9 +1911,8 @@ class PptxBuilder:
                 dtl = self._add_textbox(slide, tb_left + int(Pt(6)), line_y + int(Inches(0.85)),
                                         int(item_w) - int(Pt(12)), int(Inches(0.9)))
                 p3 = dtl.text_frame.paragraphs[0]
-                p3.text = item["detail"]
-                p3.font.name = self.FONT; p3.font.size = self._fs(SZ_FOOT)
-                p3.font.color.rgb = self.MUTED; p3.alignment = PP_ALIGN.CENTER
+                self._rich_line(p3, item["detail"], SZ_FOOT, self.MUTED)
+                p3.alignment = PP_ALIGN.CENTER
                 dtl.text_frame.word_wrap = True
 
     def build_timeline_v(self, sd: SlideData):
@@ -1941,9 +1954,8 @@ class PptxBuilder:
             txt.text_frame.word_wrap = True
             if item.get("detail"):
                 dtl = self._add_textbox(slide, tx, ry + int(Inches(0.38)), tw, int(Inches(0.5)))
-                p3 = dtl.text_frame.paragraphs[0]; p3.text = item["detail"]
-                p3.font.name = self.FONT; p3.font.size = self._fs(SZ_SMALL)
-                p3.font.color.rgb = self.MUTED
+                self._rich_line(dtl.text_frame.paragraphs[0], item["detail"],
+                                SZ_SMALL, self.MUTED)
                 dtl.text_frame.word_wrap = True
 
     def build_end(self, sd: SlideData):
@@ -2195,9 +2207,9 @@ class PptxBuilder:
             tb2 = self._add_textbox(slide, card_x, top + main_h + gap, card_w, sub_h)
             tf2 = tb2.text_frame; tf2.word_wrap = True
             tf2.vertical_anchor = MSO_ANCHOR.TOP
-            p2 = tf2.paragraphs[0]; p2.text = sd.rq_sub
-            p2.font.name = self.FONT; p2.font.size = self._fs(SZ_SMALL)
-            p2.font.color.rgb = self.MUTED; p2.alignment = PP_ALIGN.CENTER
+            p2 = tf2.paragraphs[0]
+            self._rich_line(p2, sd.rq_sub, SZ_SMALL, self.MUTED)
+            p2.alignment = PP_ALIGN.CENTER
 
     def build_result_dual(self, sd: SlideData):
         slide = self._blank_slide()
@@ -2233,10 +2245,7 @@ class PptxBuilder:
                 ctb = self._add_textbox(slide, int(x), int(img_top + ph + Inches(0.12)),
                                         int(col_w), cap_h)
                 cp = ctb.text_frame.paragraphs[0]
-                cp.text = cap_text
-                cp.font.name = self.FONT
-                cp.font.size = self._fs(SZ_SMALL)
-                cp.font.color.rgb = self.MUTED
+                self._rich_line(cp, cap_text, SZ_SMALL, self.MUTED)
                 cp.alignment = PP_ALIGN.CENTER
 
     def build_summary(self, sd: SlideData):
@@ -2313,9 +2322,7 @@ class PptxBuilder:
         if lead_text:
             tb = self._add_textbox(slide, rleft, cur_top, rwidth, int(Inches(0.55)))
             p = tb.text_frame.paragraphs[0]
-            p.text = lead_text
-            p.font.name = self.FONT; p.font.size = self._fs(SZ_H3)
-            p.font.color.rgb = self.SECONDARY
+            self._rich_line(p, lead_text, SZ_H3, self.SECONDARY)
             tb.text_frame.word_wrap = True
             cur_top += int(Inches(0.7)); avail_h -= int(Inches(0.7))
         left_w = int(rwidth * 0.56)
@@ -2337,9 +2344,9 @@ class PptxBuilder:
             if sd.caption:
                 ctb = self._add_textbox(slide, rleft, int(img_top + ph + Inches(0.1)),
                                         left_w, cap_h)
-                cp = ctb.text_frame.paragraphs[0]; cp.text = sd.caption
-                cp.font.name = self.FONT; cp.font.size = self._fs(SZ_SMALL)
-                cp.font.color.rgb = self.MUTED; cp.alignment = PP_ALIGN.CENTER
+                cp = ctb.text_frame.paragraphs[0]
+                self._rich_line(cp, sd.caption, SZ_SMALL, self.MUTED)
+                cp.alignment = PP_ALIGN.CENTER
                 ctb.text_frame.word_wrap = True
         if points:
             ph_pts = int(self._estimate_text_height([f"\u2022 {p}" for p in points], SZ_COL,
@@ -2422,9 +2429,9 @@ class PptxBuilder:
         if sd.quote_text:
             tb = self._add_textbox(slide, qx, qtop, qw, quote_h + int(Inches(0.2)))
             tf = tb.text_frame; tf.word_wrap = True
-            p = tf.paragraphs[0]; p.text = sd.quote_text
-            p.font.name = self.FONT; p.font.size = self._fs(SZ_H2)
-            p.font.color.rgb = self.FG; p.line_spacing = LINE_BODY
+            p = tf.paragraphs[0]
+            self._rich_line(p, sd.quote_text, SZ_H2, self.FG)
+            p.line_spacing = LINE_BODY
         if sd.quote_source:
             stb = self._add_textbox(slide, qx, qtop + quote_h + int(Inches(0.25)),
                                     qw, int(Inches(0.5)))
@@ -2487,9 +2494,9 @@ class PptxBuilder:
             slide.shapes.add_picture(img_file, (SW - pw) // 2, int(img_top), pw, ph)
         if sd.panorama_text:
             tb = self._add_textbox(slide, rleft, int(img_top + ph + Inches(0.12)), rwidth, cap_h)
-            p = tb.text_frame.paragraphs[0]; p.text = sd.panorama_text
-            p.font.name = self.FONT; p.font.size = self._fs(SZ_SMALL)
-            p.font.color.rgb = self.MUTED; p.alignment = PP_ALIGN.CENTER
+            p = tb.text_frame.paragraphs[0]
+            self._rich_line(p, sd.panorama_text, SZ_SMALL, self.MUTED)
+            p.alignment = PP_ALIGN.CENTER
             tb.text_frame.word_wrap = True
 
     def build_kpi(self, sd: SlideData):
@@ -2580,9 +2587,9 @@ class PptxBuilder:
         if sd.def_term:
             self._eyebrow(slide, "Definition", tx, cur - int(KICKER_H) + int(Inches(0.02)), tw)
             tb = self._add_textbox(slide, tx, cur, tw, term_h)
-            p = tb.text_frame.paragraphs[0]; p.text = sd.def_term
-            p.font.name = self.FONT_HEAD; p.font.size = self._fs(Pt(28))
-            p.font.bold = True; p.font.color.rgb = self.PRIMARY
+            p = tb.text_frame.paragraphs[0]
+            self._rich_line(p, sd.def_term, Pt(28), self.PRIMARY,
+                            font=self.FONT_HEAD, bold=True)
             cur += term_h + int(Inches(0.2))
         if sd.def_body:
             tb2 = self._add_textbox(slide, tx, cur, tw, body_h)
@@ -2594,9 +2601,8 @@ class PptxBuilder:
         if sd.def_note:
             ntb = self._add_textbox(slide, tx, cur, tw, note_h)
             ntb.text_frame.word_wrap = True
-            p = ntb.text_frame.paragraphs[0]; p.text = sd.def_note
-            p.font.name = self.FONT; p.font.size = self._fs(SZ_SMALL)
-            p.font.color.rgb = self.MUTED
+            self._rich_line(ntb.text_frame.paragraphs[0], sd.def_note,
+                            SZ_SMALL, self.MUTED)
 
     def build_diagram(self, sd: SlideData):
         slide = self._blank_slide()
@@ -2625,9 +2631,8 @@ class PptxBuilder:
                                     rwidth, cap_h)
             ctb.text_frame.word_wrap = True
             p = ctb.text_frame.paragraphs[0]
-            p.text = sd.caption
-            p.font.name = self.FONT; p.font.size = self._fs(SZ_SMALL)
-            p.font.color.rgb = self.MUTED; p.alignment = PP_ALIGN.CENTER
+            self._rich_line(p, sd.caption, SZ_SMALL, self.MUTED)
+            p.alignment = PP_ALIGN.CENTER
 
     def build_gallery_img(self, sd: SlideData):
         slide = self._blank_slide()
@@ -2672,9 +2677,9 @@ class PptxBuilder:
                 cb = self._add_textbox(slide, int(x) + int(Inches(0.1)),
                                        int(y) + int(cell_h) - cap_h,
                                        int(cell_w) - int(Inches(0.2)), cap_h)
-                cp = cb.text_frame.paragraphs[0]; cp.text = cap_text
-                cp.font.name = self.FONT; cp.font.size = self._fs(SZ_FOOT)
-                cp.font.color.rgb = self.MUTED; cp.alignment = PP_ALIGN.CENTER
+                cp = cb.text_frame.paragraphs[0]
+                self._rich_line(cp, cap_text, SZ_FOOT, self.MUTED)
+                cp.alignment = PP_ALIGN.CENTER
                 cb.text_frame.word_wrap = True
                 cb.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
 
@@ -2954,9 +2959,12 @@ class PptxBuilder:
                                    rwidth - int(Inches(0.36)), bar_h)
             tb.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
             p = tb.text_frame.paragraphs[0]
-            p.text = title or variant.capitalize()
-            p.font.name = self.FONT_HEAD; p.font.size = self._fs(Pt(15))
-            p.font.bold = True; p.font.color.rgb = self.WHITE
+            # A theorem title carries math — "定理 1（$O(1/k)$ 収束）" — so it
+            # goes through the inline renderer like any other line.
+            self._set_rich_text(p, title or variant.capitalize(), Pt(15), self.WHITE)
+            for r in p.runs:
+                r.font.bold = True
+                r.font.name = self.FONT_HEAD
             cur += bar_h
             panel = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE,
                                            rleft, int(cur), rwidth, int(body_h))
@@ -3062,9 +3070,8 @@ class PptxBuilder:
             dtb = self._add_textbox(slide, rleft, int(top + code_h + Inches(0.2)),
                                     rwidth, desc_h)
             dtb.text_frame.word_wrap = True
-            p2 = dtb.text_frame.paragraphs[0]; p2.text = sd.code_desc
-            p2.font.name = self.FONT; p2.font.size = self._fs(SZ_SMALL)
-            p2.font.color.rgb = self.MUTED
+            self._rich_line(dtb.text_frame.paragraphs[0], sd.code_desc,
+                            SZ_SMALL, self.MUTED)
 
     def build_multi_result(self, sd: SlideData):
         slide = self._blank_slide()
@@ -3253,9 +3260,9 @@ class PptxBuilder:
             cur += lbl_h
         if sd.bignum_caption:
             cb = self._add_textbox(slide, int(MARGIN_L), cur, int(CONTENT_W), cap_h)
-            cp = cb.text_frame.paragraphs[0]; cp.text = sd.bignum_caption
-            cp.font.name = self.FONT; cp.font.size = self._fs(SZ_SMALL)
-            cp.font.color.rgb = (RGBColor(0xD8, 0xD8, 0xDE) if sd.dark else self.MUTED)
+            cp = cb.text_frame.paragraphs[0]
+            self._rich_line(cp, sd.bignum_caption, SZ_SMALL,
+                            RGBColor(0xD8, 0xD8, 0xDE) if sd.dark else self.MUTED)
             cp.alignment = PP_ALIGN.CENTER
             cb.text_frame.word_wrap = True
         if sd.footnote:
@@ -3313,9 +3320,8 @@ class PptxBuilder:
                                    width, cap_h)
             cb.text_frame.word_wrap = True
             cp = cb.text_frame.paragraphs[0]
-            cp.text = cap_text
-            cp.font.name = self.FONT; cp.font.size = self._fs(SZ_SMALL)
-            cp.font.color.rgb = self.MUTED; cp.alignment = PP_ALIGN.CENTER
+            self._rich_line(cp, cap_text, SZ_SMALL, self.MUTED)
+            cp.alignment = PP_ALIGN.CENTER
 
     # ══════════════════════════════════════════════
     # Build all slides
