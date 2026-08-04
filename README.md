@@ -16,6 +16,9 @@ pip install -e .
 # 変換（無指定で claude テーマ = Anthropic cream + clay）
 marp-pptx convert deck.md -o deck.pptx
 
+# 出す前に検査（実フォント計測。LibreOffice も API キーも不要）
+marp-pptx doctor deck.md
+
 # 白基調の minimal / その他パレット
 marp-pptx convert deck.md -p minimal
 marp-pptx convert deck.md -p navy
@@ -89,6 +92,33 @@ marp: true
 各型ごとの HTML 構造（`kpi` / `zone-flow` / `equation` など）は
 `marp-pptx types` と各テンプレート（`src/marp_pptx/data/templates/`）、[USAGE.md](USAGE.md) を参照。
 
+## 精度チェック（`marp-pptx doctor`）
+
+資料の品質を落とすのは、たいてい**文字がボックスに入っていない**こと。
+その一点を推測でなく**実測**で潰すためのコマンド。
+
+```bash
+marp-pptx doctor deck.md            # .md ならビルドしてから検査（.pptx も可）
+marp-pptx doctor deck.pptx --json   # 機械可読
+marp-pptx doctor deck.md --strict   # warn 以上で exit 1（CI 向け）
+```
+
+各テキストボックスを、そのボックスが指定している**書体の実際の字送り**（`hmtx`/FreeType）で
+測り、PowerPoint と同じ折り返し（Latin は語境界、日本語は**禁則処理**）を再現して比較する。
+
+| 検査 | 内容 |
+|---|---|
+| `overflow` | 折り返し後の高さがボックスを超える／`word_wrap` 無効で横にはみ出す。**超過 pt と収まるサイズ**を提示 |
+| `overlap` | テキスト同士の重なり・近接（0.12in 未満）。伸びるボックス（spAutoFit）の実効高も考慮 |
+| `offslide` | スライド外／安全余白（0.35in）内。テーマの帯・フッターバーは自動除外 |
+| `contrast` | 実際に背後にある面（カード塗り or スライド背景）との WCAG AA 比 |
+| `font` | 未インストール／LibreOffice プレビューで幅が変わる書体 |
+| `package` | 関係参照切れ・content-type 欠落・拡張子と中身の不一致など、**PowerPoint が「修復」と言う破損** |
+| `deck` | 同一レイアウトの連続、図表の無いスライド |
+
+レンダラ不要・数十 ms。同じ計測エンジンをビルダー自身も使うので、
+**予約したボックスと実際に必要な高さが常に同じ物差し**で測られる。
+
 ## デザイン
 
 - **テーマ**: `claude`（デフォルト, Anthropic cream `#faf9f5` + clay `#d97757`）/ `minimal`（白基調）/ `tmu-cs`（TMU グリーン学術, [marp-theme-tmu-cs](https://github.com/taishi-n/marp-theme-tmu-cs) 移植）/ `research`（PowerPoint マスタ灰・研究審査, [marp-theme-dev](https://github.com/katsuzakitomohiro/marp-theme-dev) 移植）/ `academic` 系 10 パレット
@@ -123,9 +153,11 @@ MCP クライアント設定（例: Claude Desktop / Claude Code）:
 - **取り込み**: `read_paper`（PDF/arXiv → title/節/図/**数値**を構造抽出）/ `read_repo`（README/構造/言語）
 - **グラウンディング**: **`check_deck_against_source`**（デッキの数値がソース論文に実在するか照合＝ハルシネ検出）
 - **生成**: `slide_types`（52型カタログ）/ `slide_template`（型の骨組み）/ `list_presets`・`get_preset` /
-  `build_pptx`（MD→編集可能.pptx ＋ lint）/ **`preview_png`**（各スライドを画像で返す＝AI が下書きを見て直せる）
+  `build_pptx`（MD→編集可能.pptx ＋ lint ＋ 実測欠陥）
+- **検証**: **`check_deck`**（溢れ・重なり・コントラスト・破損を実測。**レンダラ不要**で数十 ms）/
+  **`preview_png`**（各スライドを画像で返す＝AI が下書きを見て直せる）
 
-これで「論文＋リポを渡す → 抽出 → ソースから下書き → 数値照合 → 生成 → 画像で自己確認」のループが回る。
+これで「論文＋リポを渡す → 抽出 → ソースから下書き → 数値照合 → 生成 → **実測検証** → 画像で自己確認」のループが回る。
 PDF 取り込みは `pip install "marp-pptx[ingest]"`（PyMuPDF）。
 
 ### ワンコマンド（ターンキー）

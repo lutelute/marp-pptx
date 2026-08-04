@@ -15,8 +15,55 @@ description: "marp-pptx で「編集可能な PowerPoint(.pptx)」を作るた�
 2. **型で構成設計** — 各スライドに型を割り当てる（下の「型選択フロー」）
    - 典型: `title → agenda → rq → sandwich → kpi/result → takeaway → end`
 3. **Markdown を書く** — フロントマター + 型ごとの HTML 構造（下記＆ `references/type-skeletons.md`）
+   - 文字量は「1行あたりの実測上限」に収める（下の「文字数の目安」）
 4. **変換** — `marp-pptx convert deck.md -o deck.pptx`
-5. **確認** — スライド数・画像・数式が想定通りか。仕上げは PowerPoint で
+5. **検証（必須）** — `marp-pptx doctor deck.md`。**error は必ず直してから出す**
+6. **確認** — スライド数・画像・数式が想定通りか。仕上げは PowerPoint で
+
+## 検証（doctor）— 出す前に必ず
+
+```bash
+marp-pptx doctor deck.md          # .md ならビルドしてから検査／.pptx も可
+marp-pptx doctor deck.md --json   # 機械可読
+marp-pptx doctor deck.md --strict # warn 以上で exit 1（CI 用）
+```
+
+各テキストボックスを**実フォントの字送り**で測り、レンダラ無し・API キー無しで
+「読み手が気づく欠陥」だけを返す。LibreOffice も不要で数十 ms。
+
+| kind | 意味 | 対応 |
+|---|---|---|
+| `overflow` | 文字がボックスに入っていない（**最頻の欠陥**） | 文を削る／スライドを分割。提示された pt まで下げるのは最後の手段 |
+| `overlap` | テキスト同士が重なる／近すぎる | 上のブロックを短くする |
+| `offslide` | スライド外／端に寄りすぎ | 内容を減らす（座標は型が決める） |
+| `contrast` | WCAG AA 未満の配色 | 濃い色に変える／パレットを替える |
+| `font` | 未インストール／プレビューが当てにならない書体 | 安全な書体（Arial/Calibri/Cambria/Times New Roman）へ |
+| `package` | PowerPoint が「修復が必要」と言う破損 | 画像形式・パスを確認して再ビルド |
+| `deck` | 同じレイアウトの連続・図の無いスライド | 型を変えて緩急をつける |
+
+**severity=error はそのまま出さない。** `overflow` は文字を減らして直すのが第一手
+（フォントを縮めるのは読みにくさに直結する）。
+
+MCP 接続時は **`check_deck(markdown=...)`** が同じ検査を返す。
+`preview_png` より先にこれを回す（速く・正確で・環境依存が無い）。
+
+## 文字数の目安（claude テーマ / font_scale=1.0 の実測）
+
+| 場所 | 1 行に入る量（日本語 / 英字） | 備考 |
+|---|---|---|
+| H1（スライド見出し, 30pt） | **29 字 / 60 字** | 見出し帯は 1 行分。超えると自動縮小→2 行化 |
+| 本文・箇条書き（18pt, 全幅） | 48 字 / 101 字 | 本文領域は最大 16 行 |
+| 2 カラム内（16pt） | 26 字 / 55 字 | `cols-2` / `sandwich` の各カラム |
+| カード本文（15pt, 3 列） | 15 字 / 33 字 | `zone-*` / `card-grid`。**ここが一番狭い** |
+| カード見出し（18pt, 3 列） | 13 字 / 27 字 | 名詞句で。文にしない |
+| キャプション（14pt, 全幅） | 62 字 / 129 字 | 図表の下 |
+| KPI 値（44pt, 3 列） | 6 字 / 13 字 | `97%` `10x` のような短い値 |
+
+（claude テーマ・font_scale=1.0・Hiragino Sans / Helvetica Neue 実測値。
+英字は一般的な文章の平均字幅で換算。）
+
+超えたぶんは折り返す（悪くはない）が、**H1・カード見出し・KPI 値は 1 行が設計**。
+3 列カードに文章を入れると必ず溢れる — 名詞句に削る。迷ったら doctor に測らせる。
 
 > 速く始めるなら **プリセット**から: `marp-pptx serve` の Web UI 右「プリセットから開始」、
 > または `src/marp_pptx/data/presets/*.md`（academic-talk / product / lecture / minimal）を雛形に。

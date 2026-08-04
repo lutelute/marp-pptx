@@ -137,6 +137,20 @@ DECK:
 Output ONLY the revised Marp markdown."""
 
 
+def _defect_fix_prompt(markdown: str, defects: list[dict]) -> str:
+    items = "\n".join(
+        f"- slide {d['slide']} [{d['kind']}] {d['message']}" for d in defects)
+    return f"""These slides were MEASURED against the real font metrics and do not fit. Revise the markdown so the content fits: cut words, split a slide in two, or move detail into the speaker notes (`<!-- note: ... -->`). Do not change any number or claim, and keep the type HTML valid. Change only the slides listed.
+
+MEASURED DEFECTS:
+{items}
+
+DECK:
+{markdown}
+
+Output ONLY the revised Marp markdown."""
+
+
 def build_deck_from_paper(
     paper_path: str,
     repo_path: str | None = None,
@@ -153,10 +167,10 @@ def build_deck_from_paper(
 ) -> dict:
     """Ingest a paper (+ repo), draft a grounded deck, auto-repair, and build it.
 
-    Content grounding (numeric + semantic) and — when LibreOffice is present —
-    a deterministic visual pass (overflow / sparse / skew) drive automatic
-    LLM repairs. Returns {output_path, slide_count, markdown, fidelity, rounds,
-    review, visual, lint_warnings}.
+    Content grounding (numeric + semantic), a measured layout audit, and — when
+    LibreOffice is present — a deterministic visual pass (sparse / skew) drive
+    automatic LLM repairs. Returns {output_path, slide_count, markdown,
+    fidelity, rounds, review, visual, defects, lint_warnings}.
     """
     from marp_pptx.mcp import build_pptx  # reuse the themed build
 
@@ -190,6 +204,17 @@ def build_deck_from_paper(
     out = out or str(Path(paper_path).with_suffix("").name + "_deck.pptx")
     res = build_pptx(markdown, output_path=out, palette=palette, math=math)
 
+    # Measured repair: the audit reads the built deck's geometry against real
+    # font metrics, so it runs everywhere (no LibreOffice, no vision model) and
+    # says exactly which slide holds more text than its boxes can show.
+    defects = [d for d in res.get("defects", []) if d["severity"] == "error"]
+    while defects and rounds < max_rounds:
+        markdown = _strip_fences(call(_defect_fix_prompt(markdown, defects)))
+        res = build_pptx(markdown, output_path=out, palette=palette, math=math)
+        fidelity = check_fidelity(markdown, source)
+        rounds += 1
+        defects = [d for d in res.get("defects", []) if d["severity"] == "error"]
+
     # Visual polish: deterministic lint is the "eyes"; the text LLM fixes the
     # markdown from its warnings (no vision model needed). Skips if no soffice.
     visual: list = []
@@ -218,5 +243,6 @@ def build_deck_from_paper(
         "rounds": rounds,
         "review": review,
         "visual": visual,
+        "defects": res.get("defects", []),
         "lint_warnings": res["lint_warnings"],
     }

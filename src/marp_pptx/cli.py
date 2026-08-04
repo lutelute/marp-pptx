@@ -305,6 +305,69 @@ def render_gallery(output_dir: str | None, palette: str | None, width: int, dpi:
 
 
 @main.command()
+@click.argument("deck", type=click.Path(exists=True))
+@click.option("-p", "--palette", help="Palette to build with, when DECK is a .md")
+@click.option("--strict", is_flag=True,
+              help="Exit non-zero when anything at warn level or worse is found")
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable output")
+@click.option("--limit", default=40, type=int, help="Max findings to print")
+def doctor(deck: str, palette: str | None, strict: bool, as_json: bool, limit: int):
+    """Check a deck for the defects a reader would notice.
+
+    Takes a .pptx, or a .md which it builds first. Measures every text box
+    against real font metrics — no LibreOffice, no API key — and reports text
+    that overflows its box, shapes that overlap or leave the slide, colour
+    combinations below WCAG AA, fonts that will not render as measured, and
+    package faults that make PowerPoint call the file damaged.
+    """
+    from marp_pptx.audit import audit_pptx, format_findings
+    from marp_pptx.pkgcheck import check_package
+
+    path = Path(deck)
+    if path.suffix.lower() == ".md":
+        pptx_path = Path(_build_for_check(path, palette))
+        click.echo(f"built {pptx_path}", err=True)
+    else:
+        pptx_path = path
+
+    findings = check_package(pptx_path) + audit_pptx(pptx_path)
+    findings.sort(key=lambda f: ({"error": 0, "warn": 1, "info": 2}.get(f.severity, 3),
+                                 f.slide))
+
+    if as_json:
+        import json
+        from dataclasses import asdict
+        click.echo(json.dumps([asdict(f) for f in findings], ensure_ascii=False,
+                              indent=2))
+    else:
+        click.echo(format_findings(findings, limit=limit))
+
+    worst = min((f.severity for f in findings), key=lambda s:
+                {"error": 0, "warn": 1, "info": 2}.get(s, 3), default="none")
+    if worst == "error" or (strict and worst in ("error", "warn")):
+        raise SystemExit(1)
+
+
+def _build_for_check(md_path: Path, palette: str | None) -> str:
+    """Build `md_path` into a temp .pptx so doctor can inspect the real output."""
+    import tempfile
+    from marp_pptx.theme import ThemeConfig, get_default_theme_path, get_palette_path
+    from marp_pptx.parser import parse_marp
+    from marp_pptx.builder import PptxBuilder
+
+    tc = ThemeConfig.from_css(get_default_theme_path())
+    pal = get_palette_path(palette or "claude")
+    if pal:
+        tc.apply_palette(pal)
+    slides = parse_marp(str(md_path))
+    builder = PptxBuilder(base_path=md_path.parent, theme=tc)
+    builder.build_all(slides)
+    out = Path(tempfile.mkdtemp(prefix="marp-doctor-")) / (md_path.stem + ".pptx")
+    builder.save(str(out))
+    return str(out)
+
+
+@main.command()
 @click.option("--host", default="127.0.0.1")
 @click.option("--port", default=8080, type=int)
 def serve(host: str, port: int):
@@ -353,6 +416,11 @@ def from_paper(paper, repo, output, palette, math, slides, model, no_review):
     if res["fidelity"].get("mislabeled"):
         click.echo("  ⚠ possibly-mislabelled numbers: "
                    + ", ".join(f"{m['value']}({m['label']})" for m in res["fidelity"]["mislabeled"]), err=True)
+    left = [d for d in res.get("defects", []) if d["severity"] == "error"]
+    if left:
+        click.echo("  ⚠ measured defects remain on slides: "
+                   + ", ".join(str(d["slide"]) for d in left)
+                   + "  (run `marp-pptx doctor` for detail)", err=True)
     if res.get("visual"):
         click.echo("  ⚠ layout warnings remain on slides: "
                    + ", ".join(str(v["slide"]) for v in res["visual"]), err=True)

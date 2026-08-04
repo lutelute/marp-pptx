@@ -34,6 +34,8 @@ marp-pptx convert slides.md -o out.pptx -p navy     # パレット指定
 marp-pptx convert slides.md --math png              # 数式を画像で焼く（LibreOffice/Keynote 用）
 marp-pptx convert slides.md --density keynote       # 投影向けに大きめ・余白広め
 marp-pptx convert slides.md --font-scale 1.15       # フォント拡大（0.7–1.3）
+marp-pptx doctor slides.md                          # 実測検査（溢れ・重なり・コントラスト・破損）
+marp-pptx doctor out.pptx --json --strict           # 機械可読 / warn 以上で exit 1
 marp-pptx types                                     # 型一覧（-c でカテゴリ絞り / --json）
 marp-pptx themes                                    # テーマ・パレット一覧
 marp-pptx preview -o catalog.pptx                   # 全型のビジュアル例（カタログ PPTX）
@@ -51,6 +53,41 @@ marp-pptx serve --port 8080                         # Web UI（フォーム編�
 | `--math` | `omml` | `omml`=PowerPoint で編集可（要 pandoc）/ `png`=matplotlib 画像（LibreOffice・Keynote 用） |
 | `--density` | `academic` | `academic`=高密度 / `keynote`=投影向けに大きめ（font×1.22・余白×1.12） |
 | `--font-scale` | `1.0` | フォント倍率（0.7–1.3） |
+
+## 精度検査（doctor）
+
+```bash
+marp-pptx doctor slides.md            # .md はビルドしてから検査。.pptx も直接渡せる
+marp-pptx doctor slides.md --json     # findings を JSON で
+marp-pptx doctor slides.md --strict   # warn 以上で exit 1（CI）
+marp-pptx doctor slides.md -p navy    # ビルドに使うパレット
+```
+
+各テキストボックスを、そのボックスが指定する**書体の実際の字送り**で測る。
+折り返しは PowerPoint と同じ規則（Latin は語境界、日本語は禁則処理）で再現する。
+レンダラ不要・API キー不要・数十 ms。
+
+| kind | severity | 内容 |
+|---|---|---|
+| `overflow` | error / warn | 折り返し後の高さがボックスを超える（error=切れる、warn=箱が伸びて下を押す）。`word_wrap` 無効なら横はみ出しも |
+| `overlap` | error / warn | テキスト同士の重なり（in² 表示）／0.12in 未満の近接 |
+| `offslide` | error / warn | スライド外／安全余白 0.35in 内。テーマの帯・フッターバーは自動で除外 |
+| `contrast` | warn | 背後の面（カード塗り or スライド背景）に対する WCAG AA 比 |
+| `font` | warn / info | 未インストール（計測が近似になる）／プレビューで幅が変わる書体 |
+| `package` | error / warn / info | 関係参照切れ・content-type 欠落・拡張子と中身の不一致・未使用メディア |
+| `deck` | info | 同一レイアウトが 4 枚以上連続／図表の無いスライド |
+
+**`overflow` は文字を減らして直すのが第一手**（フォント縮小は読みにくさに直結する）。
+
+計測エンジン（`marp_pptx.metrics`）はビルダー・`visuallint` の衝突検出・doctor で共用。
+予約したボックスと必要な高さが常に同じ物差しで測られるので、両者が食い違わない。
+
+```python
+from marp_pptx import metrics as M
+M.measure_pt("見出し", "Helvetica Neue", 30, ea_font="Hiragino Sans")   # 描画幅(pt)
+M.wrap_text(text, "Helvetica Neue", 18, 400, ea_font="Hiragino Sans")  # 実際の折り返し
+M.fit_size(text, "Helvetica Neue", 400, 60, max_size=30)               # 収まる最大サイズ
+```
 
 ## Markdown の書き方と PPTX への対応
 

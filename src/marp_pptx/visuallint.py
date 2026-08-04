@@ -159,40 +159,17 @@ def lint_deck(markdown: str, palette: str = "claude", dpi: int = 96,
 # intrudes into a lower text box that shares its horizontal span.
 
 import re as _re
-import math as _math
-import unicodedata as _ud
+
+from .audit import needed_height_emu as _needed_height_emu   # noqa: E402,F401
+from .metrics import measure_em as _em_width                 # noqa: E402,F401
 
 _PAGE_NO = _re.compile(r"\d+\s*/\s*\d+")  # footer chrome — never a collision target
 
-
-def _em_width(s: str) -> float:
-    """Approximate display width in em units (CJK full-width = 1.0, else 0.55)."""
-    return sum(1.0 if _ud.east_asian_width(c) in ("W", "F") else 0.55 for c in s)
-
-
-def _para_pt(paragraph, default: float = 18.0) -> float:
-    sz = None
-    for r in paragraph.runs:
-        if r.font.size is not None:
-            v = r.font.size.pt
-            sz = v if sz is None else max(sz, v)
-    return sz if sz is not None else default
-
-
-def _needed_height_emu(shape) -> int:
-    """Height the shape's text actually needs, wrapping each paragraph at the
-    shape's width using its own font size (mixed sizes handled per-paragraph)."""
-    box_w_pt = shape.width / 12700.0
-    total_pt = 0.0
-    for p in shape.text_frame.paragraphs:
-        sz = _para_pt(p)
-        cap_em = max(4.0, box_w_pt / sz)
-        if not p.text.strip():
-            total_pt += sz * 0.6
-            continue
-        lines = max(1, _math.ceil(_em_width(p.text) / cap_em))
-        total_pt += lines * sz * 1.25
-    return int(total_pt * 12700)
+# Height estimation lives in `audit` — one measurement model for the builder
+# (which reserves the box), this detector (which checks the reservation held)
+# and `marp-pptx doctor` (which reports it). They used to have two, and drifted:
+# the local one charged 0.55 em for every Latin glyph, so a line that really
+# fits could be reported as wrapping.
 
 
 def detect_text_collisions(prs, *, intrude_emu: int = 152400) -> list[dict]:

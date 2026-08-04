@@ -2,6 +2,24 @@
 
 marp-pptx の今後の拡張計画。
 
+## v0.4（完了）: 実測レイアウト精度
+
+「資料としての精度」を推測から実測に置き換えた。
+
+- **`marp_pptx.metrics`** — 実フォントの字送り（FreeType）で幅・折り返し（禁則処理つき）・
+  高さ・収まるサイズを計算。ビルダー / `visuallint` の衝突検出 / `doctor` が**同じ物差し**を使う
+- **`marp_pptx.audit`** — 組み上がった PPTX の幾何を検査（溢れ・重なり・スライド外・
+  WCAG AA・書体・レイアウト単調）。レンダラ不要、数十 ms
+- **`marp_pptx.pkgcheck`** — OOXML パッケージ整合（参照切れ・content-type・拡張子詐称）
+- **`marp-pptx doctor`** / MCP **`check_deck`** / `build_pptx` の `defects` /
+  `from-paper` の自動修復ループ
+- ビルダー側の実バグ修正: 番号付きリストのインライン記法未処理、カラム高さの推定破棄、
+  行間を無視した高さ予約（title/definition/big-number ほか）、カード chrome の未計上 など
+- **同梱 47 テンプレート + プリセット × 5 テーマで error 0** をテストで固定
+
+残る既知の警告: `claude` / `research` パレットの一部で小さい白抜き文字が AA 未満（3.0:1）。
+配色側の調整が必要（`accent_text` の導入で本文側は解決済み）。
+
 ## ★ 最重要目標: PPTX ⇄ MD 双方向ラウンドトリップによる品質向上
 
 **ビジョン**:

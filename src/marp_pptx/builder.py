@@ -20,6 +20,7 @@ from pptx.enum.shapes import MSO_SHAPE, MSO_CONNECTOR
 from pptx.oxml.ns import qn
 from lxml import etree
 
+from marp_pptx import metrics
 from marp_pptx.parser import SlideData, strip_html
 from marp_pptx.theme import ThemeConfig
 from marp_pptx.layout import (
@@ -349,13 +350,33 @@ class PptxBuilder:
                 p2 = tf.paragraphs[0]
             else:
                 p2 = tf.add_paragraph(); p2.space_before = Pt(6)
+            # A card is a fixed cell in a grid: its copy cannot push the layout
+            # around, so when it doesn't fit, the type gives way. Only inside
+            # cards — prose that overruns should be edited, not shrunk.
+            bsize = self._fit_card_body(body, body_lines, tw, th,
+                                        body_size or SZ_ZONE_B,
+                                        value, value_size, label, label_size)
             if body_lines:
-                self._fill_multiline_box(tf, "\n".join(body_lines),
-                                         body_size or SZ_ZONE_B, self.FG)
+                self._fill_multiline_box(tf, "\n".join(body_lines), bsize, self.FG)
             else:
-                self._set_text_with_inline_math(p2, body, body_size or SZ_ZONE_B,
-                                                self.FG)
+                self._set_text_with_inline_math(p2, body, bsize, self.FG)
         return bg, tb
+
+    def _fit_card_body(self, body, body_lines, tw, th, size,
+                       value=None, value_size=None, label="", label_size=None):
+        """Body size that fits what is left of the card after value + label."""
+        text = "\n".join(body_lines) if body_lines else (body or "")
+        if not text or tw <= 0 or th <= 0:
+            return size
+        used = 0.0
+        if value is not None:
+            used += (value_size or self._fs(SZ_METRIC)).pt * metrics.DEFAULT_LINE_FACTOR
+        if label:
+            used += (label_size or SZ_ZONE_L).pt * metrics.DEFAULT_LINE_FACTOR + 6
+        avail = th - int(Pt(used))
+        if avail <= int(Pt(8)):
+            return size
+        return self._fit_size(text, size, tw, avail, min_ratio=0.72)
 
     def save(self, path: str):
         self._ensure_ea_font()
@@ -548,7 +569,8 @@ class PptxBuilder:
         bg.fill.gradient_stops[1].color.rgb = c2
         bg.fill.gradient_stops[1].position = 1.0
 
-    def _add_title(self, slide, text, top=None, color=None, kicker=None):
+    def _add_title(self, slide, text, top=None, color=None, kicker=None,
+                   width=None):
         """Slide title: a small-caps kicker (provides the color cue) + the H1,
         separated from the body by whitespace.
 
@@ -566,13 +588,20 @@ class PptxBuilder:
             # band stays thin (real beamer) and the body area grows below it.
             top = int(Inches(0.08)) if band else TITLE_TOP
         text_left = int(MARGIN_L)
-        text_w = int(CONTENT_W)
+        text_w = int(width if width is not None else CONTENT_W)
+        if self.LAYOUT.h1_deco == "left-bar":
+            text_w -= int(Pt(6) + Pt(12))
+
+        # Fit the headline to the band instead of letting a long one spill into
+        # the body. One line is the design; a second is allowed (with the band
+        # grown to match) before the type shrinks further.
+        title_pt, title_h, top = self._fit_title(text, text_w, top)
 
         # Full-width headline band (beamer frametitle): the title sits in a
         # structure-colored band flush with the top edge.
         if band:
             bb = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, int(SW),
-                                        int(top + TITLE_H + Inches(0.06)))
+                                        int(top + title_h + Inches(0.06)))
             bb.fill.solid(); bb.fill.fore_color.rgb = self.PRIMARY
             bb.line.fill.background(); self._no_shadow(bb)
             color = self.WHITE
@@ -587,33 +616,75 @@ class PptxBuilder:
         if left_bar:
             deco_w = Pt(6)
             bar = slide.shapes.add_shape(
-                MSO_SHAPE.RECTANGLE, int(MARGIN_L), int(top), int(deco_w), int(TITLE_H))
+                MSO_SHAPE.RECTANGLE, int(MARGIN_L), int(top), int(deco_w), int(title_h))
             bar.fill.solid(); bar.fill.fore_color.rgb = self.ACCENT
             bar.line.fill.background(); self._no_shadow(bar)
             text_left = int(MARGIN_L + deco_w + Pt(12))
-            text_w = int(CONTENT_W - deco_w - Pt(12))
 
-        tb = self._add_textbox(slide, text_left, int(top), text_w, int(TITLE_H))
+        tb = self._add_textbox(slide, text_left, int(top), text_w, int(title_h))
         tf = tb.text_frame
         tf.word_wrap = True
         tf.vertical_anchor = MSO_ANCHOR.MIDDLE
         p = tf.paragraphs[0]
         p.text = text
         p.font.name = self.FONT_HEAD
-        p.font.size = self._fs(SZ_TITLE)
+        p.font.size = Pt(title_pt)
         p.font.bold = True
         p.font.color.rgb = color
         p.line_spacing = LINE_TITLE
 
         # Opt-in under-title rules only (off by default to avoid the AI-deck look).
         if not left_bar:
-            rule_y = int(top + TITLE_H + Inches(0.04))
+            rule_y = int(top + title_h + Inches(0.04))
             if self.LAYOUT.h1_deco == "bottom-line":
                 self._hairline(slide, MARGIN_L, rule_y, CONTENT_W, color=self.HAIRLINE)
             if self.LAYOUT.accent_rule == "short-left":
                 self._hairline(slide, MARGIN_L, rule_y, Inches(0.7),
                                thickness=ACCENT_RULE_W, color=self.ACCENT)
         return tb
+
+    def _fit_title(self, text: str, text_w: int, top: int) -> tuple[float, int, int]:
+        """(font size in pt, band height in EMU, adjusted top) for one H1.
+
+        A headline longer than the band used to keep its 30pt and spill over
+        the body — invisible at author time, obvious in the room. The order of
+        preference is: keep the design (one line at full size) → shrink a
+        little to keep it on one line → let it take two lines and grow the band
+        around it → shrink until two lines fit.
+        """
+        base = self._fs(SZ_TITLE).pt
+        if not text:
+            return base, int(TITLE_H), int(top)
+        width_pt = text_w / 12700.0
+        plain = self._plain(text)
+        pitch = LINE_TITLE * metrics.DEFAULT_LINE_FACTOR
+
+        def lines_at(size: float) -> int:
+            return metrics.line_count(plain, self.FONT_HEAD, size, width_pt,
+                                      ea_font=self.FONT_EA, bold=True)
+
+        if lines_at(base) <= 1:
+            return base, int(TITLE_H), int(top)
+
+        # A modest shrink often pulls a title back onto one line; anything
+        # deeper reads as a different design, so stop and go two-line instead.
+        size = base
+        while size > base * 0.82:
+            size -= 0.5
+            if lines_at(size) <= 1:
+                return size, int(TITLE_H), int(top)
+
+        size = base
+        while size > base * 0.60 and lines_at(size) > 2:
+            size -= 0.5
+        needed = Pt(size * pitch * min(2, lines_at(size)))
+        if needed <= TITLE_H:
+            return size, int(TITLE_H), int(top)
+        # Grow the band symmetrically, but never above the top margin: the
+        # extra room comes out of the whitespace above and the title→body gap.
+        grow = int(needed) - int(TITLE_H)
+        new_top = max(int(Inches(0.08)), int(top) - grow // 2)
+        return size, int(needed), new_top
 
     def _add_para(self, tf, text, size=None, color=None, bold=False, italic=False, space_before=Pt(4)):
         if size is None:
@@ -629,30 +700,54 @@ class PptxBuilder:
         p.space_before = space_before
         return p
 
-    @staticmethod
-    def _visual_em_width(s: str) -> float:
-        """Approximate display width of a string in em units (CJK-aware:
-        full-width chars count 1.0 em, everything else ~0.55 em)."""
-        import unicodedata
-        return sum(1.0 if unicodedata.east_asian_width(c) in ("W", "F") else 0.55
-                   for c in s)
+    def _visual_em_width(self, s: str) -> float:
+        """Display width of a string in em units, from the real font.
 
-    def _estimate_text_height(self, lines, size, width=None):
+        Was a two-bucket guess (1.0 em for CJK, 0.55 for everything else),
+        which is off by 3x between "llll" and "WWWW" and misjudged every
+        mixed-script line. `metrics` reads the advance widths out of the
+        typeface this deck actually names.
+        """
+        return metrics.measure_em(s, self.FONT, ea_font=self.FONT_EA)
+
+    @staticmethod
+    def _plain(s: str) -> str:
+        """Strip inline markup so measurement sees the rendered characters."""
+        return (s.replace("**", "").replace("`", "").replace("$", "")
+                 .lstrip("#").lstrip())
+
+    def _wrapped_lines(self, text: str, size_pt: float, width_emu, *,
+                       bold: bool = False) -> int:
+        """How many lines `text` takes in a `width_emu`-wide box."""
+        if not width_emu:
+            return 1
+        return metrics.line_count(self._plain(text), self.FONT, size_pt,
+                                  width_emu / 12700.0, ea_font=self.FONT_EA,
+                                  bold=bold)
+
+    def _estimate_text_height(self, lines, size, width=None, gap=None,
+                              line_spacing=1.0):
         """Tight height for a block of markdown lines at given font size.
 
         Slightly over-estimates so the shape hugs content but never clips.
-        When `width` (EMU) is given, soft wrapping of long lines is taken
-        into account, so callers stacking blocks below this one don't
-        overlap when a line wraps (e.g. a long Japanese takeaway).
+        When `width` (EMU) is given, wrapping is measured with real font
+        metrics — including 禁則処理 and Latin word boundaries — so callers
+        stacking blocks below this one don't overlap when a line wraps.
+
+        `gap` is the paragraph spacing the caller will actually set (points, or
+        a Pt). It defaults to the 4pt of `_add_para`; pass `PARA_GAP` when the
+        block uses the wider list rhythm, or the box comes out short.
+
+        `line_spacing` must match what the caller sets on the paragraph
+        (`LINE_BODY`, `LINE_PROSE`, …) — a block written at 1.30 and reserved
+        at 1.0 is 30% short, which is enough to clip the last line.
         """
         from pptx.util import Pt as _Pt
         base = size.pt if hasattr(size, "pt") else float(size)
         scale = getattr(self.theme, "font_scale", 1.0)
-        line_h = base * 1.25 * scale
-        cap_em = None
-        if width:
-            width_pt = width / 12700.0          # EMU -> pt
-            cap_em = max(4.0, width_pt / (base * scale))
+        eff = base * scale
+        line_h = eff * metrics.DEFAULT_LINE_FACTOR * line_spacing
+        gap_pt = 4.0 if gap is None else (gap.pt if hasattr(gap, "pt") else float(gap))
         total = 0.0
         first = True
         for line in lines:
@@ -660,16 +755,33 @@ class PptxBuilder:
             if not s:
                 continue
             mult = 1.35 if s.startswith(("## ", "### ")) else 1.0
-            wraps = 1
-            if cap_em:
-                plain = s.replace("**", "").replace("`", "")
-                wraps = max(1, -(-int(self._visual_em_width(plain) * 100) // int(cap_em * 100)))
+            wraps = self._wrapped_lines(s, eff * mult, width) if width else 1
             total += line_h * mult * wraps
             if not first:
-                total += 4 * scale
+                total += gap_pt * scale
             first = False
         # +6pt tail breathing room to prevent clipping when autofit is off
         return _Pt(max(18, total + 6))
+
+    def _fit_size(self, text: str, size, width_emu, height_emu, *,
+                  bold: bool = False, min_ratio: float = 0.72,
+                  font: str | None = None) -> "Pt":
+        """Largest size ≤ `size` at which `text` fits the given box.
+
+        Titles, captions and card labels are written by an author who cannot
+        see the box; this keeps a long one inside it instead of clipping. The
+        floor is `min_ratio` of the requested size — below that the content is
+        genuinely too long and shrinking further would just make it unreadable.
+        """
+        from pptx.util import Pt as _Pt
+        base = size.pt if hasattr(size, "pt") else float(size)
+        if not text or not width_emu or not height_emu:
+            return _Pt(base)
+        fitted = metrics.fit_size(
+            self._plain(text), font or self.FONT, width_emu / 12700.0,
+            height_emu / 12700.0, max_size=base, min_size=base * min_ratio,
+            ea_font=self.FONT_EA, bold=bold)
+        return _Pt(fitted)
 
     def _add_body_text(self, slide, lines, left=None, top=None, width=None, height=None, size=None):
         if size is None:
@@ -679,7 +791,7 @@ class PptxBuilder:
         if width is None: width = CONTENT_W
         explicit_height = height is not None
         if height is None:
-            estimated = self._estimate_text_height(lines, size)
+            estimated = self._estimate_text_height(lines, size, width=width)
             height = min(BODY_H, int(estimated))
 
         tb = self._add_textbox(slide, left, top, width, height)
@@ -734,10 +846,11 @@ class PptxBuilder:
                     pPr.remove(existing)
                 pPr.append(buChar)
             elif is_numbered:
-                p.text = s
-                p.font.name = self.FONT
-                p.font.size = size
-                p.font.color.rgb = self.FG
+                # Numbered items get the same inline treatment as every other
+                # line. They used to be written verbatim, so a step written as
+                # "1. $f$ の **平滑性**" reached the slide with its markup and
+                # its LaTeX showing.
+                self._set_rich_text(p, s, size, self.FG)
                 p.space_before = Pt(4)
             else:
                 self._set_rich_text(p, s, size, self.FG)
@@ -923,7 +1036,9 @@ class PptxBuilder:
         top = int(SH - Inches(0.62))
         if self.LAYOUT.footer_bar:
             top -= int(Inches(0.30))      # sit above the beamer bar
-        width = int(CONTENT_W)
+        # Stop short of the page number in the same band — a long source line
+        # used to run underneath it.
+        width = int(CONTENT_W - Inches(1.2))
         self._hairline(slide, left, top, Inches(2.8), color=self.HAIRLINE)
         tb = self._add_textbox(slide, left, top + int(Pt(5)), width, int(Inches(0.4)))
         tf = tb.text_frame
@@ -1063,8 +1178,11 @@ class PptxBuilder:
                 cur_top += ph + Inches(0.1)
         remaining_h = top + height - cur_top
         if text_lines and remaining_h > 0:
-            # Hug content height (capped at remaining), don't force full column
-            estimated = self._estimate_text_height(text_lines, size)
+            # Hug content height (capped at remaining), don't force full column.
+            # Measure at the column's own width — without it this re-estimate
+            # threw away the wrap-aware height the caller had just computed and
+            # gave every wrapped bullet a single line.
+            estimated = self._estimate_text_height(text_lines, size, width=width)
             use_h = min(int(remaining_h), int(estimated))
             tb = self._add_body_text(slide, text_lines, left=left, top=int(cur_top),
                                      width=int(width), height=use_h, size=size)
@@ -1134,13 +1252,18 @@ class PptxBuilder:
             self._hairline(slide, tx if is_left else int(cx - Inches(0.55)), int(Inches(3.16)),
                            Inches(1.1), thickness=Pt(1.6), color=accent)
         # (3) title
-        title_h = int(self._fs(Pt(SZ_DISPLAY.pt * 1.25 * 2)))
+        # Two lines at the size and spacing the title is actually written
+        # with — reserving at 1.0 while rendering at LINE_TITLE clipped the
+        # second line of any hero title that wrapped.
+        title_h = int(self._fs(Pt(SZ_DISPLAY.pt * metrics.DEFAULT_LINE_FACTOR
+                                  * LINE_TITLE * 2)))
         if is_box:
             # Madrid title page: rounded structure-colored box, white title.
             # Sized for two lines regardless — line-count estimates miss by a
             # hair on borderline CJK titles, and a roomy box centers fine.
             scale = getattr(self.theme, "font_scale", 1.0)
-            box_h = int(Pt(SZ_DISPLAY.pt * 1.25 * 2 * scale) + Inches(0.34))
+            box_h = int(Pt(SZ_DISPLAY.pt * metrics.DEFAULT_LINE_FACTOR
+                           * LINE_TITLE * 2 * scale) + Inches(0.34))
             box_y = int(Inches(3.30) + (title_h - box_h) // 2)
             bx = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE,
                                         int(Inches(0.95)), box_y,
@@ -1232,7 +1355,7 @@ class PptxBuilder:
         # Measure each block, then center/justify the stack in the body region.
         blocks = []  # (kind, height)
         if sd.body_lines:
-            bh = int(self._estimate_text_height(sd.body_lines, SZ_BODY))
+            bh = int(self._estimate_text_height(sd.body_lines, SZ_BODY, width=width))
             blocks.append(("body", min(bh, region[3])))
         if sd.table_rows:
             th = int(min(Inches(4.6), Inches(0.5) * len(sd.table_rows)))
@@ -1358,11 +1481,17 @@ class PptxBuilder:
             min_pitch = min(b - a for a, b in zip(cs, cs[1:]))
             cap = min(cap, max(int(Inches(1.5)), int(min_pitch) - card_gap))
         card_w = int(min(cap, (rwidth - card_gap * (n - 1)) / max(n, 1)))
+        # Card height from the note measured at the card's real inner width,
+        # plus the card's own padding. Narrowing the cards to the term pitch
+        # (above) makes the notes wrap more, so this has to be measured, not
+        # assumed: a fixed 0.55in card clipped every note over two lines.
+        inner_w = card_w - int(CARD_PAD) * 2
         card_h = 0
         for s in annotated:
-            body_h = int(self._estimate_text_height(
-                [s["note"]], Pt(note_pt), width=card_w - int(Inches(0.35))))
-            s_h = body_h + (int(Inches(0.28)) if s["label"] else int(Inches(0.1)))
+            body_h = int(self._estimate_text_height([s["note"]], Pt(note_pt),
+                                                    width=inner_w))
+            label_h = int(Pt(10 * metrics.DEFAULT_LINE_FACTOR)) if s["label"] else 0
+            s_h = body_h + label_h + int(CARD_PAD) * 2
             card_h = max(card_h, max(int(Inches(0.55)), s_h))
         drop = int(Inches(0.55))                       # connector run below the row
         block_h = line_h + ((drop + card_h) if n else 0)
@@ -1460,8 +1589,11 @@ class PptxBuilder:
             dtb = self._add_textbox(slide, div_x + int(Inches(0.25)), row_top, desc_w, row_h)
             dtb.text_frame.word_wrap = True
             dtb.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
-            self._set_text_with_inline_math(dtb.text_frame.paragraphs[0], desc,
-                                            Pt(desc_pt), self.FG)
+            # Legend rows are a fixed grid — a long description gives way on
+            # size rather than spilling into the row below it.
+            self._set_text_with_inline_math(
+                dtb.text_frame.paragraphs[0], desc,
+                self._fit_size(desc, Pt(desc_pt), desc_w, row_h), self.FG)
 
     def build_equations(self, sd: SlideData):
         slide = self._blank_slide()
@@ -1476,11 +1608,25 @@ class PptxBuilder:
         label_w = Inches(1.9)
         eq_left = label_left + label_w + Inches(0.2)
         eq_w = CONTENT_W - (eq_left - MARGIN_L) - Inches(0.3)
-        vars_h = int(Inches(0.56)) * max(len(sd.eq_vars), 0)
-        row_h = int(min(Inches(1.2), max(Inches(0.8), (rheight - vars_h - int(Inches(0.25))) // n)))
+        # Reserve the legend at the row height it is actually drawn with. The
+        # two used to disagree (0.56in reserved, 0.46in drawn, plus a 0.25/0.32
+        # gap mismatch), which walked the last legend row into the footnote.
+        legend_row = int(Inches(0.46))
+        legend_gap = int(Inches(0.32))
+        vars_h = (legend_row * len(sd.eq_vars) + legend_gap) if sd.eq_vars else 0
+        row_h = int(min(Inches(1.2), max(Inches(0.8), (rheight - vars_h) // n)))
         pt_size = 30 if n <= 3 else (26 if n <= 4 else 22)
         # Center the whole rows+legend block in the body region.
-        block_h = row_h * n + (int(Inches(0.25)) + vars_h if sd.eq_vars else 0)
+        block_h = row_h * n + vars_h
+        if block_h > rheight:
+            # More rows than the region can hold at full rhythm: tighten both
+            # rhythms proportionally instead of letting the last legend row
+            # walk off the bottom into the footnote.
+            k = rheight / block_h
+            row_h = max(int(Inches(0.55)), int(row_h * k))
+            legend_row = max(int(Inches(0.34)), int(legend_row * k))
+            vars_h = (legend_row * len(sd.eq_vars) + legend_gap) if sd.eq_vars else 0
+            block_h = row_h * n + vars_h
         top = rtop + max(0, (rheight - block_h) // 2)
         for i, (label, latex) in enumerate(sd.eq_system):
             row_top = top + int(row_h * i)
@@ -1522,9 +1668,9 @@ class PptxBuilder:
                     p2.font.size = self._fs(Pt(pt_size - 4))
                     p2.font.color.rgb = self.FG
         if sd.eq_vars:
-            var_top = top + int(row_h * n) + int(Inches(0.32))
+            var_top = top + int(row_h * n) + legend_gap
             self._add_var_legend(slide, sd.eq_vars, var_top, sym_pt=18, desc_pt=15,
-                                 row_h=int(Inches(0.46)))
+                                 row_h=legend_row)
         if sd.footnote:
             self._add_footnote(slide, sd.footnote)
 
@@ -1603,8 +1749,10 @@ class PptxBuilder:
         if sd.h1:
             self._add_title(slide, sd.h1)
         rleft, rtop, rwidth, rheight = self._content_region(has_title=bool(sd.h1))
-        cap_h = int(Inches(0.45)) if sd.caption else 0
-        desc_h = int(self._estimate_text_height(sd.body_lines, SZ_COL)) if sd.body_lines else 0
+        cap_h = int(self._estimate_text_height([sd.caption], SZ_SMALL,
+                                               width=rwidth)) if sd.caption else 0
+        desc_h = int(self._estimate_text_height(sd.body_lines, SZ_COL,
+                                               width=rwidth)) if sd.body_lines else 0
         img_file = self._resolve_image(sd.image_path) if sd.image_path else None
         img_top = rtop; ph = 0; pw = 0
         if img_file:
@@ -2028,7 +2176,11 @@ class PptxBuilder:
         # to 2-3 lines sizes the card tall enough — otherwise the text spilled
         # out the bottom and collided with rq_sub.
         main_tw = card_w - int(Inches(0.6))
-        main_h = int(self._estimate_text_height([sd.rq_main], SZ_H2, width=main_tw)) + int(Inches(0.4)) if sd.rq_main else 0
+        # The card's own chrome (accent bar + padding top and bottom) has to be
+        # added on top of the text height, or the inner box ends up shorter
+        # than the question it holds.
+        card_chrome = int(CARD_ACCENT_H) + int(CARD_PAD) * 2
+        main_h = int(self._estimate_text_height([sd.rq_main], SZ_H2, width=main_tw)) + card_chrome if sd.rq_main else 0
         sub_h = int(Inches(0.8)) if sd.rq_sub else 0
         gap = int(Inches(0.3)) if sd.rq_sub else 0
         block_h = main_h + gap + sub_h
@@ -2114,7 +2266,10 @@ class PptxBuilder:
     def build_appendix(self, sd: SlideData):
         slide = self._blank_slide()
         if sd.h1:
-            self._add_title(slide, sd.h1, color=self.MUTED)
+            # Leave the corner clear for the APPENDIX label instead of running
+            # the title box underneath it.
+            self._add_title(slide, sd.h1, color=self.MUTED,
+                            width=int(CONTENT_W - Inches(2.6)) if sd.appendix_label else None)
         if sd.appendix_label:
             lbl = self._add_textbox(slide, int(SW - Inches(2.6)), int(MARGIN_T),
                                     int(Inches(2.0)), int(KICKER_H))
@@ -2141,7 +2296,7 @@ class PptxBuilder:
         elif sd.body_lines:
             region = self._content_region(has_title=bool(sd.h1))
             left, _, width, _ = region
-            bh = int(self._estimate_text_height(sd.body_lines, SZ_SMALL))
+            bh = int(self._estimate_text_height(sd.body_lines, SZ_SMALL, width=width))
             top = self._stack_tops([min(bh, region[3])], region, mode="center")[0]
             self._add_body_text(slide, sd.body_lines, left=left, top=top,
                                 width=width, height=min(bh, region[3]), size=SZ_SMALL)
@@ -2187,7 +2342,8 @@ class PptxBuilder:
                 cp.font.color.rgb = self.MUTED; cp.alignment = PP_ALIGN.CENTER
                 ctb.text_frame.word_wrap = True
         if points:
-            ph_pts = int(self._estimate_text_height([f"\u2022 {p}" for p in points], SZ_COL))
+            ph_pts = int(self._estimate_text_height([f"\u2022 {p}" for p in points], SZ_COL,
+                                                    width=right_w))
             pts_top = cur_top + max(0, (avail_h - min(ph_pts, avail_h)) // 2)
             tb = self._add_textbox(slide, right_x, int(pts_top), right_w,
                                    int(min(ph_pts, avail_h)))
@@ -2248,11 +2404,16 @@ class PptxBuilder:
         quote_h = int(self._estimate_text_height([sd.quote_text or ""], SZ_H2, width=qw))
         block_h = int(Inches(0.9)) + quote_h + (int(Inches(0.5)) if sd.quote_source else 0)
         top = rtop + max(0, (rheight - block_h) // 2)
-        # opening quotation mark (ghost)
-        mark = self._add_textbox(slide, rleft, top, int(Inches(1.2)), int(Inches(1.0)))
+        # opening quotation mark (ghost) \u2014 the box has to be a full line tall
+        # for an 80pt glyph, or it reads as a clipped text box to any checker.
+        # Its column also stops short of the quote text: a decorative glyph
+        # overlapping the text column is what made this read as a collision.
+        mark_pt = self._fs(Pt(80))
+        mark = self._add_textbox(slide, rleft, top, int(Inches(0.9)),
+                                 int(Pt(mark_pt.pt * metrics.DEFAULT_LINE_FACTOR)))
         mp = mark.text_frame.paragraphs[0]
         mp.text = "\u201C"
-        mp.font.name = self.FONT_HEAD; mp.font.size = self._fs(Pt(80))
+        mp.font.name = self.FONT_HEAD; mp.font.size = mark_pt
         mp.font.bold = True; mp.font.color.rgb = self._tint(self.ACCENT, 0.55)
         # left accent bar beside the quote
         qtop = top + int(Inches(0.55))
@@ -2405,7 +2566,8 @@ class PptxBuilder:
         term_h = int(Inches(0.7)) if sd.def_term else 0
         # width-aware: a long definition wraps, and an under-estimate let the
         # body text run under the note below it.
-        body_h = int(self._estimate_text_height([sd.def_body], SZ_BODY, width=tw)) if sd.def_body else 0
+        body_h = int(self._estimate_text_height([sd.def_body], SZ_BODY, width=tw,
+                                                 line_spacing=LINE_BODY)) if sd.def_body else 0
         note_h = int(Inches(0.6)) if sd.def_note else 0
         gaps = (int(Inches(0.2)) if sd.def_term and sd.def_body else 0) + \
                (int(Inches(0.3)) if sd.def_note else 0)
@@ -2569,7 +2731,10 @@ class PptxBuilder:
             if done:
                 box.fill.solid(); box.fill.fore_color.rgb = self.ACCENT
                 box.line.fill.background()
-                cp = box.text_frame.paragraphs[0]; cp.text = "\u2713"
+                ctf = box.text_frame
+                ctf.margin_top = ctf.margin_bottom = 0
+                ctf.margin_left = ctf.margin_right = 0
+                cp = ctf.paragraphs[0]; cp.text = "\u2713"
                 cp.font.size = self._fs(Pt(13)); cp.font.bold = True
                 cp.font.color.rgb = self.WHITE; cp.alignment = PP_ALIGN.CENTER
             else:
@@ -2601,7 +2766,8 @@ class PptxBuilder:
             pw = int(iw * scale * 914400 / 96); ph = int(ih * scale * 914400 / 96)
             slide.shapes.add_picture(img_file, rleft, int(rtop + max(0, (rheight - ph) // 2)), pw, ph)
         if sd.annotation_notes:
-            nh = int(self._estimate_text_height([f"\u2022 {x}" for x in sd.annotation_notes], SZ_COL))
+            nh = int(self._estimate_text_height([f"\u2022 {x}" for x in sd.annotation_notes],
+                                               SZ_COL, width=notes_w, gap=PARA_GAP))
             ntop = rtop + max(0, (rheight - min(nh, rheight)) // 2)
             tb = self._add_textbox(slide, notes_x, int(ntop), notes_w, int(min(nh, rheight)))
             tf = tb.text_frame; tf.word_wrap = True
@@ -2687,7 +2853,18 @@ class PptxBuilder:
             return
         rleft, rtop, rwidth, rheight = self._content_region(has_title=bool(sd.h1))
         gap = int(Inches(0.12))
-        row_h = int(min(Inches(1.0), (rheight - gap * (n - 1)) / max(n, 1)))
+        # Rows are as tall as their content needs, within what the region can
+        # give — a fixed 1.0in cap clipped every two-line layer description.
+        room = int((rheight - gap * (n - 1)) / max(n, 1))
+        inner_w = rwidth - int(CARD_PAD) * 2
+        need = int(Inches(0.6))
+        for item in sd.stack_items:
+            h = int(self._estimate_text_height([item.get("desc", "")], SZ_ZONE_B,
+                                               width=inner_w)) if item.get("desc") else 0
+            if item.get("name"):
+                h += int(Pt(SZ_ZONE_L.pt * metrics.DEFAULT_LINE_FACTOR)) + int(Pt(6))
+            need = max(need, h + int(CARD_PAD) * 2)
+        row_h = int(min(room, max(int(Inches(0.6)), need)))
         block_h = row_h * n + gap * (n - 1)
         top = rtop + max(0, (rheight - block_h) // 2)
         for i, item in enumerate(sd.stack_items):
@@ -2978,7 +3155,8 @@ class PptxBuilder:
         # estimate under-sized the block, mis-centering it (pushed low / could
         # run off the bottom).
         bio_h = int(self._estimate_text_height(["\u2022 " + b for b in sd.profile_bio],
-                                               SZ_ZONE_B, width=right_w)) if sd.profile_bio else 0
+                                               SZ_ZONE_B, width=right_w,
+                                               gap=PARA_GAP)) if sd.profile_bio else 0
         block_h = name_h + affil_h + (int(Inches(0.2)) if bio_h else 0) + bio_h
         cur_y = rtop + max(0, (rheight - block_h) // 2)
         if sd.profile_name:
@@ -3017,13 +3195,23 @@ class PptxBuilder:
         accent = self.WHITE if sd.dark else self.ACCENT
         text = sd.statement_text or sd.h1 or ""
         cx = int(SW // 2)
-        n = len(text)
-        pt = 44 if n <= 40 else (36 if n <= 90 else 28)
-        th = int(self._estimate_text_height([text], Pt(pt)))
+        tw = int(SW - Inches(2.4))
+        # Size from the *rendered* width, not the character count: 40 narrow
+        # Latin characters and 40 full-width ones differ by more than 2x, and
+        # the old count-based rule put both at 44pt — where the second wrapped
+        # to two lines in a box reserved for one.
+        pt = 44
+        for cand in (44, 36, 28):
+            pt = cand
+            if metrics.line_count(self._plain(text), self.FONT_HEAD, cand,
+                                  tw / 12700.0, ea_font=self.FONT_EA,
+                                  bold=True) <= 2:
+                break
+        th = int(self._estimate_text_height([text], Pt(pt), width=tw))
         top = int(MARGIN_T) + max(0, (int(SH - 2 * MARGIN_T) - th - int(Inches(0.3))) // 2)
         self._hairline(slide, cx - int(Inches(0.5)), top - int(Inches(0.28)),
                        Inches(1.0), thickness=ACCENT_RULE_W, color=accent)
-        tb = self._add_textbox(slide, int(Inches(1.2)), top, int(SW - Inches(2.4)),
+        tb = self._add_textbox(slide, int(Inches(1.2)), top, tw,
                                th + int(Inches(0.4)))
         tf = tb.text_frame; tf.word_wrap = True
         p = tf.paragraphs[0]
@@ -3043,7 +3231,7 @@ class PptxBuilder:
         cx = int(SW // 2)
         big = sd.bignum_value or "—"
         num_pt = 110 if len(big) <= 4 else (88 if len(big) <= 7 else 64)
-        num_h = int(self._fs(Pt(num_pt)) * 1.15)
+        num_h = int(self._fs(Pt(num_pt)) * metrics.DEFAULT_LINE_FACTOR)
         lbl_h = int(Inches(0.5)) if sd.bignum_label else 0
         cap_h = int(Inches(0.45)) if sd.bignum_caption else 0
         block = num_h + lbl_h + cap_h

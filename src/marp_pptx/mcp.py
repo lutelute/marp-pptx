@@ -6,6 +6,7 @@ turn a request into an **editable** PowerPoint deck and visually self-check it:
     slide_types / slide_template   — learn the 52-type vocabulary + exact HTML
     list_presets / get_preset      — start from a curated deck
     build_pptx                     — Marp markdown -> editable .pptx (+ lint)
+    check_deck                     — measured defects (overflow/overlap/contrast)
     preview_png                    — render slides to PNG so the agent can SEE them
 
 Run:  marp-pptx-mcp        (stdio transport; configure it in your MCP client)
@@ -166,12 +167,17 @@ def build_pptx(
       LibreOffice/Keynote).
     - density: 'academic' (default) or 'keynote' (bigger for projection).
 
-    Returns {output_path, slide_count, lint_warnings, authoring_warnings}.
-    Heed lint_warnings (weak titles, missing structure, …) AND
+    Returns {output_path, slide_count, lint_warnings, authoring_warnings,
+    defects}. Heed lint_warnings (weak titles, missing structure, …) AND
     authoring_warnings — the latter flag content the tool could not honour:
     an unknown `_class` (rendered as a plain slide → likely a typo), a missing
     image (silently skipped), or an SVG that needs cairosvg. A non-empty
     authoring_warnings almost always means the deck is not what you intended.
+
+    `defects` is the measured audit (see `check_deck`): text that overflows its
+    box, overlaps, off-slide shapes, AA contrast failures, package faults. Any
+    entry at severity "error" is user-visible — fix the content and rebuild
+    rather than shipping it.
     """
     _check_markdown(markdown)
     if output_path:
@@ -184,7 +190,61 @@ def build_pptx(
         builder, slides, warnings = _build(markdown, Path(td), tc)
         builder.save(str(out))
     return {"output_path": str(out), "slide_count": len(slides),
-            "lint_warnings": warnings, "authoring_warnings": list(builder.warnings)}
+            "lint_warnings": warnings, "authoring_warnings": list(builder.warnings),
+            "defects": _audit(out)}
+
+
+def _audit(pptx_path: Path, limit: int = 60) -> list[dict]:
+    from dataclasses import asdict
+    from marp_pptx.audit import audit_pptx
+    from marp_pptx.pkgcheck import check_package
+
+    findings = check_package(pptx_path) + audit_pptx(pptx_path)
+    findings.sort(key=lambda f: ({"error": 0, "warn": 1, "info": 2}.get(f.severity, 3),
+                                 f.slide))
+    return [asdict(f) for f in findings[:limit]]
+
+
+@mcp.tool()
+def check_deck(markdown: str = "", pptx_path: str = "", palette: str = "",
+               density: str = "academic") -> dict:
+    """Measure a deck for the defects a reader would notice — no renderer needed.
+
+    Give it `markdown` (built first, exactly as build_pptx would) or the
+    `pptx_path` of a deck already on disk. Every text box is measured against
+    the real advance widths of the fonts it names, so the answers are exact:
+
+        overflow  the text needs more room than its box has (the #1 defect —
+                  it clips in PowerPoint), with the size that would fit
+        overlap   two text blocks cover each other, or nearly touch
+        offslide  a shape leaves the slide or crowds the edge
+        contrast  a colour pair below WCAG AA for its size
+        font      a typeface missing here, or one whose preview lies
+        package   a fault that makes PowerPoint call the file damaged
+        deck      layout monotony, text-only slides
+
+    Prefer this over `visual_lint`/`preview_png` as the first check: it needs
+    nothing installed, runs in milliseconds, and names the exact overshoot.
+    Use preview_png afterwards to look at what survived.
+
+    Returns {ok, counts, findings[{kind, severity, slide, message, fix, shape}]}.
+    """
+    if not markdown and not pptx_path:
+        raise RuntimeError("provide markdown or pptx_path")
+    if markdown:
+        _check_markdown(markdown)
+        tc = _themed_config(palette, "omml", density)
+        with tempfile.TemporaryDirectory() as td:
+            builder, slides, _ = _build(markdown, Path(td), tc)
+            out = Path(td) / "check.pptx"
+            builder.save(str(out))
+            findings = _audit(out)
+    else:
+        findings = _audit(Path(pptx_path).expanduser())
+    counts: dict[str, int] = {}
+    for f in findings:
+        counts[f["severity"]] = counts.get(f["severity"], 0) + 1
+    return {"ok": not counts.get("error"), "counts": counts, "findings": findings}
 
 
 @mcp.tool(structured_output=False)
