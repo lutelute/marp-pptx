@@ -99,6 +99,9 @@ def _label(shape) -> str:
     txt = ""
     if shape.has_text_frame:
         txt = shape.text_frame.text.strip().replace("\n", " ⏎ ")
+    elif getattr(shape, "has_table", False) and shape.has_table:
+        head = [c.text.strip() for c in shape.table.rows[0].cells]
+        txt = "表: " + " / ".join(h for h in head if h)
     if len(txt) > 34:
         txt = txt[:33] + "…"
     return txt or (shape.name or "shape")
@@ -315,6 +318,12 @@ def audit_pptx(path: str | Path, *, ea_font: str | None = None,
                     and _PAGE_NO.fullmatch(shape.text_frame.text.strip())):
                 continue
 
+            if getattr(shape, "has_table", False) and shape.has_table:
+                out += _check_table(idx, shape, rect, sh, latin, ea)
+                text_boxes.append((rect, shape,
+                                   _table_needed_pt(shape, latin, ea), False))
+                continue
+
             # ── off-slide / cramped margin ──
             _check_bounds(out, idx, shape, rect, sw, sh, safe_margin_in,
                           top_ig, bot_ig)
@@ -373,6 +382,73 @@ def audit_pptx(path: str | Path, *, ea_font: str | None = None,
 
     out.extend(_deck_level(layouts, fonts_seen))
     out.sort(key=lambda f: (_RANK.get(f.severity, 3), f.slide))
+    return out
+
+
+def _table_cell_rows(shape, latin: str, ea: str) -> list[float]:
+    """Height (pt) each row of a table actually needs for its cells."""
+    table = shape.table
+    widths = [c.width for c in table.columns]
+    needed = []
+    for ri, row in enumerate(table.rows):
+        tallest = 0.0
+        for ci, cell in enumerate(row.cells):
+            if not cell.text.strip():
+                continue
+            inner = (widths[ci] - (cell.margin_left or 0)
+                     - (cell.margin_right or 0)) / EMU_PT
+            if inner <= 1:
+                continue
+            h, _, _ = _text_height_pt(_paragraphs(cell, latin, ea), inner, ea)
+            h += ((cell.margin_top or 0) + (cell.margin_bottom or 0)) / EMU_PT
+            tallest = max(tallest, h)
+        needed.append(max(tallest, row.height / EMU_PT))
+    return needed
+
+
+def _table_needed_pt(shape, latin: str, ea: str) -> float:
+    try:
+        return sum(_table_cell_rows(shape, latin, ea))
+    except Exception:
+        return shape.height / EMU_PT
+
+
+def _check_table(idx: int, shape, rect, sh: int, latin: str, ea: str) -> list[Finding]:
+    """Tables grow rather than clip: a cell that needs more room pushes every
+    row below it down, and the table off the bottom of the slide. python-pptx
+    exposes them as a graphic frame with no text frame, so the ordinary text
+    checks never saw one."""
+    out: list[Finding] = []
+    try:
+        rows = _table_cell_rows(shape, latin, ea)
+    except Exception:
+        return out
+    stored = [r.height / EMU_PT for r in shape.table.rows]
+    grew = [(i, n, s) for i, (n, s) in enumerate(zip(rows, stored))
+            if n > s + max(2.0, s * 0.04)]
+    needed = sum(rows)
+    frame = shape.height / EMU_PT
+    bottom = rect[1] / EMU_PT + needed
+    limit = sh / EMU_PT - 0.3 * 72
+    if bottom > limit:
+        out.append(Finding(
+            "overflow", "error", idx,
+            f"table needs {needed:.0f}pt from y={rect[1] / EMU_IN:.1f}\" and runs "
+            f"{(bottom - limit) / 72:.2f}\" past the bottom of the slide",
+            fix="shorten the cells, drop a column, or split the table over two slides",
+            shape=_label(shape),
+            detail={"needed_pt": needed, "box_pt": frame,
+                    "rows": [round(r, 1) for r in rows]}))
+    elif grew:
+        first = grew[0]
+        out.append(Finding(
+            "overflow", "warn", idx,
+            f"row {first[0] + 1} of the table needs {first[1]:.0f}pt in a "
+            f"{first[2]:.0f}pt row — the table will grow {needed - frame:.0f}pt "
+            f"and push what is under it",
+            fix="shorten the longest cell in that row, or widen its column",
+            shape=_label(shape),
+            detail={"needed_pt": needed, "box_pt": frame}))
     return out
 
 

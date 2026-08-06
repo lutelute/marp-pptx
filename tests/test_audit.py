@@ -121,6 +121,46 @@ def test_side_by_side_columns_are_not_overlaps(tmp_path):
     assert not _kinds(audit_pptx(_deck(tmp_path, build)), "overlap")
 
 
+# ── tables ──────────────────────────────────────────────────────────────────
+def _table(slide, rows, cols, left, top, w, h, fill):
+    gf = slide.shapes.add_table(rows, cols, Inches(left), Inches(top),
+                                Inches(w), Inches(h))
+    for ri in range(rows):
+        for ci in range(cols):
+            cell = gf.table.cell(ri, ci)
+            run = cell.text_frame.paragraphs[0].add_run()
+            run.text = fill(ri, ci)
+            run.font.size = Pt(14)
+            run.font.name = "Arial"
+    return gf
+
+
+def test_a_row_too_short_for_its_cell_is_reported(tmp_path):
+    """A table grows rather than clips, so a cramped row shoves everything
+    below it down — invisible to every text-frame check, because a table is a
+    graphic frame."""
+    long = "この列には折り返しが必要な長い説明文が入っていて一行では収まりません"
+    deck = _deck(tmp_path, lambda s: _table(
+        s, 2, 2, 1, 1, 4.0, 0.6,
+        lambda r, c: long if (r == 1 and c == 1) else "x"))
+    found = _kinds(audit_pptx(deck), "overflow")
+    assert found, "a wrapped cell in a 0.3in row must be reported"
+    assert "表" in found[0].shape
+
+
+def test_a_table_running_off_the_slide_is_an_error(tmp_path):
+    long = "折り返しが必要な長い説明文" * 3
+    deck = _deck(tmp_path, lambda s: _table(
+        s, 6, 2, 1, 5.0, 4.0, 2.0, lambda r, c: long if c else "x"))
+    assert _kinds(audit_pptx(deck), "overflow", "error")
+
+
+def test_a_table_that_fits_is_quiet(tmp_path):
+    deck = _deck(tmp_path, lambda s: _table(
+        s, 3, 3, 1, 1, 9.0, 1.8, lambda r, c: f"r{r}c{c}"))
+    assert not _kinds(audit_pptx(deck), "overflow")
+
+
 # ── colour ──────────────────────────────────────────────────────────────────
 def test_contrast_ratio_matches_the_wcag_reference():
     assert contrast_ratio((0, 0, 0), (255, 255, 255)) == pytest.approx(21.0, abs=0.1)
@@ -215,6 +255,42 @@ def test_presets_build_without_visible_defects(tmp_path, project_root, preset):
     assert not errors, format_findings(errors)
 
 
+@pytest.mark.parametrize("scale,density", [(1.22, "keynote"), (0.8, "academic"),
+                                           (1.3, "academic")])
+def test_templates_survive_the_shipped_scale_options(tmp_path, project_root,
+                                                     scale, density):
+    """`--density keynote` and `--font-scale` are shipped options, so the
+    reserved boxes have to follow the type. They didn't: fixed-inch heights and
+    a paragraph gap that scaled while the builder wrote a literal Pt(4) put 40+
+    errors into these settings while the default read clean."""
+    import contextlib
+    import io
+
+    from marp_pptx.builder import PptxBuilder
+    from marp_pptx.parser import parse_marp
+    from marp_pptx.theme import ThemeConfig, get_default_theme_path, get_palette_path
+
+    bad = []
+    for name in _template_ids(project_root):
+        src = project_root / "templates" / f"{name}.md"
+        tc = ThemeConfig.from_css(get_default_theme_path())
+        with contextlib.redirect_stderr(io.StringIO()):
+            pal = get_palette_path("claude")
+            if pal:
+                tc.apply_palette(pal)
+            tc.font_scale = scale
+            tc.margin_scale = 1.12 if density == "keynote" else 1.0
+            tc.density = density
+            builder = PptxBuilder(base_path=src.parent, theme=tc)
+            builder.build_all(parse_marp(str(src)))
+            out = tmp_path / f"{name}.pptx"
+            builder.save(str(out))
+        errors = [f for f in audit_pptx(out) if f.severity == "error"]
+        if errors:
+            bad.append(f"{name}: " + format_findings(errors))
+    assert not bad, "\n".join(bad)
+
+
 @pytest.mark.parametrize("palette", ["claude", "minimal", "beamer", "tmu-cs"])
 def test_a_dense_deck_survives_every_theme(tmp_path, project_root, palette):
     """Themes move the geometry — a band title, a footer bar, wider margins —
@@ -228,26 +304,46 @@ def test_a_dense_deck_survives_every_theme(tmp_path, project_root, palette):
     assert not errors, format_findings(errors)
 
 
+def _every_text(slide):
+    """Every string on a slide, tables included.
+
+    A table is a graphic frame with no text frame of its own, so walking
+    `shape.text_frame` alone reads past it — which is how `$\\sqrt{n}$` sat in
+    an appendix table while the markup check reported the deck clean."""
+    for shape in slide.shapes:
+        if getattr(shape, "has_text_frame", False):
+            yield shape.text_frame.text
+        if getattr(shape, "has_table", False) and shape.has_table:
+            for row in shape.table.rows:
+                for cell in row.cells:
+                    yield cell.text
+
+
+def _decks(project_root):
+    yield from sorted((project_root / "templates").glob("*.md"))
+    yield from sorted((project_root / "src" / "marp_pptx" / "data" / "presets")
+                      .glob("*.md"))
+    yield from sorted(p for p in (project_root / "demo").glob("*.md")
+                      if p.stem != "EVALUATION")
+
+
 def test_no_markdown_or_latex_reaches_the_slide(tmp_path, project_root):
     """`**bold**` and `$x^2$` are instructions, not content. Any path that
     writes a paragraph's text directly instead of going through the inline
     renderer prints them verbatim — which is how theorem titles, footnotes,
-    numbered steps and definition notes used to ship."""
+    numbered steps, definition notes and table cells used to ship."""
     import re
 
     from pptx import Presentation
 
     leak = re.compile(r"\$[^$\n]{1,60}\$|\*\*\S")
     bad = []
-    for name in _template_ids(project_root):
-        out = _build(project_root / "templates" / f"{name}.md", tmp_path)
+    for src in _decks(project_root):
+        out = _build(src, tmp_path)
         for i, slide in enumerate(Presentation(str(out)).slides, 1):
-            for shape in slide.shapes:
-                if not getattr(shape, "has_text_frame", False):
-                    continue
-                text = shape.text_frame.text
+            for text in _every_text(slide):
                 if leak.search(text):
-                    bad.append(f"{name} slide {i}: {text.strip()[:60]}")
+                    bad.append(f"{src.stem} slide {i}: {text.strip()[:60]}")
     assert not bad, "\n".join(bad)
 
 
