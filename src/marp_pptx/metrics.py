@@ -151,11 +151,17 @@ class _Metrics:
     is still used for the *vertical* metrics, which decompile instantly.
     """
 
-    def __init__(self, path: str | None):
+    # A face whose "bold" resolves to the regular file is faux-bolded by the
+    # renderer, which smears each glyph and widens its advance. Measuring the
+    # regular file then reports a line as fitting that renders ~6% longer.
+    SYNTHETIC_BOLD = 1.06
+
+    def __init__(self, path: str | None, synthetic_bold: bool = False):
         self.path = path
         self._w: dict[str, float] = {}
         self._pil = None
         self.line_em = 1.2
+        self.scale = self.SYNTHETIC_BOLD if synthetic_bold else 1.0
         if path:
             self._load(path)
 
@@ -194,7 +200,7 @@ class _Metrics:
         if self._pil is None:
             return None
         try:
-            val = self._pil.getlength(ch) / _EM_UNITS
+            val = self._pil.getlength(ch) / _EM_UNITS * self.scale
         except Exception:
             return None
         self._w[ch] = val
@@ -203,44 +209,76 @@ class _Metrics:
 
 @lru_cache(maxsize=64)
 def _metrics(name: str, bold: bool = False, italic: bool = False) -> _Metrics:
-    return _Metrics(font_file(name, bold, italic))
+    path = font_file(name, bold, italic)
+    faux = bool(bold) and path is not None and path == font_file(name, False, italic)
+    return _Metrics(path, synthetic_bold=faux)
 
 
-def _fallback_em(ch: str) -> float:
+def _fallback_em(ch: str, wide: bool = False) -> float:
+    eaw = unicodedata.east_asian_width(ch)
+    if wide and eaw == "A":
+        return 1.0
     w = _HELV.get(ch)
     if w is not None:
         return w / 1000.0
     if ch in ("　",):
         return 1.0
-    return _EAW_EM.get(unicodedata.east_asian_width(ch), 0.55)
+    return _EAW_EM.get(eaw, 0.55)
 
 
-def _is_ea(ch: str) -> bool:
+def _is_ea(ch: str, ambiguous_wide: bool = False) -> bool:
     """True for characters a CJK font should measure (and PowerPoint will
-    render with the ``<a:ea>`` typeface)."""
-    if unicodedata.east_asian_width(ch) in ("W", "F"):
+    render with the ``<a:ea>`` typeface).
+
+    `ambiguous_wide` covers UAX #11's Ambiguous class — →, ±, ×, °, § and
+    friends. They are half-width in a Latin line and full-width in a Japanese
+    one, and they are common in exactly the captions that have to fit: measured
+    at 0.55 em, "高速化（94.1 分 → 2.0 分）" fit a box it then wrapped inside.
+    """
+    w = unicodedata.east_asian_width(ch)
+    if w in ("W", "F"):
+        return True
+    if ambiguous_wide and w == "A":
         return True
     return "　" <= ch <= "〿" or "＀" <= ch <= "￯"
 
 
+def _cjk_context(text: str) -> bool:
+    """Does this string read as Japanese? Then Ambiguous means wide."""
+    return any(unicodedata.east_asian_width(c) in ("W", "F") for c in text)
+
+
 # ── Measurement ─────────────────────────────────────────────────────────────
 def measure_em(text: str, font: str = "Helvetica Neue", *, ea_font: str | None = None,
-               bold: bool = False, italic: bool = False) -> float:
-    """Width of `text` in em units, measuring CJK with `ea_font` when given."""
+               bold: bool = False, italic: bool = False,
+               cjk: bool | None = None) -> float:
+    """Width of `text` in em units, measuring CJK with `ea_font` when given.
+
+    `cjk` forces the East-Asian reading of Ambiguous characters; by default it
+    is inferred from the string itself.
+    """
     if not text:
         return 0.0
     latin = _metrics(font, bold, italic)
     ea = _metrics(ea_font or font, bold, italic) if ea_font else latin
+    wide = _cjk_context(text) if cjk is None else cjk
     total = 0.0
     for ch in text:
         if ch == "\t":
             total += 2.0
             continue
-        m = ea if _is_ea(ch) else latin
+        is_ea = _is_ea(ch, wide)
+        m = ea if is_ea else latin
         val = m.advance(ch)
         if val is None and m is not latin:
             val = latin.advance(ch)
-        total += val if val is not None else _fallback_em(ch)
+        if val is None:
+            val = _fallback_em(ch, wide)
+        elif is_ea and unicodedata.east_asian_width(ch) == "A":
+            # The CJK face may carry a narrow glyph for → or ±; the renderer
+            # still advances a full em for it in a Japanese line.
+            val = max(val, 1.0)
+        total += val
     return total
 
 
@@ -287,8 +325,11 @@ def wrap_text(text: str, font: str, size_pt: float, width_pt: float, *,
     if width_pt <= 0 or not text:
         return [text] if text else [""]
 
+    wide = _cjk_context(text)
+
     def w(s: str) -> float:
-        return measure_pt(s, font, size_pt, ea_font=ea_font, bold=bold, italic=italic)
+        return measure_em(s, font, ea_font=ea_font, bold=bold, italic=italic,
+                          cjk=wide) * size_pt
 
     out: list[str] = []
     for raw in text.split("\n"):
@@ -296,7 +337,7 @@ def wrap_text(text: str, font: str, size_pt: float, width_pt: float, *,
             out.append("")
             continue
         line = ""
-        for tok in _tokens(raw):
+        for tok in _tokens(raw, wide):
             cand = line + tok
             if line and w(cand) > width_pt:
                 if tok.isspace():
@@ -312,12 +353,12 @@ def wrap_text(text: str, font: str, size_pt: float, width_pt: float, *,
     return out
 
 
-def _tokens(s: str) -> list[str]:
+def _tokens(s: str, wide: bool = False) -> list[str]:
     """Split into break-eligible units: Latin words, whitespace, single CJK."""
     toks: list[str] = []
     buf = ""
     for ch in s:
-        if _is_ea(ch) or ch.isspace():
+        if _is_ea(ch, wide) or ch.isspace():
             if buf:
                 toks.append(buf)
                 buf = ""

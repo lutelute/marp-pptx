@@ -262,19 +262,27 @@ class PptxBuilder:
 
     def _kicker_para(self, para, text, size=None, color=None, align=PP_ALIGN.LEFT,
                      tracking=180):
-        """Small-caps-style label: UPPERCASE (latin only) + wide tracking."""
+        """Small-caps-style label: UPPERCASE (latin only) + wide tracking.
+
+        Tracking is a Latin small-caps device. Japanese is already spaced by
+        its own em box, so widening it there only makes the label longer than
+        the card it sits in — a KPI caption that measured as one line came out
+        as two. Latin keeps the full tracking; anything else gets a token
+        amount.
+        """
         if size is None:
             size = SZ_KICKER
         if color is None:
             color = self.ACCENT_TEXT
         t = (text or "")
-        para.text = t.upper() if t.isascii() else t
+        latin = t.isascii()
+        para.text = t.upper() if latin else t
         para.alignment = align
         para.font.name = self.FONT_HEAD
         para.font.size = self._fs(size)
         para.font.bold = True
         para.font.color.rgb = color
-        self._set_tracking(para, tracking)
+        self._set_tracking(para, tracking if latin else min(tracking, 40))
         return para
 
     def _eyebrow(self, slide, text, left, top, width, align=PP_ALIGN.LEFT,
@@ -342,7 +350,19 @@ class PptxBuilder:
                 p.space_before = Pt(6)
             first = False
             align = PP_ALIGN.CENTER if value is not None else PP_ALIGN.LEFT
-            self._kicker_para(p, label, size=label_size or SZ_ZONE_L,
+            lsize = label_size or SZ_ZONE_L
+            if value is not None:
+                # A metric caption belongs on one line: wrapping it orphans a
+                # closing bracket and pushes the values out of alignment with
+                # the card next to it. The label is set bold and tracked, so
+                # both come off the width before fitting — measuring the plain
+                # face against the full width left it a point too big.
+                track = int(Pt(0.4 * len(label)))
+                lsize = self._fit_size(label, lsize,
+                                       max(int(Inches(0.5)), int((tw - track) * 0.97)),
+                                       int(Pt(lsize.pt * metrics.DEFAULT_LINE_FACTOR)),
+                                       bold=True, min_ratio=0.75)
+            self._kicker_para(p, label, size=lsize,
                               color=label_color or self.SECONDARY, align=align,
                               tracking=120)
         if body or body_lines:
@@ -1085,18 +1105,28 @@ class PptxBuilder:
         )
 
     def _set_cell_border(self, cell, edges=("bottom",), color=None, pt=0.75):
-        """Inject cell borders via lxml (python-pptx has no public API)."""
+        """Inject cell borders via lxml (python-pptx has no public API).
+
+        `pt=None` writes an explicit *no* border. That is not the same as
+        leaving the edge alone: a table with no style id still inherits a full
+        grid from the renderer's default, which is why every table used to come
+        out looking like a spreadsheet.
+        """
         if color is None:
             color = self.HAIRLINE
         hexcol = str(color)
         tcPr = cell._tc.get_or_add_tcPr()
         tag = {"left": "a:lnL", "right": "a:lnR", "top": "a:lnT", "bottom": "a:lnB"}
-        width_emu = int(Pt(pt))
         for edge in edges:
             qname = qn(tag[edge])
             for old in tcPr.findall(qname):
                 tcPr.remove(old)
-            ln = tcPr.makeelement(qname, {"w": str(width_emu), "cap": "flat",
+            if pt is None:
+                ln = tcPr.makeelement(qname, {})
+                ln.append(ln.makeelement(qn("a:noFill"), {}))
+                tcPr.insert(0, ln)
+                continue
+            ln = tcPr.makeelement(qname, {"w": str(int(Pt(pt))), "cap": "flat",
                                           "cmpd": "sng", "algn": "ctr"})
             fill = ln.makeelement(qn("a:solidFill"), {})
             clr = fill.makeelement(qn("a:srgbClr"), {"val": hexcol})
@@ -1104,13 +1134,113 @@ class PptxBuilder:
             ln.append(ln.makeelement(qn("a:prstDash"), {"val": "solid"}))
             tcPr.insert(0, ln)
 
-    def _styled_table(self, slide, rows_data, left, top, width, height):
-        """Themed table: optional filled header, zebra body, hairline rules.
-        Header style follows theme.layout.table_header_style (fill | rule)."""
+    # Table geometry — column widths and row heights come from the content,
+    # measured with the same font metrics as everything else.
+    TBL_PAD_X = Pt(10)
+    TBL_PAD_Y = Pt(6)
+
+    _NUM_RE = re.compile(r"^[\s$¥€£]*[-+]?[\d,]+(\.\d+)?\s*[%x×kKMB]?\s*$")
+
+    def _table_numeric_cols(self, rows_data) -> set:
+        """Columns whose body is mostly numbers — right-aligned, and never
+        the column that absorbs slack width."""
+        cols = max((len(r) for r in rows_data), default=1)
+        out = set()
+        for ci in range(cols):
+            body = [self._plain(strip_html(r[ci])) for r in rows_data[1:]
+                    if ci < len(r) and r[ci].strip()]
+            if body and sum(bool(self._NUM_RE.match(b)) for b in body) >= max(
+                    1, len(body) * 0.6):
+                out.add(ci)
+        return out
+
+    def _table_cols(self, rows_data, width, size=None):
+        """Column widths (EMU) sized to what each column actually holds.
+
+        Equal columns waste half the slide on a two-character "12" and squeeze
+        the column carrying prose. Slack goes to the text columns rather than
+        being spread over every column, which would strand a right-aligned "12"
+        an inch away from its label.
+        """
+        cols = max((len(r) for r in rows_data), default=1)
+        if cols <= 0:
+            return []
+        size_pt = (size or self._fs(SZ_SMALL)).pt
+        pad = int(self.TBL_PAD_X) * 2
+        floor = int(Inches(0.7))
+        ceil = int(width * 0.5)
+        natural = []
+        for ci in range(cols):
+            w = 0.0
+            for r in rows_data:
+                cell = self._plain(strip_html(r[ci])) if ci < len(r) else ""
+                w = max(w, metrics.measure_pt(cell, self.FONT, size_pt,
+                                              ea_font=self.FONT_EA))
+            natural.append(min(max(int(Pt(w)) + pad, floor), ceil))
+        total = sum(natural)
+        # A table narrower than ~3/4 of the content width reads as a stray
+        # fragment; a wider one has to be squeezed back in.
+        target = min(int(width), max(total, int(width * 0.78)))
+        widths = list(natural)
+        if total > target:
+            widths = [max(floor, int(n * target / total)) for n in natural]
+        elif total < target:
+            grow = sorted(set(range(cols)) - self._table_numeric_cols(rows_data)) \
+                or list(range(cols))
+            share = (target - total) // len(grow)
+            for ci in grow:
+                widths[ci] += share
+        drift = target - sum(widths)
+        widths[widths.index(max(widths))] += drift
+        return widths
+
+    def _table_rows(self, rows_data, widths, size=None):
+        """Row heights (EMU) from the wrapped content of each row."""
+        size_pt = (size or self._fs(SZ_SMALL)).pt
+        line_h = size_pt * metrics.DEFAULT_LINE_FACTOR
+        pad = int(self.TBL_PAD_Y) * 2
+        out = []
+        for r in rows_data:
+            lines = 1
+            for ci, w in enumerate(widths):
+                cell = self._plain(strip_html(r[ci])) if ci < len(r) else ""
+                if not cell:
+                    continue
+                inner = (w - int(self.TBL_PAD_X) * 2) / 12700.0
+                lines = max(lines, metrics.line_count(cell, self.FONT, size_pt,
+                                                      max(20.0, inner),
+                                                      ea_font=self.FONT_EA))
+            out.append(int(Pt(lines * line_h)) + pad)
+        return out
+
+    def _table_height(self, rows_data, width, size=None) -> int:
+        """Height the table will occupy — what callers must reserve for it."""
+        if not rows_data:
+            return 0
+        widths = self._table_cols(rows_data, width, size)
+        return sum(self._table_rows(rows_data, widths, size))
+
+    def _styled_table(self, slide, rows_data, left, top, width, height=None):
+        """Themed table: measured columns and rows, horizontal rules only.
+
+        `height` is ignored except as a floor — a table's height is the sum of
+        its rows, and forcing a different one just means the renderer grows the
+        rows past the frame and clips the last rule.
+        Header style follows theme.layout.table_header_style (fill | rule).
+        """
         rows = len(rows_data)
         cols = max(len(r) for r in rows_data) if rows_data else 1
-        gf = slide.shapes.add_table(rows, cols, int(left), int(top), int(width), int(height))
+        col_w = self._table_cols(rows_data, width)
+        row_h = self._table_rows(rows_data, col_w)
+        # Centred in the block it was given, since it may be narrower than it.
+        x = int(left) + max(0, (int(width) - sum(col_w)) // 2)
+        gf = slide.shapes.add_table(rows, cols, x, int(top),
+                                    sum(col_w), sum(row_h))
         table = gf.table
+        for ci, w in enumerate(col_w):
+            table.columns[ci].width = Emu(int(w))
+        for ri, h in enumerate(row_h):
+            table.rows[ri].height = Emu(int(h))
         try:
             table.first_row = False
             table.horz_banding = False
@@ -1121,49 +1251,52 @@ class PptxBuilder:
         except Exception:
             pass
         rule_header = getattr(self.LAYOUT, "table_header_style", "fill") == "rule"
-        # Right-align columns whose body cells are predominantly numeric
-        # (numbers read better right/decimal-aligned — CSE table guidance).
-        num_re = re.compile(r"^[\s$¥€£]*[-+]?[\d,]+(\.\d+)?\s*[%x×kKMB]?\s*$")
-        clean = lambda s: strip_html(s).replace("**", "").strip()
-        numeric_cols = set()
-        for ci in range(cols):
-            body = [clean(r[ci]) for r in rows_data[1:] if ci < len(r) and r[ci].strip()]
-            if body and sum(bool(num_re.match(b)) for b in body) >= max(1, len(body) * 0.6):
-                numeric_cols.add(ci)
+        # Numbers read better right-aligned (CSE table guidance).
+        numeric_cols = self._table_numeric_cols(rows_data)
+        last = rows - 1
         for ri, row in enumerate(rows_data):
             for ci in range(cols):
                 cell = table.cell(ri, ci)
                 cell.vertical_anchor = MSO_ANCHOR.MIDDLE
-                cell.margin_left = Pt(10); cell.margin_right = Pt(10)
-                cell.margin_top = Pt(5); cell.margin_bottom = Pt(5)
+                cell.margin_left = cell.margin_right = self.TBL_PAD_X
+                cell.margin_top = cell.margin_bottom = self.TBL_PAD_Y
                 raw = row[ci] if ci < len(row) else ""
-                cell.text = clean(raw)
                 is_head = (ri == 0)
                 emph = ("**" in raw)   # markdown-bolded cell (e.g. **Ours**)
-                align = PP_ALIGN.RIGHT if ci in numeric_cols else PP_ALIGN.LEFT
-                for p in cell.text_frame.paragraphs:
-                    p.alignment = align
-                    p.font.name = self.FONT_HEAD if (is_head or emph) else self.FONT
-                    p.font.size = self._fs(SZ_SMALL)
-                    p.font.bold = is_head or emph or (ci == 0 and not is_head)
-                    if emph and not is_head:
-                        p.font.color.rgb = self.ACCENT_TEXT
-                    if is_head:
-                        p.font.color.rgb = self.FG if rule_header else self.WHITE
-                    elif ci == 0:
-                        p.font.color.rgb = self.SECONDARY
-                    else:
-                        p.font.color.rgb = self.FG
-                cell.fill.solid()
-                if is_head and not rule_header:
-                    cell.fill.fore_color.rgb = self.PRIMARY
-                elif (not is_head) and ri % 2 == 0:
-                    cell.fill.fore_color.rgb = self.LIGHT
-                else:
-                    cell.fill.fore_color.rgb = self.WHITE
                 if is_head:
-                    self._set_cell_border(cell, ("bottom",), color=self.PRIMARY, pt=1.5)
+                    color = self.FG if rule_header else self.WHITE
+                elif emph:
+                    color = self.ACCENT_TEXT
+                elif ci == 0:
+                    color = self.SECONDARY
                 else:
+                    color = self.FG
+                bold = is_head or emph or (ci == 0 and not is_head)
+                # Cells are author text: `**Ours**` and `$\sqrt{n}$` have to be
+                # rendered, not printed.
+                p = cell.text_frame.paragraphs[0]
+                self._rich_line(p, strip_html(raw), SZ_SMALL, color,
+                                font=self.FONT_HEAD if (is_head or emph) else None,
+                                bold=bold)
+                p.alignment = PP_ALIGN.RIGHT if ci in numeric_cols else PP_ALIGN.LEFT
+
+                # Rules run horizontally only: a full grid reads as a
+                # spreadsheet, and the vertical lines carry no information the
+                # column alignment doesn't already give.
+                self._set_cell_border(cell, ("left", "right"), pt=None)
+                if is_head and not rule_header:
+                    cell.fill.solid()
+                    cell.fill.fore_color.rgb = self.PRIMARY
+                else:
+                    cell.fill.background()
+                if is_head:
+                    self._set_cell_border(cell, ("top",), color=self.PRIMARY, pt=1.25)
+                    self._set_cell_border(cell, ("bottom",), color=self.PRIMARY, pt=1.0)
+                elif ri == last:
+                    self._set_cell_border(cell, ("top",), pt=None)
+                    self._set_cell_border(cell, ("bottom",), color=self.PRIMARY, pt=1.25)
+                else:
+                    self._set_cell_border(cell, ("top",), pt=None)
                     self._set_cell_border(cell, ("bottom",), color=self.HAIRLINE, pt=0.5)
         return gf
 
@@ -1375,8 +1508,7 @@ class PptxBuilder:
             bh = int(self._estimate_text_height(sd.body_lines, SZ_BODY, width=width))
             blocks.append(("body", min(bh, region[3])))
         if sd.table_rows:
-            th = int(min(Inches(4.6), Inches(0.5) * len(sd.table_rows)))
-            blocks.append(("table", th))
+            blocks.append(("table", self._table_height(sd.table_rows, width)))
         if sd.bottom_text:
             blocks.append(("accent", int(Inches(1.0))))
 
@@ -1804,9 +1936,9 @@ class PptxBuilder:
         blocks = []
         if sd.h2:
             blocks.append(("sub", int(Inches(0.4))))
-        # +0.25in headroom: renderers grow rows to fit CJK line height, so a
-        # bare 0.5in/row estimate lets the real table eat the gap below it.
-        blocks.append(("table", int(min(Inches(4.8), Inches(0.5) * len(sd.table_rows) + Inches(0.25)))))
+        # The table reserves exactly what its measured rows need — no
+        # headroom fudge, because the rows no longer grow at render time.
+        blocks.append(("table", self._table_height(sd.table_rows, width)))
         if sd.bottom_text:
             blocks.append(("accent", int(Inches(0.9))))
         tops = self._stack_tops([h for _, h in blocks], region, mode="center",
@@ -2289,8 +2421,7 @@ class PptxBuilder:
             # would open a fresh slide and split the appendix in two.
             region = self._content_region(has_title=bool(sd.h1))
             left, _, width, _ = region
-            th = int(min(Inches(4.8), Inches(0.5) * len(sd.table_rows) + Inches(0.25)))
-            blocks = [("table", th)]
+            blocks = [("table", self._table_height(sd.table_rows, width))]
             if sd.bottom_text:
                 blocks.append(("accent", int(Inches(0.9))))
             tops = self._stack_tops([h for _, h in blocks], region, mode="center",
@@ -2509,7 +2640,17 @@ class PptxBuilder:
         rleft, rtop, rwidth, rheight = self._content_region(has_title=bool(sd.h1))
         gap = int(CARD_GAP)
         box_w = (rwidth - gap * (n - 1)) // n
-        box_h = int(min(Inches(2.7), rheight))
+        # Height from the content — a fixed 2.7in card left a value and a
+        # one-line caption floating in an empty box.
+        inner_w = box_w - int(CARD_PAD) * 2
+        label_h = 0
+        for item in sd.kpi_items:
+            label_h = max(label_h, int(self._estimate_text_height(
+                [item.get("label", "")], SZ_SMALL, width=inner_w)))
+        box_h = int(min(rheight,
+                        max(int(Inches(1.7)),
+                            int(self._fs(SZ_METRIC) * metrics.DEFAULT_LINE_FACTOR)
+                            + label_h + int(CARD_PAD) * 2 + int(CARD_ACCENT_H))))
         kpi_top = rtop + max(0, (rheight - box_h) // 2)
         for i, item in enumerate(sd.kpi_items):
             x = rleft + i * (box_w + gap)

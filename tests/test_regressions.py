@@ -115,9 +115,12 @@ def test_table_block_reserves_headroom():
     b.build_table(parse_slide(0, md))
     slide = b.prs.slides[0]
     tbl = next(s for s in slide.shapes if getattr(s, "has_table", False))
-    # 6 rows: bare 0.5in/row estimate must carry extra headroom so renderers
-    # that grow rows (CJK line height) don't eat the gap below the table
-    assert tbl.height >= int(Inches(0.5) * 6 + Inches(0.2))
+    # The frame is exactly its rows: a renderer has no reason to grow one, so
+    # the last rule stays inside the frame and the block below keeps its gap.
+    assert tbl.height == sum(r.height for r in tbl.table.rows)
+    note = next(s for s in slide.shapes
+                if getattr(s, "has_text_frame", False) and "Note below" in s.text_frame.text)
+    assert note.top >= tbl.top + tbl.height
 
 
 # --- 5. appendix with a table must stay ONE slide ----------------------------
