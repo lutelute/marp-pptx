@@ -31,3 +31,5 @@ layout:
   accent_rule: none
   table_header_style: rule
   divider_number: false
+  header_crumb: true        # hearing-deck chrome: section crumb top-left + n／m top-right
+  figure_numbers: true      # auto 図N｜caption (＋出典｜ from <!-- source: -->)

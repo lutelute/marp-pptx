@@ -803,7 +803,7 @@ class PptxBuilder:
     def _plain(s: str) -> str:
         """Strip inline markup so measurement sees the rendered characters."""
         return (s.replace("**", "").replace("`", "").replace("$", "")
-                 .lstrip("#").lstrip())
+                 .replace("==", "").lstrip("#").lstrip())
 
     def _wrapped_lines(self, text: str, size_pt: float, width_emu, *,
                        bold: bool = False) -> int:
@@ -988,12 +988,35 @@ class PptxBuilder:
         if bold:
             run.font.bold = True
 
-    # Combined inline markup: **bold**, `code`, $math$
+    # Combined inline markup: **bold**, `code`, $math$, ==marker==
     _RICH_PATTERN = re.compile(
         r"(\*\*[^\*\n]+?\*\*)"
         r"|(`[^`\n]+?`)"
         r"|(\$[^\$\n]+?\$)"
+        r"|(==[^=\n]+?==)"
     )
+
+    def _run_highlight(self, run, rgb):
+        """Marker-pen highlight behind a run (a:highlight — no python-pptx API).
+
+        Schema order: highlight must precede a:latin in rPr, so insert
+        before it when font.name has already written one.
+        """
+        rPr = run._r.get_or_add_rPr()
+        hl = rPr.makeelement(qn("a:highlight"), {})
+        clr = etree.SubElement(hl, qn("a:srgbClr"))
+        clr.set("val", str(rgb))
+        latin = rPr.find(qn("a:latin"))
+        if latin is not None:
+            latin.addprevious(hl)
+        else:
+            rPr.append(hl)
+
+    @property
+    def MARKER(self):
+        """Highlight fill for ==marker== — the deck's own accent, tinted pale
+        so black text stays AA on top (a foreign yellow reads as a sticker)."""
+        return getattr(self.theme, "marker", None) or self._tint(self.ACCENT, 0.72)
 
     def _set_rich_text(self, para, text, size=None, color=None):
         """Render inline markup in a SINGLE paragraph / SINGLE textbox.
@@ -1030,6 +1053,9 @@ class PptxBuilder:
                     run.font.italic = True
                     if color is not None:
                         run.font.color.rgb = color
+            elif m.group(4):  # ==marker== highlight
+                self._add_plain_run(para, m.group(4)[2:-2], size, color)
+                self._run_highlight(para.runs[-1], self.MARKER)
             pos = m.end()
         if pos < len(text):
             self._add_plain_run(para, text[pos:], size, color)
@@ -2127,8 +2153,9 @@ class PptxBuilder:
         if sd.h1:
             self._add_title(slide, sd.h1)
         rleft, rtop, rwidth, rheight = self._content_region(has_title=bool(sd.h1))
-        cap_h = int(self._estimate_text_height([sd.caption], SZ_SMALL,
-                                               width=rwidth)) if sd.caption else 0
+        cap = self._fig_caption(sd.caption, sd.source)
+        cap_h = int(self._estimate_text_height([cap], SZ_SMALL,
+                                               width=rwidth)) if cap else 0
         desc_h = int(self._estimate_text_height(sd.body_lines, SZ_COL,
                                                width=rwidth)) if sd.body_lines else 0
         img_file = self._image_or_placeholder(sd.image_path) if sd.image_path else None
@@ -2146,10 +2173,10 @@ class PptxBuilder:
         if img_file:
             slide.shapes.add_picture(img_file, (SW - pw) // 2, int(img_top), pw, ph)
         cap_top = img_top + ph + int(Inches(0.15))
-        if sd.caption:
+        if cap:
             tb = self._add_textbox(slide, rleft, int(cap_top), rwidth, cap_h)
             p = tb.text_frame.paragraphs[0]
-            self._rich_line(p, sd.caption, SZ_SMALL, self.MUTED)
+            self._rich_line(p, cap, SZ_SMALL, self.MUTED)
             p.alignment = PP_ALIGN.CENTER
             tb.text_frame.word_wrap = True
         if sd.body_lines:
@@ -2701,7 +2728,8 @@ class PptxBuilder:
         right_x = rleft + rwidth - right_w
         # Reserve room for the figure caption — overview/result dropped it
         # entirely (the figure showed, but `Fig. N. …` never rendered).
-        cap_h = int(Inches(0.5)) if sd.caption else 0
+        cap = self._fig_caption(sd.caption, sd.source)
+        cap_h = int(Inches(0.5)) if cap else 0
         img_file = self._image_or_placeholder(image_path) if image_path else None
         if img_file:
             from PIL import Image
@@ -2712,11 +2740,11 @@ class PptxBuilder:
             pw = int(iw * scale * 914400 / 96); ph = int(ih * scale * 914400 / 96)
             img_top = cur_top + max(0, (avail_h - ph - cap_h) // 2)
             slide.shapes.add_picture(img_file, rleft, int(img_top), pw, ph)
-            if sd.caption:
+            if cap:
                 ctb = self._add_textbox(slide, rleft, int(img_top + ph + Inches(0.1)),
                                         left_w, cap_h)
                 cp = ctb.text_frame.paragraphs[0]
-                self._rich_line(cp, sd.caption, SZ_SMALL, self.MUTED)
+                self._rich_line(cp, cap, SZ_SMALL, self.MUTED)
                 cp.alignment = PP_ALIGN.CENTER
                 ctb.text_frame.word_wrap = True
         if points:
@@ -2994,9 +3022,10 @@ class PptxBuilder:
         if sd.h1:
             self._add_title(slide, sd.h1)
         rleft, rtop, rwidth, rheight = self._content_region(has_title=bool(sd.h1), full=not sd.caption)
+        cap = self._fig_caption(sd.caption, sd.source)
         cap_h = (max(int(Inches(0.5)),
-                     int(self._estimate_text_height([sd.caption], SZ_SMALL, width=rwidth)))
-                 if sd.caption else 0)
+                     int(self._estimate_text_height([cap], SZ_SMALL, width=rwidth)))
+                 if cap else 0)
         img_file = self._image_or_placeholder(sd.image_path) if sd.image_path else None
         img_top = rtop; ph = 0
         if img_file:
@@ -3011,12 +3040,12 @@ class PptxBuilder:
             img_top = rtop + max(0, (rheight - block_h) // 2)
             left = (SW - pw) // 2
             slide.shapes.add_picture(img_file, left, int(img_top), pw, ph)
-        if sd.caption:
+        if cap:
             ctb = self._add_textbox(slide, rleft, int(img_top + ph + Inches(0.12)),
                                     rwidth, cap_h)
             ctb.text_frame.word_wrap = True
             p = ctb.text_frame.paragraphs[0]
-            self._rich_line(p, sd.caption, SZ_SMALL, self.MUTED)
+            self._rich_line(p, cap, SZ_SMALL, self.MUTED)
             p.alignment = PP_ALIGN.CENTER
 
     def build_gallery_img(self, sd: SlideData):
@@ -3599,6 +3628,14 @@ class PptxBuilder:
         """
         if n <= 1:
             return [self.ACCENT]
+        # A palette that declares accent2..accent6 has hand-picked its
+        # categorical ramp (e.g. research's MATLAB-style 6-color system) —
+        # use it verbatim, in order.
+        explicit = [self.ACCENT] + [
+            c for c in (getattr(self.theme, f"accent{i}", None) for i in range(2, 7))
+            if c is not None]
+        if len(explicit) >= 2 and n <= len(explicit):
+            return explicit[:n]
         from marp_pptx.audit import contrast_ratio
         ramp = [self.ACCENT, self.PRIMARY,
                 self._tint(self.ACCENT, 0.55), self.SECONDARY]
@@ -3704,7 +3741,7 @@ class PptxBuilder:
         data.categories = sd.chart_categories
         for name, vals in sd.chart_series:
             data.add_series(name, vals)
-        cap_text = sd.chart_caption or sd.footnote
+        cap_text = self._fig_caption(sd.chart_caption, sd.source) or sd.footnote
         cap_h = (max(int(Inches(0.4)),
                      int(self._estimate_text_height([cap_text], SZ_SMALL, width=width)))
                  if cap_text else 0)
@@ -3860,7 +3897,9 @@ class PptxBuilder:
     def build_all(self, slides: list[SlideData]):
         self._divider_no = 0
         self._deck_title = ""
+        self._fig_no = 0
         self._slide_sections: list[str] = []   # per-built-slide section name
+        self._slide_classes: list[str] = []    # per-built-slide semantic type
         current_section = ""
         for n, sd in enumerate(slides, 1):
             try:
@@ -3888,6 +3927,7 @@ class PptxBuilder:
                 self._write_notes(self.prs.slides[i], cls,
                                   user_note if i == before_n else "")
                 self._slide_sections.append(current_section)
+                self._slide_classes.append(cls)
         self._add_global_footer()
         self._warn_text_collisions()
 
@@ -3928,9 +3968,57 @@ class PptxBuilder:
     def _write_class_note(self, slide, cls: str):
         self._write_notes(slide, cls, "")
 
+    def _fig_caption(self, caption: str, source: str = "") -> str:
+        """Hearing-deck caption convention (opt-in via figure_numbers):
+        "図 N｜caption　出典｜source". Call ONCE per figure — the counter
+        advances on every numbered caption."""
+        text = (caption or "").strip()
+        if text and self.LAYOUT.figure_numbers:
+            self._fig_no = getattr(self, "_fig_no", 0) + 1
+            text = f"図 {self._fig_no}｜{text}"
+        if source:
+            # A bare source line stays an attribution, not a numbered figure.
+            text = (text + ("　" if text else "") + f"出典｜{source}").strip()
+        return text
+
+    def _add_header_crumb(self):
+        """Hearing-style top chrome: section breadcrumb left, n／m right.
+
+        Replaces the bottom-right page number (both at once is noise). Hero
+        slides (title/divider/end/statement) keep their clean canvas.
+        """
+        n = len(self.prs.slides)
+        sections = getattr(self, "_slide_sections", [])
+        classes = getattr(self, "_slide_classes", [])
+        skip = {"title", "divider", "end", "statement", "dark", "big-statement"}
+        for i, slide in enumerate(self.prs.slides):
+            cls = classes[i] if i < len(classes) else ""
+            if i == 0 or cls in skip:
+                continue
+            crumb = sections[i] if i < len(sections) else ""
+            if crumb:
+                tb = self._add_textbox(slide, int(MARGIN_L), int(Inches(0.10)),
+                                       int(CONTENT_W * 0.7), int(Inches(0.22)))
+                p = tb.text_frame.paragraphs[0]
+                p.text = crumb
+                p.font.name = self.FONT
+                p.font.size = self._fs(SZ_FOOT)
+                p.font.color.rgb = self.MUTED
+            tb = self._add_textbox(slide, int(SW - MARGIN_R - Inches(1.6)),
+                                   int(Inches(0.10)), int(Inches(1.6)),
+                                   int(Inches(0.22)))
+            p = tb.text_frame.paragraphs[0]
+            p.text = f"{i + 1}／{n}"
+            p.font.name = self.FONT
+            p.font.size = self._fs(SZ_FOOT)
+            p.font.color.rgb = self.MUTED
+            p.alignment = PP_ALIGN.RIGHT
+
     def _add_global_footer(self):
         if self.LAYOUT.footer_bar:
             return self._add_beamer_footer()
+        if self.LAYOUT.header_crumb:
+            return self._add_header_crumb()
         n = len(self.prs.slides)
         for i, slide in enumerate(self.prs.slides):
             if i == 0 or i == n - 1:

@@ -61,6 +61,8 @@ class ThemeLayout:
     divider_number: bool = True        # giant ghost section number on dividers
     footer_bar: bool = False           # beamer-style bar: deck title | section | page
     title_scale: float = 1.0           # H1 emphasis multiplier (auto-shrink still applies)
+    header_crumb: bool = False         # hearing-style top chrome: section crumb + n／m
+    figure_numbers: bool = False       # auto "図 N｜" caption prefix (deck-wide counter)
 
 
 @dataclass
@@ -79,6 +81,16 @@ class ThemeConfig:
     # Darker accent reserved for SMALL text (labels/symbols) so it clears
     # WCAG AA (4.5:1) on the background; falls back to `accent` when unset.
     accent_text: RGBColor | None = None
+    # ==marker== highlight fill; defaults to a pale tint of `accent`.
+    marker: RGBColor | None = None
+    # Optional categorical ramp for charts/figures (accent2..accent6 in the
+    # palette CSS). When set, charts use [accent, accent2, ...] verbatim —
+    # a hand-picked semantic ramp beats the generic theme derivation.
+    accent2: RGBColor | None = None
+    accent3: RGBColor | None = None
+    accent4: RGBColor | None = None
+    accent5: RGBColor | None = None
+    accent6: RGBColor | None = None
     # Fonts
     font: str = "Helvetica Neue"
     font_head: str = "Helvetica Neue"

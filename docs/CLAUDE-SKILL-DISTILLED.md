@@ -45,3 +45,20 @@ marp-pptx の**決定論エンジン側**に移植した記録。何をどこに
   シャドウ・チャート色・タイトルスケールを確認）
 - パレット4種の accent_text / white、white / primary、accent / primary は
   すべて WCAG 実測値で選定（このリポの方針: 推定せず測る）
+
+## 実例調査からの蒸留（2026-08-27 追記）
+
+Marp コミュニティテーマ 11 種（[gallery](https://rnd195.github.io/marp-community-themes/)）と
+研究発表スライドの実例（勝崎氏 博士公聴会 62 枚・NLP2025 発表・研究室チュートリアル）を
+全数目視して追加蒸留した。
+
+| 蒸留元 | 落とし込み先 |
+|---|---|
+| 公聴会デッキの上部クローム（章パンくず＋「n／62」） | `ThemeLayout.header_crumb`（research で有効。下部ページ番号と排他） |
+| 「図 N｜キャプション　出典｜…」の通し採番規約 | `ThemeLayout.figure_numbers` ＋ `_fig_caption()`（figure/diagram/chart/overview/result で採番。`<!-- source: -->` が出典に） |
+| 6系統アクセント×濃淡の意味論的カラーシステム（MATLAB順） | パレットの `--color-accent2..6`。定義があれば `_chart_colors` が手選びランプを優先。research に移植済み |
+| 蛍光マーカー強調（キー語句を地色で塗る） | `==マーカー==` インライン記法（`a:highlight` 注入、色は `--color-marker` か accent の淡色） |
+| タイトル=主張文＋直下に結論1行（NLP系デッキの定型） | SKILL.md のデザイン原則（既存「H1は要約」を確認） |
+
+見送り: graph-paper 等の装飾背景（用途が狭い）、border の全面フレーム（候補として保留）、
+rose-pine 系パレット（要望があれば追加）。
