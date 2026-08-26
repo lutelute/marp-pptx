@@ -1746,7 +1746,11 @@ class PptxBuilder:
             self._add_title(slide, sd.h1)
         region = self._content_region(has_title=bool(sd.h1))
         _, rtop, _, rheight = region
-        EQ_PT = 34
+        # A short identity (E=mc², a definition) at a fixed 34pt floats small
+        # in 12in of canvas — let brevity buy size. The glyph proxy strips
+        # commands/braces so \frac{a}{b} counts its visible glyphs only.
+        glyphs = len(re.sub(r"\\[a-zA-Z]+|[{}^_\s]", "", sd.eq_main or ""))
+        EQ_PT = 44 if glyphs <= 10 else 40 if glyphs <= 18 else 36 if glyphs <= 30 else 34
         # Estimate the equation block + variable legend, center the stack.
         eq_h_est = int(Emu(int(EQ_PT * 2.4 * 12700)))
         var_n = len(sd.eq_vars)
@@ -2081,7 +2085,20 @@ class PptxBuilder:
                                                 width=rwidth)) if sd.top_text else 0
         concl_h = int(Inches(1.0)) if sd.bottom_text else 0
         gaps = (int(BLOCK_GAP) if sd.top_text and n else 0) + (int(BLOCK_GAP) if sd.bottom_text and n else 0)
-        col_h = int(min(Inches(3.2), rheight - lead_h - concl_h - gaps))
+        # Size the column band to what the columns actually need (a fixed
+        # 3.2in band left a hole between short columns and the conclusion);
+        # images reserve the 2.5in slot _add_column_content gives them.
+        needed = 0
+        if n:
+            gap_w = int(CARD_GAP)
+            est_w = (rwidth - gap_w * (n - 1)) // n
+            for col_lines in sd.columns:
+                n_imgs = sum(1 for l in col_lines if l.strip().startswith("!["))
+                h = self._column_height(
+                    [l for l in col_lines if not l.strip().startswith("![")],
+                    SZ_COL, est_w) + n_imgs * int(Inches(2.6))
+                needed = max(needed, h)
+        col_h = int(min(needed, rheight - lead_h - concl_h - gaps)) if n else 0
         block_h = lead_h + (int(BLOCK_GAP) if sd.top_text and n else 0) + \
                   (col_h if n else 0) + (int(BLOCK_GAP) if sd.bottom_text and n else 0) + concl_h
         cur = rtop + max(0, (rheight - block_h) // 2)
@@ -2802,7 +2819,9 @@ class PptxBuilder:
         if n == 0:
             return
         rleft, rtop, rwidth, rheight = self._content_region(has_title=bool(sd.h1))
-        row_h = int(min(Inches(0.92), rheight / max(n, 1)))
+        # Same rhythm as agenda: taller rows let a 3-5 item history own the
+        # canvas instead of pooling in the middle band.
+        row_h = int(min(Inches(1.15), rheight / max(n, 1)))
         block_h = row_h * n
         top = rtop + max(0, (rheight - block_h) // 2)
         year_w = int(Inches(1.5))
@@ -2814,7 +2833,7 @@ class PptxBuilder:
             p = yr.text_frame.paragraphs[0]
             p.text = item.get("year", "")
             p.font.name = self.FONT_HEAD; p.font.size = self._fs(SZ_H3)
-            p.font.bold = True; p.font.color.rgb = self.ACCENT
+            p.font.bold = True; p.font.color.rgb = self.ACCENT_TEXT
             p.alignment = PP_ALIGN.RIGHT
             # vertical connector tick
             self._hairline(slide, ev_x - int(Inches(0.18)), y + int(Inches(0.04)),
