@@ -1,0 +1,33 @@
+name: terracotta
+title: Warm Terracotta — テラコッタ×サンド×セージ
+description: 白地にテラコッタとセージ。温かく落ち着いた講義・教育・コミュニティ向け。
+colors:
+  primary:   '#7C332A'
+  secondary: '#5C7268'
+  accent:    '#B85042'
+  fg:        '#33221e'
+  bg:        '#ffffff'
+  muted:     '#71635b'
+  hairline:  '#e5dcce'
+  light:     '#F3EFE3'
+  border:    '#e5dcce'
+fonts:
+  head: "'Avenir Next', 'Helvetica Neue', 'Hiragino Sans', sans-serif"
+  body: "'Avenir Next', 'Helvetica Neue', 'Hiragino Sans', sans-serif"
+layout:
+  h1_deco: none           # hierarchy from whitespace + kicker + size, not lines
+  title_bg: dark          # sandwich: dark hero opens the deck
+  title_align: center
+  divider_align: center
+  end_bg: dark            # …and closes it
+  box_style: soft-card
+  box_radius: 0.035
+  card_shadow: true       # soft elevation instead of edge stripes
+  spacing: generous
+  vertical_align: center
+  kicker: true
+  kicker_color: accent
+  accent_rule: none
+  table_header_style: rule
+  divider_number: true
+  title_scale: 1.13

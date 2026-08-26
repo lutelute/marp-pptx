@@ -16,13 +16,13 @@ fonts:
   body: "'Poppins', 'Avenir Next', 'Helvetica Neue', 'Hiragino Sans', sans-serif"
 layout:
   h1_deco: none           # no under-title line — whitespace + kicker do the work
-  title_bg: white
+  title_bg: dark          # sandwich: dark ink hero opens the deck
   title_align: center
   divider_align: center
-  end_bg: white
+  end_bg: dark            # …and closes it (dark/light sandwich)
   box_style: soft-card
   box_radius: 0.035
-  card_shadow: false
+  card_shadow: true       # cards float on cream via soft shadow, not just a hairline
   spacing: generous
   vertical_align: center
   kicker: true
@@ -30,3 +30,4 @@ layout:
   accent_rule: none
   table_header_style: rule
   divider_number: true
+  title_scale: 1.13       # short H1s render ~34pt; long ones auto-shrink as before

@@ -1,0 +1,33 @@
+name: cherry
+title: Cherry Bold — チェリーレッド×ネイビー
+description: 白地にチェリーレッドの断言。ブランド発表・キーノート・強い主張向け。セリフ見出し。
+colors:
+  primary:   '#990011'
+  secondary: '#2F3C7E'
+  accent:    '#C31126'
+  fg:        '#26161a'
+  bg:        '#ffffff'
+  muted:     '#7E6A6E'
+  hairline:  '#eddcde'
+  light:     '#FCF6F5'
+  border:    '#eddcde'
+fonts:
+  head: "'Georgia', 'Hiragino Mincho ProN', serif"
+  body: "'Avenir Next', 'Helvetica Neue', 'Hiragino Sans', sans-serif"
+layout:
+  h1_deco: none           # hierarchy from whitespace + kicker + size, not lines
+  title_bg: dark          # sandwich: dark hero opens the deck
+  title_align: center
+  divider_align: center
+  end_bg: dark            # …and closes it
+  box_style: soft-card
+  box_radius: 0.035
+  card_shadow: true       # soft elevation instead of edge stripes
+  spacing: generous
+  vertical_align: center
+  kicker: true
+  kicker_color: accent
+  accent_rule: none
+  table_header_style: fill
+  divider_number: true
+  title_scale: 1.13

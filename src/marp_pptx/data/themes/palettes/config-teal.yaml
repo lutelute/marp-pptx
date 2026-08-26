@@ -1,0 +1,33 @@
+name: teal
+title: Teal Trust — ティール×ミント
+description: 白地に深いティール。信頼感が要る医療・環境・インフラ・公共向け。
+colors:
+  primary:   '#045660'
+  secondary: '#028090'
+  accent:    '#00907F'
+  fg:        '#12333a'
+  bg:        '#ffffff'
+  muted:     '#54706e'
+  hairline:  '#d2e7e3'
+  light:     '#E7F5F2'
+  border:    '#d2e7e3'
+fonts:
+  head: "'Avenir Next', 'Helvetica Neue', 'Hiragino Sans', sans-serif"
+  body: "'Avenir Next', 'Helvetica Neue', 'Hiragino Sans', sans-serif"
+layout:
+  h1_deco: none           # hierarchy from whitespace + kicker + size, not lines
+  title_bg: dark          # sandwich: dark hero opens the deck
+  title_align: center
+  divider_align: center
+  end_bg: dark            # …and closes it
+  box_style: soft-card
+  box_radius: 0.035
+  card_shadow: true       # soft elevation instead of edge stripes
+  spacing: generous
+  vertical_align: center
+  kicker: true
+  kicker_color: accent
+  accent_rule: none
+  table_header_style: rule
+  divider_number: true
+  title_scale: 1.13

@@ -1,0 +1,23 @@
+/*!
+ * Midnight Executive (distilled from the Claude pptx skill palette table):
+ * navy hero slides, white content, royal-blue accent. For board decks,
+ * strategy reviews, anything that must read as "executive".
+ * Colors + fonts consumed by ThemeConfig.apply_palette().
+ * Layout tokens live in config-midnight.yaml alongside this file.
+ */
+:root {
+  --color-bg:        #ffffff;
+  --color-fg:        #1b2237;
+  --color-primary:   #1E2761;
+  --color-secondary: #44508E;
+  --color-accent:    #3D52C4;
+  --color-accent-text: #3D52C4;
+  --color-muted:     #616787;
+  --color-hairline:  #d8e0f0;
+  --color-light:     #EDF2FB;
+  --color-border:    #d8e0f0;
+
+  --font-head: 'Avenir Next', 'Helvetica Neue', 'Hiragino Sans', sans-serif;
+  --font-body: 'Avenir Next', 'Helvetica Neue', 'Hiragino Sans', sans-serif;
+  --font-ea:   'Hiragino Sans', 'Noto Sans JP', sans-serif;
+}

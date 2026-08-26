@@ -121,7 +121,7 @@ marp-pptx doctor deck.md --strict   # warn 以上で exit 1（CI 向け）
 
 ## デザイン
 
-- **テーマ**: `claude`（デフォルト, Anthropic cream `#faf9f5` + clay `#d97757`）/ `minimal`（白基調）/ `tmu-cs`（TMU グリーン学術, [marp-theme-tmu-cs](https://github.com/taishi-n/marp-theme-tmu-cs) 移植）/ `research`（PowerPoint マスタ灰・研究審査, [marp-theme-dev](https://github.com/katsuzakitomohiro/marp-theme-dev) 移植）/ `academic` 系 10 パレット
+- **テーマ**: `claude`（デフォルト, Anthropic cream `#faf9f5` + clay `#d97757`, ダーク sandwich＋カードシャドウ）/ `midnight`・`terracotta`・`teal`・`cherry`（題材別の蒸留テーマ, いずれも sandwich 構成）/ `minimal`（白基調）/ `beamer`（LaTeX Madrid）/ `tmu-cs`（TMU グリーン学術, [marp-theme-tmu-cs](https://github.com/taishi-n/marp-theme-tmu-cs) 移植）/ `research`（PowerPoint マスタ灰・研究審査, [marp-theme-dev](https://github.com/katsuzakitomohiro/marp-theme-dev) 移植）/ `academic` 系 10 パレット
 - **配色 (claude)**: ink `#141413` / accent `#d97757` / hairline `#e8e6dc` / cards `#ffffff` on cream
 - **数式**: OMML（PowerPoint で編集可能, デフォルト）/ matplotlib PNG（`--math png`）
 - **編集可能性**: すべて実テキストボックス + 実テーブル + OMML。一枚絵の画像化はしない

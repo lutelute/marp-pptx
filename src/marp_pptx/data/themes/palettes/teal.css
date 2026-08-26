@@ -1,0 +1,23 @@
+/*!
+ * Teal Trust (distilled from the Claude pptx skill palette table):
+ * deep-teal hero, mint-teal accent on white. Healthcare, environment,
+ * infrastructure, public sector — topics that must read as trustworthy.
+ * Colors + fonts consumed by ThemeConfig.apply_palette().
+ * Layout tokens live in config-teal.yaml alongside this file.
+ */
+:root {
+  --color-bg:        #ffffff;
+  --color-fg:        #12333a;
+  --color-primary:   #045660;
+  --color-secondary: #028090;
+  --color-accent:    #00907F;
+  --color-accent-text: #00786B;
+  --color-muted:     #54706e;
+  --color-hairline:  #d2e7e3;
+  --color-light:     #E7F5F2;
+  --color-border:    #d2e7e3;
+
+  --font-head: 'Avenir Next', 'Helvetica Neue', 'Hiragino Sans', sans-serif;
+  --font-body: 'Avenir Next', 'Helvetica Neue', 'Hiragino Sans', sans-serif;
+  --font-ea:   'Hiragino Sans', 'Noto Sans JP', sans-serif;
+}

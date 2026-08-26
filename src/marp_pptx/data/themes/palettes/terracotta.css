@@ -1,0 +1,23 @@
+/*!
+ * Warm Terracotta (distilled from the Claude pptx skill palette table):
+ * terracotta + sand + sage on white. Warm without being casual — lectures,
+ * education, community, humanities.
+ * Colors + fonts consumed by ThemeConfig.apply_palette().
+ * Layout tokens live in config-terracotta.yaml alongside this file.
+ */
+:root {
+  --color-bg:        #ffffff;
+  --color-fg:        #33221e;
+  --color-primary:   #7C332A;
+  --color-secondary: #5C7268;
+  --color-accent:    #B85042;
+  --color-accent-text: #A03A2E;
+  --color-muted:     #71635b;
+  --color-hairline:  #e5dcce;
+  --color-light:     #F3EFE3;
+  --color-border:    #e5dcce;
+
+  --font-head: 'Avenir Next', 'Helvetica Neue', 'Hiragino Sans', sans-serif;
+  --font-body: 'Avenir Next', 'Helvetica Neue', 'Hiragino Sans', sans-serif;
+  --font-ea:   'Hiragino Sans', 'Noto Sans JP', sans-serif;
+}

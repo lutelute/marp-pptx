@@ -154,6 +154,10 @@ def list_themes():
     click.echo(f"  {'tmu-cs':<14} TMU グリーン白地・学術 (緑見出し+細下線) accent #006543")
     click.echo(f"  {'research':<14} PowerPoint マスタ灰・研究審査 (高密度・上詰め) accent #dd5400")
     click.echo(f"  {'beamer':<14} LaTeX beamer 紺・定理ブロック+フッターバー    accent #b8860b")
+    click.echo(f"  {'midnight':<14} 紺ヒーロー×ロイヤルブルー・経営/戦略       accent #3d52c4")
+    click.echo(f"  {'terracotta':<14} テラコッタ×セージ・講義/教育の温かさ      accent #b85042")
+    click.echo(f"  {'teal':<14} 深ティール×ミント・医療/公共の信頼感       accent #00907f")
+    click.echo(f"  {'cherry':<14} チェリー×ネイビー・キーノート/強い主張      accent #c31126")
 
     palettes_dir = Path(__file__).parent / "data" / "themes" / "palettes"
     pj = palettes_dir / "palettes.json"
@@ -259,10 +263,11 @@ def render_gallery(output_dir: str | None, palette: str | None, width: int, dpi:
     # Thumbnails are raster previews via LibreOffice, which ignores OMML sizing —
     # bake math as PNG so equations look right.
     tc.math_mode = "png"
-    if palette:
-        pp = get_palette_path(palette)
-        if pp:
-            tc.apply_palette(pp)
+    # No -p means the shipped default (claude), same as `convert` — the old
+    # bare-academic fallback made the gallery show a theme the CLI never ships.
+    pp = get_palette_path(palette or "claude")
+    if pp:
+        tc.apply_palette(pp)
 
     templates_dir = Path(__file__).parent / "data" / "templates"
     with tempfile.TemporaryDirectory() as tmp:

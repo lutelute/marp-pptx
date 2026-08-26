@@ -598,8 +598,13 @@ Questions?
 
 | 名前 | 雰囲気 | accent |
 |---|---|---|
-| `claude` | デフォルト。Anthropic の温かいクリーム地（`#faf9f5`）＋クレイ | `#d97757` |
+| `claude` | デフォルト。Anthropic の温かいクリーム地（`#faf9f5`）＋クレイ。ダーク表紙・結び（sandwich）＋カードのソフトシャドウ | `#d97757` |
 | `minimal` | 洗練ミニマルな白基調・中央バランス | `#c2410c` |
+| `midnight` | 紺ヒーロー×ロイヤルブルー。経営・戦略・エグゼクティブ報告向け（sandwich＋シャドウ） | `#3d52c4` |
+| `terracotta` | テラコッタ×サンド×セージ。講義・教育・コミュニティの温かさ（sandwich＋シャドウ） | `#b85042` |
+| `teal` | 深ティール×ミント。医療・環境・公共の信頼感（sandwich＋シャドウ） | `#00907f` |
+| `cherry` | チェリーレッド×ネイビー・セリフ見出し。キーノート・強い主張（sandwich＋シャドウ） | `#c31126` |
+| `beamer` | LaTeX beamer(Madrid) 紺。frametitle 帯・定理ブロック・3セルフッターバー | `#b8860b` |
 | `tmu-cs` | 白地＋TMU グリーンの学術テーマ。緑見出し＋細下線・左揃えタイトル。[marp-theme-tmu-cs](https://github.com/taishi-n/marp-theme-tmu-cs) (MIT) 移植 | `#006543` |
 | `research` | PowerPoint マスタ灰の研究審査テーマ。本文＝罫線＝`#404040`・高密度・上詰め。[marp-theme-dev](https://github.com/katsuzakitomohiro/marp-theme-dev) (MIT) 移植。プリセット「研究審査（高密度）」と相性◎ | `#dd5400` |
 

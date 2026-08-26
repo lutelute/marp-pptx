@@ -114,6 +114,18 @@ class PptxBuilder:
             int(rgb[2] + (255 - rgb[2]) * t),
         )
 
+    def _hero_accent(self, min_ratio: float = 2.5) -> RGBColor:
+        """Accent for rules/labels on a PRIMARY-dark hero slide.
+
+        The theme accent when it actually reads against PRIMARY (measured
+        WCAG ratio, not guessed), white otherwise. min_ratio: 2.5 for
+        graphics (rules), 4.5 for small text (kickers).
+        """
+        from marp_pptx.audit import contrast_ratio
+        if contrast_ratio(tuple(self.ACCENT), tuple(self.PRIMARY)) >= min_ratio:
+            return self.ACCENT
+        return self.WHITE
+
     @property
     def HAIRLINE(self):
         return getattr(self.theme, "hairline", None) or self._tint(self.MUTED, 0.62)
@@ -129,6 +141,28 @@ class PptxBuilder:
             shape.shadow.inherit = False
         except Exception:
             pass
+        return shape
+
+    def _soft_shadow(self, shape):
+        """Subtle downward drop shadow — 15% black, wide blur, short offset.
+
+        Cards on a near-white bg with only a hairline border read as flat
+        outlines; a soft shadow is the elevation cue that doesn't add a line.
+        Opt-in per theme via ThemeLayout.card_shadow.
+        """
+        sp_pr = shape.fill._xPr  # <p:spPr> — python-pptx has no shadow API
+        for old in sp_pr.findall(qn("a:effectLst")):
+            sp_pr.remove(old)
+        effect = etree.SubElement(sp_pr, qn("a:effectLst"))
+        shdw = etree.SubElement(effect, qn("a:outerShdw"))
+        shdw.set("blurRad", "90000")     # ~7pt blur
+        shdw.set("dist", "19050")        # 1.5pt down
+        shdw.set("dir", "5400000")       # 90° (downward)
+        shdw.set("rotWithShape", "0")
+        clr = etree.SubElement(shdw, qn("a:srgbClr"))
+        clr.set("val", "141413")
+        alpha = etree.SubElement(clr, qn("a:alpha"))
+        alpha.set("val", "15000")
         return shape
 
     def _content_region(self, has_title: bool = True, *, full: bool = False):
@@ -325,7 +359,10 @@ class PptxBuilder:
         bg.fill.fore_color.rgb = fill
         bg.line.color.rgb = self.HAIRLINE
         bg.line.width = HAIRLINE_W
-        self._no_shadow(bg)
+        if self.LAYOUT.card_shadow:
+            self._soft_shadow(bg)
+        else:
+            self._no_shadow(bg)
 
         if accent_bar:
             bar = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, left, top, width, acc_h)
@@ -686,7 +723,13 @@ class PptxBuilder:
         little to keep it on one line → let it take two lines and grow the band
         around it → shrink until two lines fit.
         """
-        base = self._fs(SZ_TITLE).pt
+        # title_scale adds emphasis, but never past the band's two-line
+        # envelope (~1.32 × SZ_TITLE): beyond that a wrapped title pushes the
+        # band into the body no matter how the whitespace is redistributed.
+        # With font_scale 1.3 the clamp lands where the pre-title_scale
+        # design already sat, so large-scale decks keep their old geometry.
+        base = min(self._fs(SZ_TITLE).pt * getattr(self.LAYOUT, "title_scale", 1.0),
+                   SZ_TITLE.pt * 1.32)
         if not text:
             return base, int(TITLE_H), int(top)
         width_pt = text_w / 12700.0
@@ -697,8 +740,20 @@ class PptxBuilder:
             return metrics.line_count(plain, self.FONT_HEAD, size, width_pt,
                                       ea_font=self.FONT_EA, bold=True)
 
+        def one_line(size: float):
+            # Even a single line can outgrow the band once font_scale and
+            # title_scale stack (30 × 1.3 × 1.13 = 44pt needs 58pt); grow the
+            # band out of the whitespace above instead of letting audit see a
+            # clipped title.
+            needed = Pt(size * pitch)
+            if needed <= TITLE_H:
+                return size, int(TITLE_H), int(top)
+            grow = int(needed) - int(TITLE_H)
+            new_top = max(int(Inches(0.08)), int(top) - grow // 2)
+            return size, int(needed), new_top
+
         if lines_at(base) <= 1:
-            return base, int(TITLE_H), int(top)
+            return one_line(base)
 
         # A modest shrink often pulls a title back onto one line; anything
         # deeper reads as a different design, so stop and go two-line instead.
@@ -706,7 +761,7 @@ class PptxBuilder:
         while size > base * 0.82:
             size -= 0.5
             if lines_at(size) <= 1:
-                return size, int(TITLE_H), int(top)
+                return one_line(size)
 
         size = base
         while size > base * 0.60 and lines_at(size) > 2:
@@ -1393,9 +1448,9 @@ class PptxBuilder:
         is_dark = self.LAYOUT.title_bg in ("gradient", "dark")
         is_box = self.LAYOUT.title_bg == "box"   # Madrid: navy hero box on white
         h_color = self.WHITE if (is_dark or is_box) else self.PRIMARY
-        sub_color = RGBColor(0xD8, 0xD8, 0xDE) if is_dark else self.MUTED
-        accent = self.WHITE if is_dark else self.ACCENT           # for the rule (graphic)
-        kicker_color = self.WHITE if is_dark else self.ACCENT_TEXT  # for small text
+        sub_color = self._tint(self.PRIMARY, 0.85) if is_dark else self.MUTED
+        accent = self._hero_accent(2.5) if is_dark else self.ACCENT       # rule (graphic)
+        kicker_color = self._hero_accent(4.5) if is_dark else self.ACCENT_TEXT  # small text
         cx = int(SW // 2)
         is_left = self.LAYOUT.title_align == "left"
         align = PP_ALIGN.LEFT if is_left else PP_ALIGN.CENTER
@@ -1419,14 +1474,15 @@ class PptxBuilder:
         # Two lines at the size and spacing the title is actually written
         # with — reserving at 1.0 while rendering at LINE_TITLE clipped the
         # second line of any hero title that wrapped.
-        title_h = int(self._fs(Pt(SZ_DISPLAY.pt * metrics.DEFAULT_LINE_FACTOR
+        hero_pt = SZ_DISPLAY.pt * getattr(self.LAYOUT, "title_scale", 1.0)
+        title_h = int(self._fs(Pt(hero_pt * metrics.DEFAULT_LINE_FACTOR
                                   * LINE_TITLE * 2)))
         if is_box:
             # Madrid title page: rounded structure-colored box, white title.
             # Sized for two lines regardless — line-count estimates miss by a
             # hair on borderline CJK titles, and a roomy box centers fine.
             scale = getattr(self.theme, "font_scale", 1.0)
-            box_h = int(Pt(SZ_DISPLAY.pt * metrics.DEFAULT_LINE_FACTOR
+            box_h = int(Pt(hero_pt * metrics.DEFAULT_LINE_FACTOR
                            * LINE_TITLE * 2 * scale) + Inches(0.34))
             box_y = int(Inches(3.30) + (title_h - box_h) // 2)
             bx = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE,
@@ -1444,7 +1500,7 @@ class PptxBuilder:
                                    int(SW - (tx or int(Inches(0.8))) * 2), title_h)
             tf = tb.text_frame; tf.word_wrap = True; tf.vertical_anchor = MSO_ANCHOR.TOP
         p = tf.paragraphs[0]; p.text = sd.h1
-        p.font.name = self.FONT_HEAD; p.font.size = self._fs(SZ_DISPLAY)
+        p.font.name = self.FONT_HEAD; p.font.size = self._fs(Pt(hero_pt))
         p.font.bold = True; p.font.color.rgb = h_color; p.alignment = align
         p.line_spacing = LINE_TITLE
         # (4) subtitle — rich text so $math$ (e.g. author superscripts) renders
@@ -2063,7 +2119,7 @@ class PptxBuilder:
             p = yr.text_frame.paragraphs[0]
             p.text = item.get("year", "")
             p.font.name = self.FONT_HEAD; p.font.size = self._fs(SZ_H3)
-            p.font.bold = True; p.font.color.rgb = self.ACCENT if hl else self.PRIMARY
+            p.font.bold = True; p.font.color.rgb = self.ACCENT_TEXT if hl else self.PRIMARY
             p.alignment = PP_ALIGN.CENTER
             txt = self._add_textbox(slide, tb_left + int(Pt(6)), line_y + int(Inches(0.3)),
                                     int(item_w) - int(Pt(12)), int(Inches(0.55)))
@@ -2111,7 +2167,7 @@ class PptxBuilder:
             p = yr.text_frame.paragraphs[0]
             p.text = item.get("year", "")
             p.font.name = self.FONT_HEAD; p.font.size = self._fs(SZ_H3)
-            p.font.bold = True; p.font.color.rgb = self.ACCENT if hl else self.PRIMARY
+            p.font.bold = True; p.font.color.rgb = self.ACCENT_TEXT if hl else self.PRIMARY
             tx = content_left + year_w + int(Inches(0.25))
             tw = rleft + rwidth - tx
             txt = self._add_textbox(slide, tx, ry, tw, int(Inches(0.4)))
@@ -2132,18 +2188,19 @@ class PptxBuilder:
             self._set_bg(slide, self.LIGHT)
         is_dark = self.LAYOUT.end_bg == "dark"
         h_color = self.WHITE if is_dark else self.PRIMARY
-        sub_color = RGBColor(0xD8, 0xD8, 0xDE) if is_dark else self.MUTED
-        accent = self.WHITE if is_dark else self.ACCENT
+        sub_color = self._tint(self.PRIMARY, 0.85) if is_dark else self.MUTED
+        accent = self._hero_accent(2.5) if is_dark else self.ACCENT
         cx = int(SW // 2)
         # accent hairline above the thank-you line
         self._hairline(slide, int(cx - Inches(0.55)), int(Inches(2.95)),
                        Inches(1.1), thickness=Pt(1.6), color=accent)
         # thank-you
+        hero_pt = SZ_DISPLAY.pt * getattr(self.LAYOUT, "title_scale", 1.0)
         tb = self._add_textbox(slide, int(Inches(1)), int(Inches(3.15)),
-                               int(SW - Inches(2)), int(self._fs(Pt(44 * 1.3))))
+                               int(SW - Inches(2)), int(self._fs(Pt(hero_pt * 1.3))))
         tf = tb.text_frame; tf.word_wrap = True
         p = tf.paragraphs[0]; p.text = sd.h1 or "Thank You"
-        p.font.name = self.FONT_HEAD; p.font.size = self._fs(SZ_DISPLAY)
+        p.font.name = self.FONT_HEAD; p.font.size = self._fs(Pt(hero_pt))
         p.font.bold = True; p.font.color.rgb = h_color; p.alignment = PP_ALIGN.CENTER
         # sub lines
         remaining = [strip_html(s.strip()) for s in sd.raw.split("\n")
@@ -3385,6 +3442,29 @@ class PptxBuilder:
         RGBColor(0xCC, 0x79, 0xA7), RGBColor(0x00, 0x00, 0x00),
     ]
 
+    def _chart_colors(self, n: int) -> list[RGBColor]:
+        """Series colors drawn from the theme, accent first (dominance).
+
+        A foreign categorical set (Okabe-Ito) reads as a different design
+        pasted into the deck; up to four series the theme itself can supply
+        distinguishable colors. The luminance-ratio gate is measured, not
+        assumed — themes whose ramp collapses (accent ≈ secondary) fall back
+        to Okabe-Ito, which also stays the palette beyond four series.
+        """
+        if n <= 1:
+            return [self.ACCENT]
+        from marp_pptx.audit import contrast_ratio
+        ramp = [self.ACCENT, self.PRIMARY,
+                self._tint(self.ACCENT, 0.55), self.SECONDARY]
+        if n <= len(ramp):
+            cols = ramp[:n]
+            distinct = all(
+                contrast_ratio(tuple(a), tuple(b)) >= 1.3
+                for i, a in enumerate(cols) for b in cols[i + 1:])
+            if distinct:
+                return cols
+        return [self.OKABE_ITO[i % len(self.OKABE_ITO)] for i in range(n)]
+
     def build_statement(self, sd: SlideData):
         slide = self._blank_slide()
         if sd.dark:
@@ -3492,8 +3572,9 @@ class PptxBuilder:
             chart.legend.position = XL_LEGEND_POSITION.BOTTOM
             chart.legend.include_in_layout = False
             chart.legend.font.size = self._fs(SZ_SMALL)
+        series_cols = self._chart_colors(n_series)
         for i, plot_series in enumerate(chart.series):
-            col = self.ACCENT if n_series == 1 else self.OKABE_ITO[i % len(self.OKABE_ITO)]
+            col = series_cols[i]
             try:
                 fmt = plot_series.format
                 fmt.fill.solid(); fmt.fill.fore_color.rgb = col

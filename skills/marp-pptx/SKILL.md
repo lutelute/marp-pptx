@@ -51,7 +51,7 @@ MCP 接続時は **`check_deck(markdown=...)`** が同じ検査を返す。
 
 | 場所 | 1 行に入る量（日本語 / 英字） | 備考 |
 |---|---|---|
-| H1（スライド見出し, 30pt） | **29 字 / 60 字** | 見出し帯は 1 行分。超えると自動縮小→2 行化 |
+| H1（スライド見出し, 34pt） | **25 字 / 52 字** | 見出し帯は 1 行分。超えると自動縮小（〜30pt で 29 字）→2 行化 |
 | 本文・箇条書き（18pt, 全幅） | 48 字 / 101 字 | 本文領域は最大 16 行 |
 | 2 カラム内（16pt） | 26 字 / 55 字 | `cols-2` / `sandwich` の各カラム |
 | カード本文（15pt, 3 列） | 15 字 / 33 字 | `zone-*` / `card-grid`。**ここが一番狭い** |
@@ -191,11 +191,39 @@ $$P(A|B) = \frac{P(B|A)P(A)}{P(B)}$$
 | 4096 | 4.2 | 1.1 |
 ```
 
+## デザイン原則（必読 — 型選択と同じ重み）
+
+スライドの質は「型の選び方」と「パレットの選び方」でほぼ決まる。
+
+**パレットは題材で選ぶ。** 別の題材に流用しても成立する配色は、選び方が浅い。
+
+| 題材・トーン | `-p` |
+|---|---|
+| 既定・研究/技術全般（cream + clay） | `claude`（無指定） |
+| 経営・戦略・エグゼクティブ報告 | `midnight` |
+| 医療・環境・インフラ・公共（信頼感） | `teal` |
+| 講義・教育・コミュニティ（温かさ） | `terracotta` |
+| キーノート・ブランド発表・強い主張 | `cherry` |
+| 学会発表・審査（高密度・保守的） | `beamer` / `research` / `tmu-cs` |
+| 白基調ミニマル | `minimal`（他 `navy`/`forest`/`wine` 等 academic 系） |
+
+claude / midnight / teal / terracotta / cherry は **sandwich 構造**（ダーク表紙→明るい本文→
+ダーク結び）とカードのソフトシャドウが自動で入る。暗い1枚を挟みたければ
+`statement` + `<!-- bg: dark -->`。
+
+**1スライド1メッセージ + 視覚アンカー1つ。**
+- 素の箇条書きだけのスライドを連続させない。比較なら `cols-2`/`before-after`、
+  数値なら `kpi`/`big-number`/`chart`、構造なら `zone-flow`/`diagram` に置き換える
+- 同じ型を3枚以上連続させない（doctor が `deck` 警告で検出する）
+- 誇りたい数字は本文に埋めず `big-number`（1つ）か `kpi`（2〜4つ）に昇格させる
+- H1 は「ラベル」でなく**要約**にする（「実験結果」でなく「精度を落とさず 47 倍速い」）。
+  短い H1 は大きく描画され、長いと自動縮小で迫力が死ぬ — 結論を短く言い切る
+
 ## 変換コマンド
 
 ```bash
 marp-pptx convert deck.md -o deck.pptx        # 既定 claude テーマ（cream + clay）
-marp-pptx convert deck.md -p minimal          # 白基調 / -p navy 等のパレット
+marp-pptx convert deck.md -p midnight         # 題材で選ぶ（上の表）
 marp-pptx convert deck.md --math png          # LibreOffice・Keynote で開くなら数式を画像化
 marp-pptx convert deck.md --density keynote   # 投影向けに大きめ
 ```

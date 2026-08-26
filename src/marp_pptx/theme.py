@@ -60,6 +60,7 @@ class ThemeLayout:
     table_header_style: str = "fill"   # fill / rule
     divider_number: bool = True        # giant ghost section number on dividers
     footer_bar: bool = False           # beamer-style bar: deck title | section | page
+    title_scale: float = 1.0           # H1 emphasis multiplier (auto-shrink still applies)
 
 
 @dataclass

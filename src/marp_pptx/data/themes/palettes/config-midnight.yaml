@@ -1,0 +1,33 @@
+name: midnight
+title: Midnight Executive — 紺×アイスブルー
+description: 深い紺のヒーロー、白地本文にロイヤルブルーのアクセント。経営・エグゼクティブ向け。
+colors:
+  primary:   '#1E2761'
+  secondary: '#44508E'
+  accent:    '#3D52C4'
+  fg:        '#1b2237'
+  bg:        '#ffffff'
+  muted:     '#616787'
+  hairline:  '#d8e0f0'
+  light:     '#EDF2FB'
+  border:    '#d8e0f0'
+fonts:
+  head: "'Avenir Next', 'Helvetica Neue', 'Hiragino Sans', sans-serif"
+  body: "'Avenir Next', 'Helvetica Neue', 'Hiragino Sans', sans-serif"
+layout:
+  h1_deco: none           # hierarchy from whitespace + kicker + size, not lines
+  title_bg: dark          # sandwich: dark hero opens the deck
+  title_align: center
+  divider_align: center
+  end_bg: dark            # …and closes it
+  box_style: soft-card
+  box_radius: 0.035
+  card_shadow: true       # soft elevation instead of edge stripes
+  spacing: generous
+  vertical_align: center
+  kicker: true
+  kicker_color: accent
+  accent_rule: none
+  table_header_style: fill
+  divider_number: true
+  title_scale: 1.13

@@ -1,0 +1,23 @@
+/*!
+ * Cherry Bold (distilled from the Claude pptx skill palette table):
+ * cherry red + navy on white, serif headers. Brand launches, keynotes,
+ * decks built around one strong claim.
+ * Colors + fonts consumed by ThemeConfig.apply_palette().
+ * Layout tokens live in config-cherry.yaml alongside this file.
+ */
+:root {
+  --color-bg:        #ffffff;
+  --color-fg:        #26161a;
+  --color-primary:   #990011;
+  --color-secondary: #2F3C7E;
+  --color-accent:    #C31126;
+  --color-accent-text: #990011;
+  --color-muted:     #7E6A6E;
+  --color-hairline:  #eddcde;
+  --color-light:     #FCF6F5;
+  --color-border:    #eddcde;
+
+  --font-head: 'Georgia', 'Hiragino Mincho ProN', serif;
+  --font-body: 'Avenir Next', 'Helvetica Neue', 'Hiragino Sans', sans-serif;
+  --font-ea:   'Hiragino Sans', 'Noto Sans JP', sans-serif;
+}
