@@ -964,6 +964,14 @@ def parse_slide(index: int, raw: str) -> SlideData:
         if pts:
             for li in re.finditer(r"<li>(.*?)</li>", pts, re.DOTALL):
                 sd.takeaway_points.append(strip_html(li.group(1)))
+        # Fallback: H2 as the message, markdown bullets as points. Without
+        # this, a takeaway written without the div skeleton (the natural way
+        # to author it) rendered a silently empty body.
+        if not sd.takeaway_main and sd.h2:
+            sd.takeaway_main = sd.h2
+        if not sd.takeaway_points:
+            for m in re.finditer(r"^\s*[-*]\s+(.+)$", content, re.MULTILINE):
+                sd.takeaway_points.append(strip_html(m.group(1)))
 
     elif cls == "profile":
         container = extract_div(content, "pf-container")

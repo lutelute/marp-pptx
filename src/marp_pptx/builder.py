@@ -114,6 +114,23 @@ class PptxBuilder:
             int(rgb[2] + (255 - rgb[2]) * t),
         )
 
+    def _text_safe(self, color: RGBColor, bg: RGBColor | None = None,
+                   min_ratio: float = 4.5) -> RGBColor:
+        """Darken `color` toward black until it reads on `bg` (measured).
+
+        For small text drawn in a decorative color (annotation-card labels,
+        user-supplied hexes) — the hue survives, the contrast is guaranteed.
+        """
+        from marp_pptx.audit import contrast_ratio
+        if bg is None:
+            bg = self.SURFACE
+        c = color
+        for _ in range(14):
+            if contrast_ratio(tuple(c), tuple(bg)) >= min_ratio:
+                return c
+            c = RGBColor(int(c[0] * 0.82), int(c[1] * 0.82), int(c[2] * 0.82))
+        return c
+
     def _hero_accent(self, min_ratio: float = 2.5) -> RGBColor:
         """Accent for rules/labels on a PRIMARY-dark hero slide.
 
@@ -462,8 +479,14 @@ class PptxBuilder:
     def ACCENT(self): return self.theme.accent
     @property
     def ACCENT_TEXT(self):
-        # Darker accent for small text (AA contrast); falls back to ACCENT.
-        return getattr(self.theme, "accent_text", None) or self.theme.accent
+        # Darker accent for small text. A palette may hand-pick it; without
+        # one, darken the accent until it measures 4.5:1 on the slide bg —
+        # a bare palette used to inherit whatever ratio the accent happened
+        # to have (default theme: 3.8:1).
+        picked = getattr(self.theme, "accent_text", None)
+        if picked is not None:
+            return picked
+        return self._text_safe(self.theme.accent, self.theme.bg)
     @property
     def FG(self): return self.theme.fg
     @property
@@ -1929,7 +1952,8 @@ class PptxBuilder:
             tf = tb.text_frame
             p = tf.paragraphs[0]
             if s["label"]:
-                self._kicker_para(p, s["label"], size=Pt(10), color=acc, tracking=120)
+                self._kicker_para(p, s["label"], size=Pt(10),
+                                  color=self._text_safe(acc), tracking=120)
                 p2 = tf.add_paragraph()
             else:
                 p2 = p
@@ -3480,7 +3504,9 @@ class PptxBuilder:
                                rwidth - int(Pt(40)), code_h - bar_h - pad_top - pad_bot)
         tf = tb.text_frame
         tf.word_wrap = False   # line index must map 1:1 to band position
-        dim = RGBColor(0x6C, 0x70, 0x86)
+        # Dimmed-but-legible: 4.9:1 on the panel (was 3.4:1 — doctor's
+        # contrast check is the deck's own bar, de-emphasis included).
+        dim = RGBColor(0x88, 0x8C, 0xA0)
         normal = RGBColor(0xCD, 0xD6, 0xF4)
         for i, ln in enumerate(code_lines):
             p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()

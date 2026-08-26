@@ -729,3 +729,30 @@ def test_title_align_left_is_honored():
     b2.build_title(parse_slide(0, md))
     t2 = _find_shape_with_text(b2.prs.slides[0], "左揃えタイトル")
     assert t2.text_frame.paragraphs[0].alignment == PP_ALIGN.CENTER
+
+
+# --- feature-gallery must keep reproducing (math-annotate v2 + steps) -------
+
+def test_feature_gallery_reproduces_with_math(tmp_path):
+    """demo/feature-gallery.md is the living demo of the tmu-cs feature port:
+    %[!math-annotate] equations (PNG segments + note cards + connectors) and
+    #[!step] slide expansion. It must keep building with the math intact and
+    stay clean under audit — including the annotation-label / dimmed-code
+    contrast that used to sit below AA."""
+    from marp_pptx.parser import parse_marp
+    from marp_pptx.audit import audit_pptx
+
+    root = Path(__file__).resolve().parents[1]
+    md = root / "demo" / "feature-gallery.md"
+    slides = parse_marp(md)          # step expansion happens inside
+    tc = ThemeConfig()
+    tc.math_mode = "png"
+    b = PptxBuilder(base_path=md.parent, theme=tc)
+    b.build_all(slides)
+    assert len(b.prs.slides) == 9          # 7 sources -> the step slide x3
+    out = tmp_path / "feature-gallery.pptx"
+    b.save(str(out))
+    findings = audit_pptx(out)
+    assert not [f for f in findings if f.severity == "error"], findings
+    assert not [f for f in findings if f.kind == "contrast"], (
+        "annotation labels / dimmed code must stay AA-readable")
