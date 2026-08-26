@@ -873,6 +873,9 @@ class PptxBuilder:
         return _Pt(fitted)
 
     def _add_body_text(self, slide, lines, left=None, top=None, width=None, height=None, size=None):
+        # Safety net: \x00 box sentinels (parser.column_lines) are consumed by
+        # _add_column_content; any that reach a plain text path must not print.
+        lines = [l for l in lines if not l.strip().startswith("\x00")]
         if size is None:
             size = SZ_BODY
         if left is None: left = MARGIN_L
@@ -1035,10 +1038,68 @@ class PptxBuilder:
     def _set_text_with_inline_math(self, para, text, size, color):
         return self._set_rich_text(para, text, size=size, color=color)
 
+    def _image_or_placeholder(self, img_path: str) -> str | None:
+        """Resolved image path, or a generated placeholder PNG when missing.
+
+        A missing figure used to leave the slide near-empty (warn + skip).
+        Every image slot now stays visible — a themed frame with an image
+        glyph and the missing filename — so a draft deck still reads as a
+        deck and the author can see exactly which asset to fix.
+        Returns None only when no image was asked for at all.
+        """
+        if not img_path:
+            return None
+        resolved = self._resolve_image(img_path)
+        if resolved:
+            return resolved
+        try:
+            return self._placeholder_png(Path(img_path).name)
+        except Exception:
+            return None   # placeholder is best-effort; the warn already fired
+
+    def _placeholder_png(self, label: str) -> str:
+        """Render (and cache) a 16:10 placeholder PNG in theme colors."""
+        cache = getattr(self, "_ph_cache", None)
+        if cache is None:
+            import tempfile as _tf
+            self._ph_dir = _tf.TemporaryDirectory(prefix="marp_ph_")
+            cache = self._ph_cache = {}
+        if label in cache:
+            return cache[label]
+        from PIL import Image as PImage, ImageDraw, ImageFont
+        W, H = 1440, 900
+        light, muted, hair, accent = (tuple(self.LIGHT), tuple(self.MUTED),
+                                      tuple(self.HAIRLINE), tuple(self.ACCENT))
+        im = PImage.new("RGB", (W, H), light)
+        d = ImageDraw.Draw(im)
+        d.rectangle([1, 1, W - 2, H - 2], outline=hair, width=3)
+        # image glyph: frame + sun + mountains
+        gx, gy, gw, gh = (W - 340) // 2, 190, 340, 240
+        d.rounded_rectangle([gx, gy, gx + gw, gy + gh], radius=18,
+                            outline=muted, width=6)
+        d.ellipse([gx + 58, gy + 48, gx + 106, gy + 96], fill=accent)
+        d.polygon([(gx + 24, gy + gh - 24), (gx + 132, gy + 82),
+                   (gx + 208, gy + gh - 24)], fill=muted)
+        d.polygon([(gx + 150, gy + gh - 24), (gx + 238, gy + 118),
+                   (gx + gw - 24, gy + gh - 24)], fill=muted)
+        try:
+            fp = metrics.font_file(self.FONT_EA) or metrics.font_file(self.FONT)
+            f_big = ImageFont.truetype(fp, 46)
+            f_small = ImageFont.truetype(fp, 32)
+        except Exception:
+            f_big = f_small = ImageFont.load_default()
+        d.text((W // 2, gy + gh + 96), label, fill=muted, font=f_big, anchor="mm")
+        d.text((W // 2, gy + gh + 162), "image not found", fill=muted,
+               font=f_small, anchor="mm")
+        out = str(Path(self._ph_dir.name) / f"ph_{len(cache)}.png")
+        im.save(out)
+        cache[label] = out
+        return out
+
     def _resolve_image(self, img_path: str) -> str | None:
         p = self.base_path / img_path
         if not p.exists():
-            self._warn(f"image not found, skipping: {img_path}")
+            self._warn(f"image not found, placeholder drawn: {img_path}")
             return None
         if p.suffix.lower() == ".svg":
             png_path = p.with_suffix(".png")
@@ -1159,12 +1220,15 @@ class PptxBuilder:
     def _add_zone_box(self, slide, left, top, width, height,
                       label="", body="", fill_color=None, fill=None,
                       label_size=None, body_size=None,
-                      accent_bar=False, accent=None, anchor="top"):
+                      accent_bar=False, accent=None, anchor="middle"):
         """Backward-compatible wrapper over the refined-minimal card.
 
         Every zone-based builder (zone-flow/compare/matrix/process, steps,
         stack, card-grid, split-text, before-after, multi-result) routes
         through here, so they all gain the visible surface + hairline at once.
+        anchor defaults to "middle": a short label+body pinned to the top of a
+        tall card leaves the bottom two-thirds empty, which is the single most
+        common "looks unfinished" complaint in real decks.
         """
         return self._add_card(
             slide, (left, top, width, height),
@@ -1382,7 +1446,7 @@ class PptxBuilder:
                 text_lines.append(line)
         cur_top = top
         for img_path in images:
-            img_file = self._resolve_image(img_path)
+            img_file = self._image_or_placeholder(img_path)
             if img_file:
                 from PIL import Image
                 with Image.open(img_file) as im:
@@ -1395,21 +1459,80 @@ class PptxBuilder:
                 img_left = left + (width - pw) // 2
                 slide.shapes.add_picture(img_file, img_left, cur_top, pw, ph)
                 cur_top += ph + Inches(0.1)
-        remaining_h = top + height - cur_top
-        if text_lines and remaining_h > 0:
-            # Hug content height (capped at remaining), don't force full column.
-            # Measure at the column's own width — without it this re-estimate
-            # threw away the wrap-aware height the caller had just computed and
-            # gave every wrapped bullet a single line.
-            estimated = self._estimate_text_height(text_lines, size, width=width)
-            use_h = min(int(remaining_h), int(estimated))
-            tb = self._add_body_text(slide, text_lines, left=left, top=int(cur_top),
-                                     width=int(width), height=use_h, size=size)
-            # Lock the column textbox size — some viewers (Keynote, LibreOffice)
-            # ignore spAutoFit and render the stored height. Disable autofit so
-            # the zone stays predictable for downstream placement.
-            if tb is not None:
-                tb.text_frame.auto_size = MSO_AUTO_SIZE.NONE
+        # Render text and box segments in author order. Boxes arrive as
+        # \x00-sentinel runs from parser.column_lines — before this, a
+        # <div class="box-accent"> in a column silently rendered as plain
+        # text (the styling the skeletons advertise never appeared).
+        for kind, seg in self._column_segments(text_lines):
+            seg_lines = [l for l in seg if l.strip()]
+            if not seg_lines:
+                continue
+            remaining_h = top + height - cur_top
+            if remaining_h <= 0:
+                break
+            if kind == "text":
+                # Hug content height (capped at remaining), don't force full
+                # column. Measure at the column's own width — without it this
+                # re-estimate threw away the wrap-aware height the caller had
+                # just computed and gave every wrapped bullet a single line.
+                estimated = self._estimate_text_height(seg_lines, size, width=width)
+                use_h = min(int(remaining_h), int(estimated))
+                tb = self._add_body_text(slide, seg_lines, left=left, top=int(cur_top),
+                                         width=int(width), height=use_h, size=size)
+                # Lock the column textbox size — some viewers (Keynote,
+                # LibreOffice) ignore spAutoFit and render the stored height.
+                if tb is not None:
+                    tb.text_frame.auto_size = MSO_AUTO_SIZE.NONE
+                cur_top += use_h + int(Inches(0.12))
+            else:
+                inner_w = int(width - Pt(34))
+                est = self._estimate_text_height(seg_lines, SZ_ZONE_B, width=inner_w)
+                box_h = min(int(remaining_h), int(est + Pt(16)))
+                border = {"accent": self.ACCENT, "primary": self.SECONDARY}.get(kind)
+                if border is not None:
+                    self._add_accent_box(slide, "\n".join(seg_lines), left, cur_top,
+                                         width, box_h, border_color=border)
+                else:
+                    self._add_card(slide, (left, int(cur_top), int(width), box_h),
+                                   body_lines=seg_lines, anchor="middle")
+                cur_top += box_h + int(Inches(0.12))
+
+    @staticmethod
+    def _column_segments(lines):
+        """Split column lines into ("text" | "plain" | "accent" | "primary", lines)."""
+        segs, kind, cur = [], "text", []
+        for line in lines:
+            s = line.strip()
+            if s.startswith("\x00BOX"):
+                if cur:
+                    segs.append((kind, cur))
+                parts = s.split()
+                kind, cur = (parts[1] if len(parts) > 1 else "plain"), []
+            elif s == "\x00END":
+                segs.append((kind, cur))
+                kind, cur = "text", []
+            else:
+                cur.append(line)
+        if cur:
+            segs.append((kind, cur))
+        return segs
+
+    def _column_height(self, lines, size, width):
+        """Height a column needs — box chrome included (mirror of the renderer)."""
+        total, first = 0, True
+        for kind, seg in self._column_segments(lines):
+            seg_lines = [l for l in seg if l.strip()]
+            if not seg_lines:
+                continue
+            if not first:
+                total += int(Inches(0.12))
+            first = False
+            if kind == "text":
+                total += int(self._estimate_text_height(seg_lines, size, width=width))
+            else:
+                total += int(self._estimate_text_height(
+                    seg_lines, SZ_ZONE_B, width=int(width - Pt(34))) + Pt(16))
+        return total
 
     # ══════════════════════════════════════════════
     # Slide type builders
@@ -1934,9 +2057,9 @@ class PptxBuilder:
         heights = []
         for i, col_lines in enumerate(sd.columns):
             col_w = widths[i] if i < len(widths) else widths[-1]
-            ch = int(self._estimate_text_height(
+            ch = self._column_height(
                 [l for l in col_lines if not l.strip().startswith("![")], size,
-                width=col_w))
+                col_w)
             heights.append(min(ch, rheight))
         top = rtop + max(0, (rheight - max(heights, default=0)) // 2)
         x = rleft
@@ -1974,8 +2097,10 @@ class PptxBuilder:
             col_w = (rwidth - gap * (n - 1)) // n
             for i, col_lines in enumerate(sd.columns):
                 left = rleft + i * (col_w + gap)
-                self._add_body_text(slide, col_lines, left=int(left), top=int(cur),
-                                    width=int(col_w), height=int(col_h), size=SZ_COL)
+                # Through _add_column_content so box divs and images render
+                # in sandwich columns exactly as they do in cols-N.
+                self._add_column_content(slide, col_lines, left=int(left), top=int(cur),
+                                         width=int(col_w), height=int(col_h), size=SZ_COL)
             cur += col_h + int(BLOCK_GAP)
         if sd.bottom_text:
             self._add_conclusion_box(slide, sd.bottom_text, rleft, int(cur), rwidth, concl_h)
@@ -1989,7 +2114,7 @@ class PptxBuilder:
                                                width=rwidth)) if sd.caption else 0
         desc_h = int(self._estimate_text_height(sd.body_lines, SZ_COL,
                                                width=rwidth)) if sd.body_lines else 0
-        img_file = self._resolve_image(sd.image_path) if sd.image_path else None
+        img_file = self._image_or_placeholder(sd.image_path) if sd.image_path else None
         img_top = rtop; ph = 0; pw = 0
         if img_file:
             from PIL import Image
@@ -2376,7 +2501,9 @@ class PptxBuilder:
             return
         rleft, rtop, rwidth, rheight = self._content_region(has_title=bool(sd.h1))
         n = len(sd.agenda_items)
-        row_h = int(min(Inches(0.92), rheight / max(n, 1)))
+        # 1.15in rows let a 3-4 item agenda occupy the canvas instead of
+        # huddling in the middle; longer agendas divide the space as before.
+        row_h = int(min(Inches(1.15), rheight / max(n, 1)))
         block_h = row_h * n
         top = rtop + max(0, (rheight - block_h) // 2)
         num_w = int(Inches(0.9))
@@ -2447,7 +2574,7 @@ class PptxBuilder:
         cap_h = int(Inches(0.45))
         for i, item in enumerate(sd.result_dual_items):
             x = rleft + i * (col_w + gap)
-            img_file = self._resolve_image(item.get("image", ""))
+            img_file = self._image_or_placeholder(item.get("image", ""))
             ph = 0
             img_top = rtop
             if img_file:
@@ -2558,7 +2685,7 @@ class PptxBuilder:
         # Reserve room for the figure caption — overview/result dropped it
         # entirely (the figure showed, but `Fig. N. …` never rendered).
         cap_h = int(Inches(0.5)) if sd.caption else 0
-        img_file = self._resolve_image(image_path) if image_path else None
+        img_file = self._image_or_placeholder(image_path) if image_path else None
         if img_file:
             from PIL import Image
             with Image.open(img_file) as im:
@@ -2709,7 +2836,7 @@ class PptxBuilder:
         rleft, rtop, rwidth, rheight = self._content_region(has_title=bool(sd.h1), full=True)
         cap_h = int(self._estimate_text_height([sd.panorama_text], SZ_SMALL,
                                                width=rwidth)) if sd.panorama_text else 0
-        img_file = self._resolve_image(sd.image_path) if sd.image_path else None
+        img_file = self._image_or_placeholder(sd.image_path) if sd.image_path else None
         img_top = rtop; ph = 0
         if img_file:
             from PIL import Image
@@ -2851,7 +2978,7 @@ class PptxBuilder:
         cap_h = (max(int(Inches(0.5)),
                      int(self._estimate_text_height([sd.caption], SZ_SMALL, width=rwidth)))
                  if sd.caption else 0)
-        img_file = self._resolve_image(sd.image_path) if sd.image_path else None
+        img_file = self._image_or_placeholder(sd.image_path) if sd.image_path else None
         img_top = rtop; ph = 0
         if img_file:
             from PIL import Image
@@ -2899,7 +3026,7 @@ class PptxBuilder:
             self._no_shadow(card)
             cap_text = item.get("caption", "")
             cap_h = int(Inches(0.34)) if cap_text else 0
-            img_file = self._resolve_image(item.get("image", ""))
+            img_file = self._image_or_placeholder(item.get("image", ""))
             if img_file:
                 from PIL import Image
                 with Image.open(img_file) as im:
@@ -3001,7 +3128,7 @@ class PptxBuilder:
         fig_w = int(rwidth * 0.56)
         notes_w = rwidth - fig_w - int(Inches(0.35))
         notes_x = rleft + fig_w + int(Inches(0.35))
-        img_file = self._resolve_image(sd.annotation_figure) if sd.annotation_figure else None
+        img_file = self._image_or_placeholder(sd.annotation_figure) if sd.annotation_figure else None
         if img_file:
             from PIL import Image
             with Image.open(img_file) as im:
@@ -3392,7 +3519,7 @@ class PptxBuilder:
         left_w = int(Inches(3.2))
         right_x = rleft + left_w + int(Inches(0.5))
         right_w = rwidth - left_w - int(Inches(0.5))
-        img_file = self._resolve_image(sd.image_path) if sd.image_path else None
+        img_file = self._image_or_placeholder(sd.image_path) if sd.image_path else None
         if img_file:
             from PIL import Image
             with Image.open(img_file) as im:

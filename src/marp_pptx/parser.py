@@ -97,6 +97,25 @@ def extract_child_divs(text: str) -> list[str]:
     return children
 
 
+# Column children may contain <div class="box|box-accent|box-primary"> blocks.
+# parse_markdown_lines() flattens HTML to text, which silently dropped the box
+# styling (the skeletons advertise it). column_lines() converts each box div
+# into \x00-sentinel lines that the builder renders as a real card.
+_BOX_DIV_RE = re.compile(
+    r'<div\s+class="[^"]*\bbox(?:-(accent|primary))?\b[^"]*"\s*>(.*?)</div>',
+    re.DOTALL)
+
+
+def column_lines(text: str) -> list[str]:
+    """parse_markdown_lines + box-div sentinels for column content."""
+    def repl(m):
+        # Blank lines around the sentinels keep the soft-wrap merger from
+        # gluing them onto adjacent content lines.
+        kind = m.group(1) or "plain"
+        return f"\n\n\x00BOX {kind}\n\n{m.group(2)}\n\n\x00END\n\n"
+    return parse_markdown_lines(_BOX_DIV_RE.sub(repl, text))
+
+
 def parse_markdown_lines(text: str) -> list[str]:
     lines = []
     for line in text.split("\n"):
@@ -419,7 +438,7 @@ def parse_slide(index: int, raw: str) -> SlideData:
         cols = extract_div(content, "columns")
         if cols:
             for child in extract_child_divs(cols):
-                sd.columns.append(parse_markdown_lines(child))
+                sd.columns.append(column_lines(child))
         else:
             # Fallback: no <div class="columns"> wrapper — treat top-level
             # <div>s (that are not known utility classes) as columns directly.
@@ -434,7 +453,7 @@ def parse_slide(index: int, raw: str) -> SlideData:
                 body = re.sub(pattern, "", body, flags=re.DOTALL)
             children = extract_child_divs(body)
             for child in children:
-                sd.columns.append(parse_markdown_lines(child))
+                sd.columns.append(column_lines(child))
         fn = extract_div(content, "footnote")
         if fn:
             sd.footnote = strip_html(fn)
@@ -447,7 +466,7 @@ def parse_slide(index: int, raw: str) -> SlideData:
         cols = extract_div(content, "columns")
         if cols:
             for child in extract_child_divs(cols):
-                sd.columns.append(parse_markdown_lines(child))
+                sd.columns.append(column_lines(child))
         bottom = extract_div(content, "bottom")
         if bottom:
             conc = extract_div(bottom, "conclusion")
