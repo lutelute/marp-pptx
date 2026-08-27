@@ -2759,10 +2759,41 @@ class PptxBuilder:
         pad = int(Pt(14))
         inner = pw - pad * 2
         label_h = int(Inches(0.34))
-        # measure: tallest panel decides the shared height
+
+        def _panel_img_h(pdata, width):
+            """Height the panel's figure takes at `width` (aspect-true,
+            capped) — placeholders count like a 16:10 image."""
+            if not pdata.get("image"):
+                return 0
+            f = self._image_or_placeholder(pdata["image"])
+            if not f:
+                return 0
+            from PIL import Image as PImage
+            with PImage.open(f) as im:
+                iw, ih = im.size
+            pdata["_img_file"] = f
+            pdata["_img_wh"] = (iw, ih)
+            return int(min(Inches(2.4), width * ih / iw))
+
+        # optional full-width top band (背景/問い) above the row
+        tdata = ga.get("top") or {}
+        top_h = 0
+        if tdata:
+            t_img_w = int(rwidth * 0.30)
+            t_img_h = _panel_img_h(tdata, t_img_w - pad)
+            t_txt_w = rwidth - pad * 2 - (t_img_w if t_img_h else 0)
+            t_body_h = int(self._estimate_text_height(
+                tdata.get("body", "").split("\n"), SZ_ZONE_B,
+                width=t_txt_w, line_spacing=LINE_BODY)) if tdata.get("body") else 0
+            top_h = max(int(Inches(0.9)),
+                        label_h + int(Pt(6)) + t_body_h + pad * 2,
+                        (t_img_h + pad * 2) if t_img_h else 0)
+
+        # measure: tallest row panel decides the shared height
         need = int(Inches(1.6))
         for key, pdata in panels:
             h = label_h + int(Pt(8))
+            h += _panel_img_h(pdata, inner) + (int(Pt(6)) if pdata.get("image") else 0)
             if key == "result" and pdata.get("kpi"):
                 h += int(Pt(SZ_METRIC.pt * 1.15 * metrics.DEFAULT_LINE_FACTOR))
             if pdata.get("steps"):
@@ -2775,8 +2806,45 @@ class PptxBuilder:
         foot = ga.get("foot", "")
         foot_h = (int(self._estimate_text_height([foot], SZ_SMALL, width=rwidth))
                   + int(Inches(0.14))) if foot else 0
-        ph = int(min(need, rheight - foot_h - int(Inches(0.1))))
-        top = rtop + max(0, (rheight - ph - foot_h) // 2)
+        band_gap = int(Inches(0.18)) if top_h else 0
+        ph = int(min(need, rheight - foot_h - top_h - band_gap - int(Inches(0.1))))
+        top = rtop + max(0, (rheight - ph - foot_h - top_h - band_gap) // 2)
+
+        if tdata:
+            tb_bx = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE,
+                                           rleft, int(top), rwidth, top_h)
+            tb_bx.adjustments[0] = CARD_RADIUS
+            tb_bx.fill.solid(); tb_bx.fill.fore_color.rgb = self.LIGHT
+            tb_bx.line.color.rgb = self.HAIRLINE
+            tb_bx.line.width = HAIRLINE_W
+            self._no_shadow(tb_bx)
+            ty = top + pad
+            lb = self._add_textbox(slide, int(rleft + pad), int(ty),
+                                   int(rwidth - pad * 2), label_h)
+            self._kicker_para(lb.text_frame.paragraphs[0],
+                              tdata.get("label", "背景"),
+                              color=self._text_safe(self.ACCENT, self.LIGHT),
+                              tracking=160)
+            ty += label_h + int(Pt(4))
+            if tdata.get("_img_file"):
+                iw, ih = tdata["_img_wh"]
+                dw = int(rwidth * 0.30) - pad
+                dh = int(min(top_h - pad * 2 - label_h, dw * ih / iw))
+                dw = int(dh * iw / ih)
+                slide.shapes.add_picture(tdata["_img_file"],
+                                         int(rleft + rwidth - pad - dw),
+                                         int(top + (top_h - dh) // 2), dw, dh)
+            if tdata.get("body"):
+                t_txt_w = rwidth - pad * 2 - (int(rwidth * 0.30)
+                                              if tdata.get("_img_file") else 0)
+                bb = self._add_textbox(slide, int(rleft + pad), int(ty),
+                                       int(t_txt_w), int(top + top_h - pad - ty))
+                tf = bb.text_frame; tf.word_wrap = True
+                for j, line in enumerate(tdata["body"].split("\n")):
+                    pl = tf.paragraphs[0] if j == 0 else tf.add_paragraph()
+                    self._set_rich_text(pl, line, SZ_ZONE_B, self.FG)
+                    pl.line_spacing = LINE_BODY
+            top += top_h + band_gap
 
         x = rleft
         for pi, (key, pdata) in enumerate(panels):
@@ -2810,6 +2878,31 @@ class PptxBuilder:
                      else self._text_safe(self.ACCENT, self.SURFACE))
             self._kicker_para(lp, label, color=l_col, tracking=160)
             cy += label_h + int(Pt(4))
+            if pdata.get("_img_file"):
+                # Reserve the text blocks first; the figure takes what's left
+                # (a portrait figure must not starve the body into overflow).
+                reserved = 0
+                if key == "result" and pdata.get("kpi"):
+                    reserved += int(Pt(SZ_METRIC.pt * 1.15
+                                       * metrics.DEFAULT_LINE_FACTOR))
+                if pdata.get("steps"):
+                    reserved += int(Inches(0.5))
+                if pdata.get("body"):
+                    reserved += int(self._estimate_text_height(
+                        pdata["body"].split("\n"), SZ_ZONE_B, width=inner,
+                        line_spacing=LINE_BODY))
+                max_img_h = (top + ph - pad) - cy - reserved - int(Pt(6))
+                iw, ih = pdata["_img_wh"]
+                dh = int(min(Inches(2.4), inner * ih / iw, max(max_img_h, 0)))
+                if dh >= int(Inches(0.45)):
+                    dw = int(min(inner, dh * iw / ih))
+                    slide.shapes.add_picture(pdata["_img_file"],
+                                             int(x + pad + (inner - dw) // 2),
+                                             int(cy), dw, dh)
+                    cy += dh + int(Pt(6))
+                else:
+                    self._warn("graphical-abstract: panel figure skipped "
+                               f"({pdata.get('image')}) — no room left beside the text")
 
             if key == "result" and pdata.get("kpi"):
                 kpi_h = int(Pt(SZ_METRIC.pt * 1.15 * metrics.DEFAULT_LINE_FACTOR))

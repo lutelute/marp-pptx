@@ -8,17 +8,24 @@ paginate: true
 
 # 本研究の全体像
 
-## 一枚で｜課題 → 提案 → 成果
+## 一枚で｜問い → 課題 → 提案 → 成果
+
+<div class="ga-top">
+  <span class="ga-label">問い</span>
+  <span class="ga-body">PV 連系申請の受入可否を、**当日中に**回答できるか？ — 総当たり計算 94 分の壁を、精度を落とさずに破れるかを検証する。</span>
+</div>
 
 <div class="ga-problem">
   <span class="ga-label">課題</span>
-  <span class="ga-body">PV 受入可否の判定は総当たり AC × 二分探索で **94 分**。申請ペースに計算が追いつかず、回答は翌日持ち越しになっている。</span>
+  ![w:400](figures/duck-curve.png)
+  <span class="ga-body">総当たり AC × 二分探索で **94 分**。回答は翌日持ち越し。</span>
 </div>
 
 <div class="ga-method">
   <span class="ga-label">提案</span>
+  ![w:400](figures/loop.png)
   <span class="ga-steps">感度行列 → LP 一括 → AC 検証</span>
-  <span class="ga-body">ヤコビアンから抽出した感度行列で LP が候補を一括生成し、AC 潮流は違反時のみ再検証。速さと正しさを ==分業== する。</span>
+  <span class="ga-body">速さと正しさを ==分業== する。</span>
 </div>
 
 <div class="ga-result">

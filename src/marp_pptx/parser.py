@@ -1053,7 +1053,7 @@ def parse_slide(index: int, raw: str) -> SlideData:
                     break
 
     elif cls == "graphical-abstract":
-        for key in ("ga-problem", "ga-method", "ga-result"):
+        for key in ("ga-top", "ga-problem", "ga-method", "ga-result"):
             div = extract_div(content, key)
             if not div:
                 continue
@@ -1064,6 +1064,9 @@ def parse_slide(index: int, raw: str) -> SlideData:
                                div, re.DOTALL)
                 if m2:
                     panel[attr] = text_with_breaks(m2.group(1))
+            img = re.search(r"!\[(?:w:\d+)?\]\(([^)]+)\)", div)
+            if img:
+                panel["image"] = img.group(1)
             if panel:
                 sd.ga[key.replace("ga-", "")] = panel
         foot = extract_div(content, "ga-foot")
