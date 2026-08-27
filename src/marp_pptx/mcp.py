@@ -3,9 +3,11 @@
 Exposes the marp-pptx engine as Model-Context-Protocol tools so an agent can
 turn a request into an **editable** PowerPoint deck and visually self-check it:
 
-    slide_types / slide_template   — learn the 52-type vocabulary + exact HTML
-    list_presets / get_preset      — start from a curated deck
-    build_pptx                     — Marp markdown -> editable .pptx (+ lint)
+    slide_types / slide_template   — learn the 57-type vocabulary + exact HTML
+    list_themes                    — pick a theme by topic (claude/research/…)
+    authoring_guide                — the condensed writing rules (markup, leads)
+    list_presets / get_preset      — start from a curated deck (incl. paper-review)
+    build_pptx                     — Marp markdown -> editable .pptx (+ lint + audit)
     check_deck                     — measured defects (overflow/overlap/contrast)
     preview_png                    — render slides to PNG so the agent can SEE them
 
@@ -64,6 +66,8 @@ def _themed_config(palette: str, math: str, density: str):
     if density == "keynote":
         tc.font_scale = 1.22
         tc.margin_scale = 1.12
+    elif density == "dense":
+        tc.font_scale = 0.88      # hearing-deck information load
     tc.math_mode = math
     chosen = get_palette_path(palette) if palette else get_palette_path("claude")
     if chosen:
@@ -92,7 +96,7 @@ def slide_types(category: str = "") -> list[dict]:
     """List the semantic slide types (the deck-building vocabulary).
 
     Pass a category key (structure/temporal/convergence/evaluation/knowledge/
-    flow/narrative/meta) to filter, or "" for all 52. Use this first to pick the
+    flow/narrative/meta) to filter, or "" for all types. Use this first to pick the
     right type for each slide, then `slide_template` for its exact HTML.
     """
     types = TYPE_REGISTRY
@@ -122,6 +126,65 @@ def slide_template(type_name: str) -> str:
         return f"unknown type '{type_name}'. valid types: {valid}"
     body = _strip_frontmatter((_data_dir() / "templates" / t.template_file).read_text(encoding="utf-8"))
     return body
+
+
+@mcp.tool()
+def list_themes() -> list[dict]:
+    """List every theme/palette with its intended topic, so the deck's look is
+    chosen by subject (a palette that would fit any topic is a weak choice).
+
+    Full themes carry layout behavior; academic-* entries recolor only.
+    Notable: 'claude' (default; dark sandwich heroes + card shadows),
+    'research' (doctoral-hearing spec: section crumb + n／m chrome, auto
+    図N captions with 出典, 6-color chart ramp), 'beamer' (LaTeX Madrid),
+    'midnight/teal/terracotta/cherry' (executive / public-trust / warm /
+    keynote). Pass the name as build_pptx's `palette`.
+    """
+    import json
+    import re as _re
+    out: list[dict] = []
+    pal_dir = _data_dir() / "themes" / "palettes"
+    for cfg in sorted(pal_dir.glob("config-*.yaml")):
+        text = cfg.read_text(encoding="utf-8")
+        def _field(key: str) -> str:
+            m = _re.search(rf"^{key}:\s*(.+)$", text, _re.MULTILINE)
+            return m.group(1).strip().strip("'\"") if m else ""
+        name = _field("name") or cfg.stem[len("config-"):]
+        out.append({"name": name, "kind": "theme",
+                    "title": _field("title"), "description": _field("description")})
+    try:
+        for pjt in json.loads((pal_dir / "palettes.json").read_text(encoding="utf-8")):
+            out.append({"name": pjt.get("name", "?"), "kind": "palette",
+                        "title": pjt.get("desc", ""), "description": pjt.get("desc", "")})
+    except (OSError, ValueError):
+        pass
+    return out
+
+
+@mcp.tool()
+def authoring_guide() -> str:
+    """The condensed marp-pptx writing rules — read once before drafting a deck
+    (this is the skill knowledge for MCP clients that don't load SKILL.md)."""
+    return (
+        "# marp-pptx 執筆規範（要約）\n"
+        "1. スライドは `---` 区切り、frontmatter は先頭に1つ（`marp: true`）。\n"
+        "2. 各スライド冒頭に `<!-- _class: 型名 -->`。型は slide_types で選び、\n"
+        "   HTML 骨組みは slide_template の出力を崩さず埋める（崩すと無言で空になる）。\n"
+        "3. インライン: **太字** / `code` / $x^2$ / ==マーカー==（1枚1〜2個）。*斜体*は無効。\n"
+        "4. H1 はラベルでなく要約・主張文。`##` は多くの型で色付きリード行\n"
+        "   「トピック｜結論」として描かれる（title/divider/table/cols 系は別用途）。\n"
+        "5. 1枚1メッセージ＋視覚アンカー1つ。箇条書きだけの連続は避け、比較は\n"
+        "   cols-2/before-after、数値は kpi/big-number/chart、構造は flow/zone-* に。\n"
+        "6. 高密度は sections 型（リード行＋本文の帯×2-4）＋ density='dense'。\n"
+        "7. 図: `![w:800](path)` 相対パス。無い画像はプレースホルダ描画＋警告。\n"
+        "   アニメGIFは埋め込まれ自動再生。ブロック図/ループ図は flow 型の\n"
+        "   ```mermaid フェンス（flowchart LR、`-.->` は破線の戻り辺）。\n"
+        "8. 表: Markdown 表。◎○△× セルは自動で緑/琥珀/赤に着色（サーベイ比較向け）。\n"
+        "9. 文献報告は preset 'paper-review'（paper 型=書誌カードから始める）。\n"
+        "10. 出す前に必ず check_deck（error は修正必須）→ 必要なら preview_png で目視。\n"
+        "11. 発表者ノート `<!-- note: ... -->`、出典 `<!-- source: ... -->`（図の出典｜行）。\n"
+        "12. agenda の項目は同順の divider へ自動ハイパーリンクされる。\n"
+    )
 
 
 @mcp.tool()
@@ -162,10 +225,19 @@ def build_pptx(
     - markdown: the full deck (frontmatter `marp: true`, slides split by `---`,
       each with `<!-- _class: type -->` and the type's HTML).
     - output_path: where to write; default a temp file (absolute path returned).
-    - palette: '' = claude (default) / 'minimal' / 'navy' / ... (see slide types' themes).
+    - palette: '' = claude (default); see `list_themes` for the full set and
+      which theme fits which topic (research = doctoral-hearing spec with
+      section crumbs + auto figure numbers).
     - math: 'omml' (PowerPoint-editable, needs pandoc) or 'png' (image; for
       LibreOffice/Keynote).
-    - density: 'academic' (default) or 'keynote' (bigger for projection).
+    - density: 'academic' (default), 'keynote' (bigger for projection), or
+      'dense' (hearing-deck information load; looser authoring-lint limits).
+
+    Authoring features the markdown can use (details: `authoring_guide`):
+    **bold**, `code`, $math$, ==marker highlight==, `##` after the H1 becomes
+    a colored lead line on most content types, ```mermaid fences on a `flow`
+    slide draw editable block/loop diagrams, animated GIFs embed and autoplay,
+    and ◎○△× table cells render color-coded.
 
     Returns {output_path, slide_count, lint_warnings, authoring_warnings,
     defects}. Heed lint_warnings (weak titles, missing structure, …) AND

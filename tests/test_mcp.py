@@ -56,7 +56,8 @@ def test_tools_registered():
     tools = asyncio.run(srv.mcp.list_tools())
     names = {t.name for t in tools}
     assert {"slide_types", "slide_template", "list_presets",
-            "get_preset", "build_pptx", "preview_png"} <= names
+            "get_preset", "build_pptx", "preview_png",
+            "list_themes", "authoring_guide", "check_deck"} <= names
 
 
 def test_build_pptx_rejects_oversized_markdown():
