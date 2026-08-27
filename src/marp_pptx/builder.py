@@ -2686,6 +2686,56 @@ class PptxBuilder:
         d2.fill.solid(); d2.fill.fore_color.rgb = self.ACCENT
         d2.line.fill.background(); self._no_shadow(d2)
 
+    def build_figure_full(self, sd: SlideData):
+        """論文図のための最大画角: スリムな題 + 余白 0.25in まで使う画像領域。
+
+        「絵はとにかく大きく」— the paper-figure slot. A missing image draws
+        the themed placeholder at this full size, so a deck can ship its
+        figure frames first and receive the artwork later.
+        """
+        slide = self._blank_slide()
+        m = int(Inches(0.25))
+        top = m
+        if sd.h1:
+            th = int(Inches(0.5))
+            tb = self._add_textbox(slide, int(MARGIN_L), int(Inches(0.16)),
+                                   int(CONTENT_W), th)
+            tb.name = "edge:title"      # deliberate slim chrome — image first
+            tf = tb.text_frame
+            p = tf.paragraphs[0]
+            p.text = sd.h1
+            p.font.name = self.FONT_HEAD
+            p.font.size = self._fs(SZ_H2)
+            p.font.bold = True
+            p.font.color.rgb = self.PRIMARY
+            top = int(Inches(0.78))
+        cap = self._fig_caption(sd.caption, sd.source)
+        cap_h = (max(int(Inches(0.34)),
+                     int(self._estimate_text_height([cap], SZ_SMALL,
+                                                    width=int(SW - 2 * m))))
+                 if cap else 0)
+        avail_h = int(SH) - top - m - (cap_h + int(Inches(0.08)) if cap else 0)
+        avail_w = int(SW) - 2 * m
+        img_file = self._image_or_placeholder(sd.image_path) if sd.image_path else None
+        ph = 0
+        if img_file:
+            from PIL import Image
+            with Image.open(img_file) as im:
+                iw, ih = im.size
+            scale = min(avail_w / (iw * 914400 / 96), avail_h / (ih * 914400 / 96))
+            pw = int(iw * scale * 914400 / 96)
+            ph = int(ih * scale * 914400 / 96)
+            slide.shapes.add_picture(img_file, int((SW - pw) // 2),
+                                     int(top + (avail_h - ph) // 2), pw, ph)
+        if cap:
+            cb = self._add_textbox(slide, m, int(top + avail_h + Inches(0.06)),
+                                   avail_w, cap_h)
+            cb.name = "edge:caption"    # bottom strip is this type's design
+            cb.text_frame.word_wrap = True
+            cp = cb.text_frame.paragraphs[0]
+            self._rich_line(cp, cap, SZ_SMALL, self.MUTED)
+            cp.alignment = PP_ALIGN.CENTER
+
     def build_graphical_abstract(self, sd: SlideData):
         """研究の一枚絵: 課題 → 手法 → 成果 の3パネルを太矢印で繋ぐ。
 
@@ -4557,6 +4607,7 @@ class PptxBuilder:
         "paper": "build_paper",
         "split-panel": "build_split_panel",
         "graphical-abstract": "build_graphical_abstract",
+        "figure-full": "build_figure_full",
         "rq": "build_rq",
         "result-dual": "build_result_dual",
         "summary": "build_summary",

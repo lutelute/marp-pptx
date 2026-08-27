@@ -560,6 +560,11 @@ def _check_bounds(out, idx, shape, rect, sw, sh, margin_in, top_ig, bot_ig):
                            fix="shrink the box or move it inside the content area",
                            shape=_label(shape)))
         return
+    # edge:* — the builder placed this at the edge on purpose (slim chrome
+    # of image-first types). Off-slide above still errors; the margin-
+    # proximity advisories below don't apply.
+    if (getattr(shape, "name", "") or "").startswith("edge:"):
+        return
     if not shape.has_text_frame or not shape.text_frame.text.strip():
         return
     # Text that lives inside a theme band — the frametitle bar, the footer bar —

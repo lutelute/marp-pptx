@@ -286,6 +286,20 @@ $$E = mc^2$$
 <div class="ga-foot">実測条件: Xeon w5-2455X 単スレッド／6.6 kV 放射状フィーダ 300〜1,200 ノード</div>
 ```
 
+### `figure-full` — 論文図の全面表示
+<!-- ▣ 最大画角の図 · 論文の特徴的な図を余白0.25inまで最大サイズで見せるとき（図が主役の1枚） -->
+
+```markdown
+<!-- _class: figure-full -->
+<!-- source: Vaswani et al. (2017), Fig. 1 -->
+
+# Transformer の全体アーキテクチャ
+
+![w:1200](figures/transformer-architecture.png)
+
+<div class="caption">エンコーダ・デコーダとも自己注意＋FFN の積層のみで構成される</div>
+```
+
 ## 時間（temporal）
 
 ### `timeline-h` — 時系列・経過

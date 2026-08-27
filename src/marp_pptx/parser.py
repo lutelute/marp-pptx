@@ -1035,6 +1035,23 @@ def parse_slide(index: int, raw: str) -> SlideData:
                     "desc": strip_html(dm.group(1)) if dm else "",
                 })
 
+    elif cls == "figure-full":
+        img = re.search(r"!\[(?:w:\d+)?\]\(([^)]+)\)", content)
+        if img:
+            sd.image_path = img.group(1)
+        cap = extract_div(content, "caption")
+        if cap:
+            sd.caption = strip_html(cap)
+        else:
+            # Fallback: the first plain line after the image is the caption
+            # (the natural way to author it — silently dropping it burned us).
+            for line in content.split("\n"):
+                s = strip_html(line).strip()
+                if (s and not s.startswith("#") and not s.startswith("!")
+                        and not line.strip().startswith("<")):
+                    sd.caption = s
+                    break
+
     elif cls == "graphical-abstract":
         for key in ("ga-problem", "ga-method", "ga-result"):
             div = extract_div(content, key)

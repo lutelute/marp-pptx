@@ -177,6 +177,7 @@ def authoring_guide() -> str:
         "   cols-2/before-after、数値は kpi/big-number/chart、構造は flow/zone-* に。\n"
         "6. 高密度は sections 型（リード行＋本文の帯×2-4）＋ density='dense'。\n"
         "7. 図: `![w:800](path)` 相対パス。無い画像はプレースホルダ描画＋警告。\n"
+        "   論文の特徴図は figure-full（余白0.25inまで最大表示。枠を先に置き後から差せる）。\n"
         "   アニメGIFは埋め込まれ自動再生。ブロック図/ループ図は flow 型の\n"
         "   ```mermaid フェンス（flowchart LR、`-.->` は破線の戻り辺）。\n"
         "8. 表: Markdown 表。◎○△× セルは自動で緑/琥珀/赤に着色（サーベイ比較向け）。\n"
