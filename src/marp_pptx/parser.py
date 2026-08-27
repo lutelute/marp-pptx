@@ -270,6 +270,10 @@ class SlideData:
     zone_process_items: list = field(default_factory=list)
     sections_items: list = field(default_factory=list)
     flow: dict = field(default_factory=dict)
+    paper_authors: str = ""
+    paper_venue: str = ""
+    paper_stats: str = ""
+    paper_why: str = ""
     agenda_items: list = field(default_factory=list)
     rq_main: str = ""
     rq_sub: str = ""
@@ -1021,6 +1025,25 @@ def parse_slide(index: int, raw: str) -> SlideData:
                     "value": strip_html(vm.group(1)) if vm else "",
                     "desc": strip_html(dm.group(1)) if dm else "",
                 })
+
+    elif cls == "paper":
+        meta = extract_div(content, "pp-meta")
+        if meta:
+            for key, attr in (("pp-authors", "paper_authors"),
+                              ("pp-venue", "paper_venue"),
+                              ("pp-stats", "paper_stats")):
+                m2 = re.search(rf'class="[^"]*{key}[^"]*"[^>]*>(.*?)</span>',
+                               meta, re.DOTALL)
+                if m2:
+                    setattr(sd, attr, strip_html(m2.group(1)))
+        why = extract_div(content, "pp-why")
+        if why:
+            b = re.search(r'class="[^"]*pp-why-body[^"]*"[^>]*>(.*?)</span>',
+                          why, re.DOTALL)
+            sd.paper_why = strip_html(b.group(1)) if b else strip_html(why)
+        pts = extract_div(content, "pp-points")
+        if pts:
+            sd.body_lines = [l for l in parse_markdown_lines(pts) if l.strip()]
 
     elif cls == "flow":
         m = re.search(r"```(?:mermaid)?\s*\n(.*?)```", content, re.DOTALL)

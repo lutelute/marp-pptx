@@ -61,6 +61,7 @@ TYPE_REGISTRY: list[SlideTypeInfo] = [
     SlideTypeInfo("blocks", "blocks", "knowledge", "▬題│本文 ×N", "定理・定義ブロック", "beamer 流の定理環境（theorem/example/alert）を並べるとき", "53-blocks.md"),
     SlideTypeInfo("sections", "sections", "knowledge", "■リード│本文 ×N", "高密度トピック積層", "1枚に2〜4トピックを「色付きリード行＋本文」の帯で積むとき（公聴会流の高密度）", "54-sections.md"),
     SlideTypeInfo("flow", "flow", "flow", "□→□→□ +loop", "ブロック図・ループ図", "mermaid flowchart 記法から編集可能なブロック図/機器構成図/反復ループ図を描くとき", "55-flow.md"),
+    SlideTypeInfo("paper", "paper", "knowledge", "▤書誌+理由+要点", "文献報告の書誌カード", "輪読・文献調査で紹介論文の書誌情報・選定理由・要点を1枚にするとき", "56-paper.md"),
 
     # ── Flow ──
     SlideTypeInfo("zone-flow", "zone-flow", "flow", "□→□→□", "フロー・因果", "原因→結果の流れを示すとき", "18-zone-flow.md"),

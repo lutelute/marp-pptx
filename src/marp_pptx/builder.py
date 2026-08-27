@@ -1500,13 +1500,25 @@ class PptxBuilder:
                 else:
                     color = self.FG
                 bold = is_head or emph or (ci == 0 and not is_head)
-                # Cells are author text: `**Ours**` and `$\sqrt{n}$` have to be
-                # rendered, not printed.
-                p = cell.text_frame.paragraphs[0]
-                self._rich_line(p, strip_html(raw), SZ_SMALL, color,
-                                font=self.FONT_HEAD if (is_head or emph) else None,
-                                bold=bold)
-                p.alignment = PP_ALIGN.RIGHT if ci in numeric_cols else PP_ALIGN.LEFT
+                sym = strip_html(raw).replace("**", "").strip()
+                if not is_head and sym in self._RATING_COLORS:
+                    # ◎○△× verdict cell: colored, bold, centered. Same size
+                    # as the row text so the measured row heights stay true.
+                    p = cell.text_frame.paragraphs[0]
+                    run = p.add_run(); run.text = sym
+                    run.font.name = self.FONT
+                    run.font.size = self._fs(SZ_SMALL)
+                    run.font.bold = True
+                    run.font.color.rgb = self._RATING_COLORS[sym]
+                    p.alignment = PP_ALIGN.CENTER
+                else:
+                    # Cells are author text: `**Ours**` and `$\sqrt{n}$` have
+                    # to be rendered, not printed.
+                    p = cell.text_frame.paragraphs[0]
+                    self._rich_line(p, strip_html(raw), SZ_SMALL, color,
+                                    font=self.FONT_HEAD if (is_head or emph) else None,
+                                    bold=bold)
+                    p.alignment = PP_ALIGN.RIGHT if ci in numeric_cols else PP_ALIGN.LEFT
 
                 # Rules run horizontally only: a full grid reads as a
                 # spreadsheet, and the vertical lines carry no information the
@@ -2323,7 +2335,7 @@ class PptxBuilder:
                 p.space_before = PARA_GAP
                 r = p.add_run(); r.text = f"[{start_idx + j + 1}] "
                 r.font.name = self.FONT; r.font.size = self._fs(ref_size)
-                r.font.bold = True; r.font.color.rgb = self.ACCENT
+                r.font.bold = True; r.font.color.rgb = self.ACCENT_TEXT
                 if author:
                     r = p.add_run(); r.text = author + " "
                     r.font.name = self.FONT; r.font.size = self._fs(ref_size)
@@ -2632,6 +2644,89 @@ class PptxBuilder:
         ln.append(ln.makeelement(qn("a:tailEnd"),
                                  {"type": "stealth", "w": "med", "len": "med"}))
         return conn
+
+    def build_paper(self, sd: SlideData):
+        """文献報告の書誌カード: paper title + authors / venue badge /
+        citation stats / 選定理由 card / key points. The opening slide of a
+        journal-club or survey talk — a literature report IS a research talk.
+        """
+        slide = self._blank_slide()
+        if sd.h1:
+            self._add_title(slide, sd.h1)
+        rleft, rtop, rwidth, rheight = self._content_region_with_lead(slide, sd)
+
+        blocks = []            # (kind, height)
+        meta_h = 0
+        if sd.paper_authors or sd.paper_venue or sd.paper_stats:
+            a_h = int(self._estimate_text_height(
+                [sd.paper_authors], SZ_COL,
+                width=int(rwidth * 0.66))) if sd.paper_authors else 0
+            meta_h = max(int(Inches(0.72)), a_h + (int(Inches(0.30))
+                                                   if sd.paper_stats else 0))
+            blocks.append(("meta", meta_h))
+        why_h = 0
+        if sd.paper_why:
+            # body + label line + card padding/accent bar (measured short by
+            # 0.4in at first — doctor caught the clipped 選定理由 card)
+            why_h = int(self._estimate_text_height(
+                [sd.paper_why], SZ_ZONE_B,
+                width=rwidth - int(Inches(0.6)))) + int(Inches(0.95))
+            blocks.append(("why", why_h))
+        pts_h = 0
+        if sd.body_lines:
+            pts_h = int(self._estimate_text_height(
+                sd.body_lines, SZ_BODY, width=rwidth, gap=PARA_GAP))
+            blocks.append(("points", pts_h))
+        if not blocks:
+            return
+        gap = int(BLOCK_GAP)
+        total = sum(h for _, h in blocks) + gap * (len(blocks) - 1)
+        cur = rtop + max(0, (rheight - total) // 2)
+
+        for kind, h in blocks:
+            if kind == "meta":
+                aw = int(rwidth * 0.66)
+                if sd.paper_authors:
+                    ab = self._add_textbox(slide, rleft, int(cur), aw,
+                                           h - (int(Inches(0.30))
+                                                if sd.paper_stats else 0))
+                    tf = ab.text_frame; tf.word_wrap = True
+                    self._set_rich_text(tf.paragraphs[0], sd.paper_authors,
+                                        SZ_COL, self.FG)
+                if sd.paper_stats:
+                    stb = self._add_textbox(slide, rleft,
+                                            int(cur + h - Inches(0.28)), aw,
+                                            int(Inches(0.26)))
+                    self._rich_line(stb.text_frame.paragraphs[0],
+                                    sd.paper_stats, SZ_SMALL, self.MUTED)
+                if sd.paper_venue:
+                    # venue badge: structure-colored pill, white small caps
+                    bw = int(Pt(self._visual_em_width(sd.paper_venue)
+                                * SZ_SMALL.pt * 1.1) + Pt(30))
+                    bh = int(Inches(0.42))
+                    bx = slide.shapes.add_shape(
+                        MSO_SHAPE.ROUNDED_RECTANGLE,
+                        int(rleft + rwidth - bw), int(cur), bw, bh)
+                    bx.adjustments[0] = 0.5
+                    bx.fill.solid(); bx.fill.fore_color.rgb = self.PRIMARY
+                    bx.line.fill.background(); self._no_shadow(bx)
+                    bp = bx.text_frame.paragraphs[0]
+                    bp.text = sd.paper_venue
+                    bp.font.name = self.FONT_HEAD
+                    bp.font.size = self._fs(SZ_SMALL)
+                    bp.font.bold = True
+                    bp.font.color.rgb = self.WHITE
+                    bp.alignment = PP_ALIGN.CENTER
+            elif kind == "why":
+                self._add_card(slide, (rleft, int(cur), rwidth, h),
+                               label="選定理由", body=sd.paper_why,
+                               accent_bar=True, anchor="middle")
+            elif kind == "points":
+                self._add_body_text(slide, sd.body_lines, left=rleft,
+                                    top=int(cur), width=rwidth, height=h)
+            cur += h + gap
+        if sd.footnote:
+            self._add_footnote(slide, sd.footnote)
 
     def build_flow(self, sd: SlideData):
         """mermaid flowchart subset drawn as EDITABLE native shapes.
@@ -3966,6 +4061,16 @@ class PptxBuilder:
                 p.space_before = PARA_GAP
                 self._set_rich_text(p, "\u2022  " + item, SZ_ZONE_B, self.FG)
 
+    # Survey-table rating symbols: a literature-comparison matrix reads at
+    # a glance when ◎○△× carry their verdict color. Fixed semantic colors,
+    # AA-measured on white and the LIGHT zebra fill.
+    _RATING_COLORS = {
+        "◎": RGBColor(0x1F, 0x7A, 0x33), "○": RGBColor(0x1F, 0x7A, 0x33),
+        "〇": RGBColor(0x1F, 0x7A, 0x33), "✓": RGBColor(0x1F, 0x7A, 0x33),
+        "△": RGBColor(0x9A, 0x6A, 0x00),
+        "×": RGBColor(0xB3, 0x26, 0x1E), "✗": RGBColor(0xB3, 0x26, 0x1E),
+    }
+
     # ── Okabe-Ito color-vision-safe categorical palette ──
     OKABE_ITO = [
         RGBColor(0xE6, 0x9F, 0x00), RGBColor(0x56, 0xB4, 0xE9),
@@ -4161,6 +4266,7 @@ class PptxBuilder:
         "agenda": "build_agenda",
         "sections": "build_sections",
         "flow": "build_flow",
+        "paper": "build_paper",
         "rq": "build_rq",
         "result-dual": "build_result_dual",
         "summary": "build_summary",

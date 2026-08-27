@@ -66,7 +66,9 @@ MCP 接続時は **`check_deck(markdown=...)`** が同じ検査を返す。
 3 列カードに文章を入れると必ず溢れる — 名詞句に削る。迷ったら doctor に測らせる。
 
 > 速く始めるなら **プリセット**から: `marp-pptx serve` の Web UI 右「プリセットから開始」、
-> または `src/marp_pptx/data/presets/*.md`（academic-talk / product / lecture / minimal）を雛形に。
+> または `src/marp_pptx/data/presets/*.md`（academic-talk / academic-dense / paper-review / product / lecture / minimal）を雛形に。
+> **文献報告（輪読・サーベイ）は `paper-review` プリセット**が流れ一式: 書誌カード(paper)→主張(sections)→
+> 手法図(flow)→数式→比較表(表の `◎○△×` は自動で緑/琥珀/赤に着色)→強み限界(pros-cons)→自研究への示唆(takeaway)→文献。
 
 ## 論文・リポジトリからデッキを作る（グラウンディング必須）
 
@@ -127,6 +129,7 @@ marp: true
 | 引用 / 沿革 / 人物 / 1文断言 | `quote` / `history` / `profile` / `statement` |
 | まとめ / キーメッセージ / 文献 / 表 | `summary` / `takeaway` / `references` / `table-slide` |
 | **1枚に2〜4トピックを高密度で**（公聴会流） | `sections`（色付きリード行＋本文の帯 ×N） |
+| **文献報告・輪読の書誌カード** | `paper`（著者・会議バッジ・被引用・選定理由・要点） |
 
 全52型の意味は `marp-pptx types`（`--json` で機械可読、`-c <category>` で絞り込み）。
 **各型の正確な HTML 骨組みは `references/type-skeletons.md` を参照**（崩さず埋める）。

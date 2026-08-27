@@ -33,5 +33,12 @@
     "description": "目次→定義→数式→手順→まとめ→演習。授業1コマ分の骨組み。",
     "icon": "📚",
     "file": "lecture.md"
+  },
+  {
+    "id": "paper-review",
+    "title": "文献報告（輪読）",
+    "description": "書誌カード→主張→手法図(flow)→数式→比較表(◎○△×)→強み限界→自研究への示唆→文献。輪読・サーベイ向け。",
+    "icon": "📚",
+    "file": "paper-review.md"
   }
 ]
