@@ -131,6 +131,17 @@ class PptxBuilder:
             c = RGBColor(int(c[0] * 0.82), int(c[1] * 0.82), int(c[2] * 0.82))
         return c
 
+    def _hero_fill_color(self) -> RGBColor | None:
+        """ThemeLayout.hero_fill parsed, or None. Dark/light is decided by
+        measured luminance where it's used, not by naming convention."""
+        hx = (self.LAYOUT.hero_fill or "").lstrip("#")
+        if len(hx) != 6:
+            return None
+        try:
+            return RGBColor(int(hx[0:2], 16), int(hx[2:4], 16), int(hx[4:6], 16))
+        except ValueError:
+            return None
+
     def _hero_accent(self, min_ratio: float = 2.5) -> RGBColor:
         """Accent for rules/labels on a PRIMARY-dark hero slide.
 
@@ -182,11 +193,13 @@ class PptxBuilder:
         alpha.set("val", "15000")
         return shape
 
-    def _content_region(self, has_title: bool = True, *, full: bool = False):
+    def _content_region(self, has_title: bool = True, *, full: bool = False,
+                        lead: bool = False):
         """(left, top, width, height) EMU for the body canvas.
 
         has_title: start below the title band; else from the top margin.
         full: don't reserve the footer band (figures / full-bleed images).
+        lead: a colored lead line sits under the title — push the body down.
         Single source of truth — every build_* should start from this.
         """
         left = int(MARGIN_L)
@@ -202,8 +215,41 @@ class PptxBuilder:
                 top = int(MARGIN_T + TITLE_H + TITLE_GAP)
         else:
             top = int(MARGIN_T)
+        if lead:
+            # One lead line at SZ_H3 — tracks font_scale so a scaled deck
+            # doesn't clip the line into the body below it.
+            top += int(Pt(26 * getattr(self.theme, "font_scale", 1.0)))
         height = int(SH - top - MARGIN_B - footer)
         return (left, top, width, height)
+
+    def _add_lead(self, slide, text):
+        """Hearing-style colored lead under the title: 「トピック｜結論」.
+
+        The single most recognizable device of the reference hearing deck —
+        every content slide answers "which thread, and what's the claim"
+        before the body starts.
+        """
+        band = self.LAYOUT.h1_deco == "band"
+        title_top = int(Inches(0.08)) if band else int(TITLE_TOP)
+        top = title_top + int(TITLE_H) + int(Inches(0.08))
+        lead_h = int(self._fs(Pt(SZ_H3.pt * metrics.DEFAULT_LINE_FACTOR)))
+        tb = self._add_textbox(slide, int(MARGIN_L), top,
+                               int(CONTENT_W), lead_h)
+        p = tb.text_frame.paragraphs[0]
+        self._set_rich_text(p, text, SZ_H3, self.SECONDARY)
+        for r in p.runs:
+            r.font.bold = True
+        return tb
+
+    def _content_region_with_lead(self, slide, sd, *, full: bool = False):
+        """_content_region + the h2 lead line for types that don't otherwise
+        consume sd.h2. With no h2 the geometry is exactly _content_region."""
+        lead = (sd.h2 or "").strip() if (sd.h1 and getattr(sd, "h2", "")) else ""
+        region = self._content_region(has_title=bool(sd.h1), full=full,
+                                      lead=bool(lead))
+        if lead:
+            self._add_lead(slide, lead)
+        return region
 
     def _stack_tops(self, heights, region, mode="center", gap=None):
         """Return the top (EMU) for each block stacked vertically in region.
@@ -1611,18 +1657,28 @@ class PptxBuilder:
 
     def build_title(self, sd: SlideData):
         slide = self._blank_slide()
+        hero = self._hero_fill_color()
         if self.LAYOUT.title_bg == "gradient":
             self._set_gradient_bg(slide, self.PRIMARY, self.SECONDARY)
         elif self.LAYOUT.title_bg == "dark":
             self._set_bg(slide, self.PRIMARY)
         elif self.LAYOUT.title_bg == "light":
             self._set_bg(slide, self.LIGHT)
+        elif hero is not None:
+            self._set_bg(slide, hero)
         is_dark = self.LAYOUT.title_bg in ("gradient", "dark")
+        if hero is not None and self.LAYOUT.title_bg == "white":
+            from marp_pptx.audit import contrast_ratio
+            is_dark = contrast_ratio(tuple(hero), (255, 255, 255)) > 4.0
         is_box = self.LAYOUT.title_bg == "box"   # Madrid: navy hero box on white
         h_color = self.WHITE if (is_dark or is_box) else self.PRIMARY
         sub_color = self._tint(self.PRIMARY, 0.85) if is_dark else self.MUTED
         accent = self._hero_accent(2.5) if is_dark else self.ACCENT       # rule (graphic)
         kicker_color = self._hero_accent(4.5) if is_dark else self.ACCENT_TEXT  # small text
+        if hero is not None and not is_dark:
+            # A light hero fill eats a little contrast — re-measure the small text.
+            sub_color = self._text_safe(sub_color, hero)
+            kicker_color = self._text_safe(kicker_color, hero)
         cx = int(SW // 2)
         is_left = self.LAYOUT.title_align == "left"
         align = PP_ALIGN.LEFT if is_left else PP_ALIGN.CENTER
@@ -1704,6 +1760,9 @@ class PptxBuilder:
 
     def build_divider(self, sd: SlideData):
         slide = self._blank_slide()
+        hero = self._hero_fill_color()
+        if hero is not None:
+            self._set_bg(slide, hero)
         is_center = self.LAYOUT.divider_align != "left"
         align = PP_ALIGN.CENTER if is_center else PP_ALIGN.LEFT
         cx = int(SW // 2)
@@ -1760,7 +1819,7 @@ class PptxBuilder:
         slide = self._blank_slide()
         if sd.h1:
             self._add_title(slide, sd.h1)
-        region = self._content_region(has_title=bool(sd.h1))
+        region = self._content_region_with_lead(slide, sd)
         left, _, width, _ = region
 
         # Measure each block, then center/justify the stack in the body region.
@@ -2176,7 +2235,7 @@ class PptxBuilder:
         slide = self._blank_slide()
         if sd.h1:
             self._add_title(slide, sd.h1)
-        rleft, rtop, rwidth, rheight = self._content_region(has_title=bool(sd.h1))
+        rleft, rtop, rwidth, rheight = self._content_region_with_lead(slide, sd)
         cap = self._fig_caption(sd.caption, sd.source)
         cap_h = int(self._estimate_text_height([cap], SZ_SMALL,
                                                width=rwidth)) if cap else 0
@@ -2422,7 +2481,7 @@ class PptxBuilder:
         n = len(sd.zone_flow_items)
         if n == 0:
             return
-        rleft, rtop, rwidth, rheight = self._content_region(has_title=bool(sd.h1))
+        rleft, rtop, rwidth, rheight = self._content_region_with_lead(slide, sd)
         gap = int(Inches(0.3))
         arrow_w = int(Inches(0.34))
         box_w = (rwidth - arrow_w * (n - 1) - gap * (n - 1)) // n
@@ -2537,7 +2596,7 @@ class PptxBuilder:
         n = len(sd.zone_process_items)
         if n == 0:
             return
-        rleft, rtop, rwidth, rheight = self._content_region(has_title=bool(sd.h1))
+        rleft, rtop, rwidth, rheight = self._content_region_with_lead(slide, sd)
         gap = int(Inches(0.28))
         box_w = (rwidth - gap * (n - 1)) // n
         badge_d = int(Inches(0.56))
@@ -2571,7 +2630,7 @@ class PptxBuilder:
         items = sd.sections_items
         if not items:
             return
-        rleft, rtop, rwidth, rheight = self._content_region(has_title=bool(sd.h1))
+        rleft, rtop, rwidth, rheight = self._content_region_with_lead(slide, sd)
         indent = int(Inches(0.28))
         gap = int(Inches(0.18))
         lead_h = int(Pt(SZ_H3.pt * metrics.DEFAULT_LINE_FACTOR))
@@ -2984,7 +3043,7 @@ class PptxBuilder:
         n = len(sd.kpi_items)
         if n == 0:
             return
-        rleft, rtop, rwidth, rheight = self._content_region(has_title=bool(sd.h1))
+        rleft, rtop, rwidth, rheight = self._content_region_with_lead(slide, sd)
         gap = int(CARD_GAP)
         box_w = (rwidth - gap * (n - 1)) // n
         # Height from the content — a fixed 2.7in card left a value and a
@@ -3097,7 +3156,7 @@ class PptxBuilder:
         slide = self._blank_slide()
         if sd.h1:
             self._add_title(slide, sd.h1)
-        rleft, rtop, rwidth, rheight = self._content_region(has_title=bool(sd.h1), full=not sd.caption)
+        rleft, rtop, rwidth, rheight = self._content_region_with_lead(slide, sd, full=not sd.caption)
         cap = self._fig_caption(sd.caption, sd.source)
         cap_h = (max(int(Inches(0.5)),
                      int(self._estimate_text_height([cap], SZ_SMALL, width=rwidth)))
@@ -3580,7 +3639,7 @@ class PptxBuilder:
         n = len(sd.multi_result_items)
         if n == 0:
             return
-        rleft, rtop, rwidth, rheight = self._content_region(has_title=bool(sd.h1))
+        rleft, rtop, rwidth, rheight = self._content_region_with_lead(slide, sd)
         gap = int(CARD_GAP)
         box_w = (rwidth - gap * (n - 1)) // n
         box_h = int(min(Inches(3.4), rheight))
@@ -3804,7 +3863,7 @@ class PptxBuilder:
         slide = self._blank_slide()
         if sd.h1:
             self._add_title(slide, sd.h1)
-        left, rtop, width, rheight = self._content_region(has_title=bool(sd.h1))
+        left, rtop, width, rheight = self._content_region_with_lead(slide, sd)
         if not sd.chart_series or not sd.chart_categories:
             self._add_body_text(slide, ["(chart: データ未指定 — Markdown表で系列を渡してください)"],
                                 left=left, top=rtop, width=width)

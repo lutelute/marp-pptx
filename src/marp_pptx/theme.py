@@ -63,6 +63,7 @@ class ThemeLayout:
     title_scale: float = 1.0           # H1 emphasis multiplier (auto-shrink still applies)
     header_crumb: bool = False         # hearing-style top chrome: section crumb + n／m
     figure_numbers: bool = False       # auto "図 N｜" caption prefix (deck-wide counter)
+    hero_fill: str = ""                # hex bg for title/divider slides ("" = theme default)
 
 
 @dataclass

@@ -33,3 +33,4 @@ layout:
   divider_number: false
   header_crumb: true        # hearing-deck chrome: section crumb top-left + n／m top-right
   figure_numbers: true      # auto 図N｜caption (＋出典｜ from <!-- source: -->)
+  hero_fill: '#C6E2F9'      # 公聴会式: 表紙・章区切りは淡い accent1-L80 の面
