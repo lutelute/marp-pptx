@@ -116,6 +116,70 @@ def column_lines(text: str) -> list[str]:
     return parse_markdown_lines(_BOX_DIV_RE.sub(repl, text))
 
 
+
+# ── mermaid flowchart subset → editable native shapes (the `flow` type) ──
+# Supported: `flowchart LR|TD`, nodes `ID[label]` / `ID(label)` / `ID([label])`
+# (stadium) / `ID{label}` (decision), optional `:::accent|primary|muted`,
+# edges `A --> B` / dashed `A -.-> B`, edge labels `A -->|label| B`,
+# `<br>` inside labels. Enough for the block/loop/system diagrams that carry
+# a hearing deck; anything fancier belongs in a real image.
+_MM_NODE = re.compile(
+    r"([A-Za-z0-9_]+)"
+    r"(?:(\(\[|\[|\(|\{)(.*?)(\]\)|\]|\)|\}))?"
+    r"(?::::(\w+))?")
+_MM_EDGE = re.compile(
+    r"^\s*(.+?)\s*(-[.-]*->)\s*(?:\|([^|]*)\|\s*)?(.+?)\s*$")
+
+
+def _mm_label(raw: str) -> str:
+    s = re.sub(r"<br\s*/?>", "\n", raw or "", flags=re.IGNORECASE)
+    return strip_html(s).strip().strip('"')
+
+
+def _mm_shape(opener: str) -> str:
+    return {"([": "stadium", "(": "stadium", "[": "rect", "{": "diamond"}.get(opener, "rect")
+
+
+def parse_mermaid_flow(src: str) -> dict:
+    nodes: dict[str, dict] = {}
+    edges: list[dict] = []
+    direction = "LR"
+
+    def touch(part: str) -> str | None:
+        part = part.strip()
+        m = _MM_NODE.fullmatch(part)
+        if not m:
+            return None
+        nid, opener, label, _closer, ncls = m.groups()
+        info = nodes.setdefault(nid, {"label": nid, "shape": "rect", "cls": ""})
+        if opener:
+            info["label"] = _mm_label(label)
+            info["shape"] = _mm_shape(opener)
+        if ncls:
+            info["cls"] = ncls
+        return nid
+
+    for line in src.splitlines():
+        s = line.strip()
+        if not s or s.startswith("%%"):
+            continue
+        dm = re.match(r"^(?:flowchart|graph)\s+(LR|RL|TD|TB)\b", s)
+        if dm:
+            direction = "LR" if dm.group(1) in ("LR", "RL") else "TD"
+            continue
+        em = _MM_EDGE.match(s)
+        if em:
+            src_part, arrow, elabel, dst_part = em.groups()
+            a, b = touch(src_part), touch(dst_part)
+            if a and b:
+                edges.append({"src": a, "dst": b,
+                              "label": _mm_label(elabel or ""),
+                              "dashed": "." in arrow})
+            continue
+        touch(s)
+    return {"dir": direction, "nodes": nodes, "edges": edges} if nodes else {}
+
+
 def parse_markdown_lines(text: str) -> list[str]:
     lines = []
     for line in text.split("\n"):
@@ -205,6 +269,7 @@ class SlideData:
     zone_matrix: dict = field(default_factory=dict)
     zone_process_items: list = field(default_factory=list)
     sections_items: list = field(default_factory=list)
+    flow: dict = field(default_factory=dict)
     agenda_items: list = field(default_factory=list)
     rq_main: str = ""
     rq_sub: str = ""
@@ -956,6 +1021,11 @@ def parse_slide(index: int, raw: str) -> SlideData:
                     "value": strip_html(vm.group(1)) if vm else "",
                     "desc": strip_html(dm.group(1)) if dm else "",
                 })
+
+    elif cls == "flow":
+        m = re.search(r"```(?:mermaid)?\s*\n(.*?)```", content, re.DOTALL)
+        if m:
+            sd.flow = parse_mermaid_flow(m.group(1))
 
     elif cls == "sections":
         for child in extract_child_divs(content):

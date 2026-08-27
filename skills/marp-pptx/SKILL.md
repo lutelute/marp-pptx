@@ -123,6 +123,7 @@ marp: true
 | 結果（単/二/複） | `result` / `result-dual` / `multi-result` |
 | 定義 / 数式 / 連立式 / 図 / 注釈図 / コード | `definition` / `equation` / `equations` / `diagram` / `annotation` / `code` |
 | フロー(A→B→C) / 詳細フロー | `zone-flow` / `zone-process` |
+| **ブロック図・機器構成図・反復ループ図** | `flow`（```mermaid flowchart 記法→編集可能な図形＋矢印。戻り辺 `-.->` でループ） |
 | 引用 / 沿革 / 人物 / 1文断言 | `quote` / `history` / `profile` / `statement` |
 | まとめ / キーメッセージ / 文献 / 表 | `summary` / `takeaway` / `references` / `table-slide` |
 | **1枚に2〜4トピックを高密度で**（公聴会流） | `sections`（色付きリード行＋本文の帯 ×N） |

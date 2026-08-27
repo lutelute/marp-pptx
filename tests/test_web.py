@@ -64,7 +64,7 @@ def test_api_types(client):
     assert r.status_code == 200
     data = json.loads(r.data)
     assert isinstance(data, list)
-    assert len(data) == 54
+    assert len(data) == 55
     names = {t["name"] for t in data}
     assert {"title", "funnel", "statement", "big-number", "chart"} <= names
 

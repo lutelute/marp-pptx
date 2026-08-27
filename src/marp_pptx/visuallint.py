@@ -200,6 +200,7 @@ def detect_text_collisions(prs, *, intrude_emu: int = 152400) -> list[dict]:
                  if getattr(s, "has_text_frame", False)
                  and s.text_frame.text.strip()
                  and not _PAGE_NO.fullmatch(s.text_frame.text.strip())
+                 and not (s.name or "").startswith("flow:")
                  and s.top < bar_chrome]
         for a in boxes:
             a_bottom = a.top + _needed_height_emu(a)

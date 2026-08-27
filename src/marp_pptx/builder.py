@@ -2620,6 +2620,226 @@ class PptxBuilder:
         if sd.footnote:
             self._add_footnote(slide, sd.footnote)
 
+    def _arrow_line(self, conn, *, dashed: bool = False, color=None):
+        """Style a connector as a flow arrow: color, weight, stealth head."""
+        conn.line.color.rgb = color if color is not None else (
+            self.MUTED if dashed else self.SECONDARY)
+        conn.line.width = Pt(1.5)
+        self._no_shadow(conn)
+        ln = conn.line._get_or_add_ln()
+        if dashed:
+            ln.append(ln.makeelement(qn("a:prstDash"), {"val": "dash"}))
+        ln.append(ln.makeelement(qn("a:tailEnd"),
+                                 {"type": "stealth", "w": "med", "len": "med"}))
+        return conn
+
+    def build_flow(self, sd: SlideData):
+        """mermaid flowchart subset drawn as EDITABLE native shapes.
+
+        The reference hearing deck is carried by hand-made block/loop
+        diagrams; this type generates that class of figure from a
+        ```mermaid fence — every box and arrow stays a real PPTX shape.
+        """
+        slide = self._blank_slide()
+        if sd.h1:
+            self._add_title(slide, sd.h1)
+        rleft, rtop, rwidth, rheight = self._content_region_with_lead(slide, sd)
+        fl = sd.flow or {}
+        if not fl.get("nodes"):
+            self._warn("flow slide: no parsable ```mermaid block — nothing drawn")
+            return
+        nodes, edges = fl["nodes"], fl["edges"]
+        horizontal = fl.get("dir", "LR") == "LR"
+
+        # ── rank: longest path over solid edges (dashed = annotation/return) ──
+        order = list(nodes)
+        layer = {nid: 0 for nid in order}
+        for _ in range(len(order)):
+            changed = False
+            for e in edges:
+                if e["dashed"]:
+                    continue
+                if layer[e["dst"]] <= layer[e["src"]]:
+                    layer[e["dst"]] = layer[e["src"]] + 1
+                    changed = True
+            if not changed:
+                break
+        ncols = max(layer.values()) + 1
+        cols: list[list[str]] = [[] for _ in range(ncols)]
+        for nid in order:
+            cols[layer[nid]].append(nid)
+
+        # ── measure nodes ──
+        pad = int(Pt(10))
+        geo: dict[str, dict] = {}
+        for nid, info in nodes.items():
+            lines = info["label"].split("\n")
+            em = max((self._visual_em_width(l) for l in lines), default=1.0)
+            w = int(min(Inches(2.9), max(Inches(1.15),
+                        Pt(em * SZ_ZONE_B.pt * 1.06) + pad * 2 + Pt(8))))
+            if info["shape"] == "stadium":
+                w = int(min(Inches(3.1), w * 1.22))   # rounded ends eat width
+            h = int(self._estimate_text_height(lines, SZ_ZONE_B,
+                                               width=w - pad * 2)) + pad * 2
+            if info["shape"] == "diamond":
+                w = int(w * 1.35); h = int(h * 1.6)
+            geo[nid] = {"w": w, "h": max(h, int(Inches(0.55)))}
+
+        label_w = [Pt(self._visual_em_width(e["label"]) * SZ_FOOT.pt) + Pt(12)
+                   for e in edges
+                   if e["label"] and layer[e["dst"]] > layer[e["src"]]]
+        hgap = int(max(int(Inches(0.62)), *label_w)) if label_w else int(Inches(0.62))
+        vgap = int(Inches(0.34))
+        has_loop = any(layer[e["dst"]] <= layer[e["src"]] for e in edges)
+        loop_lane = int(Inches(0.55)) if has_loop else 0
+
+        if horizontal:
+            col_w = [max(geo[n]["w"] for n in c) for c in cols]
+            total_w = sum(col_w) + hgap * (ncols - 1)
+            if total_w > rwidth:                     # compress to fit
+                k = rwidth / total_w
+                for g in geo.values():
+                    g["w"] = int(g["w"] * k)
+                col_w = [int(w * k) for w in col_w]
+                hgap = int(hgap * k)
+                total_w = sum(col_w) + hgap * (ncols - 1)
+            x = rleft + (rwidth - total_w) // 2
+            for c, ids in enumerate(cols):
+                col_h = sum(geo[n]["h"] for n in ids) + vgap * (len(ids) - 1)
+                y = rtop + max(0, (rheight - loop_lane - col_h) // 2)
+                for nid in ids:
+                    geo[nid]["x"] = x + (col_w[c] - geo[nid]["w"]) // 2
+                    geo[nid]["y"] = y
+                    y += geo[nid]["h"] + vgap
+                x += col_w[c] + hgap
+        else:                                        # TD
+            row_h = [max(geo[n]["h"] for n in c) for c in cols]
+            total_h = sum(row_h) + vgap * (ncols - 1)
+            y = rtop + max(0, (rheight - total_h) // 2)
+            for c, ids in enumerate(cols):
+                roww = sum(geo[n]["w"] for n in ids) + hgap * (len(ids) - 1)
+                xx = rleft + max(0, (rwidth - loop_lane - roww) // 2)
+                for nid in ids:
+                    geo[nid]["x"] = xx
+                    geo[nid]["y"] = y + (row_h[c] - geo[nid]["h"]) // 2
+                    xx += geo[nid]["w"] + hgap
+                y += row_h[c] + vgap
+
+        # ── edges under nodes? draw edges first so boxes sit on top ──
+        def cxy(nid):
+            g = geo[nid]
+            return g["x"] + g["w"] // 2, g["y"] + g["h"] // 2
+
+        diagram_bottom = max(g["y"] + g["h"] for g in geo.values())
+        right_edge = max(g["x"] + g["w"] for g in geo.values())
+        loop_y = diagram_bottom + int(Inches(0.32))
+        loop_x = right_edge + int(Inches(0.30))
+
+        for e in edges:
+            sg, dg = geo[e["src"]], geo[e["dst"]]
+            forward = layer[e["dst"]] > layer[e["src"]]
+            if forward:
+                if horizontal:
+                    x1, y1 = sg["x"] + sg["w"], sg["y"] + sg["h"] // 2
+                    x2, y2 = dg["x"], dg["y"] + dg["h"] // 2
+                else:
+                    x1, y1 = sg["x"] + sg["w"] // 2, sg["y"] + sg["h"]
+                    x2, y2 = dg["x"] + dg["w"] // 2, dg["y"]
+                conn = slide.shapes.add_connector(
+                    MSO_CONNECTOR.STRAIGHT, int(x1), int(y1), int(x2), int(y2))
+                self._arrow_line(conn, dashed=e["dashed"])
+                if e["label"]:
+                    lw = int(Pt(self._visual_em_width(e["label"]) * SZ_FOOT.pt) + Pt(10))
+                    lb = self._add_textbox(
+                        slide, int((x1 + x2) // 2 - lw // 2),
+                        int((y1 + y2) // 2 - Inches(0.24)), lw, int(Inches(0.2)))
+                    lb.name = "flow:label"
+                    pl = lb.text_frame.paragraphs[0]
+                    self._rich_line(pl, e["label"], SZ_FOOT, self.MUTED)
+                    pl.alignment = PP_ALIGN.CENTER
+            else:
+                # return edge: route through the loop lane (below for LR,
+                # right for TD) as three segments, arrow on the last.
+                scx, _ = cxy(e["src"]); dcx, _ = cxy(e["dst"])
+                if horizontal:
+                    p1 = (scx, sg["y"] + sg["h"]); p2 = (scx, loop_y)
+                    p3 = (dcx, loop_y); p4 = (dcx, dg["y"] + dg["h"])
+                else:
+                    _, scy = cxy(e["src"]); _, dcy = cxy(e["dst"])
+                    p1 = (sg["x"] + sg["w"], scy); p2 = (loop_x, scy)
+                    p3 = (loop_x, dcy); p4 = (dg["x"] + dg["w"], dcy)
+                segs = [(p1, p2), (p2, p3), (p3, p4)]
+                for si, (a, b) in enumerate(segs):
+                    conn = slide.shapes.add_connector(
+                        MSO_CONNECTOR.STRAIGHT, int(a[0]), int(a[1]),
+                        int(b[0]), int(b[1]))
+                    if si == len(segs) - 1:
+                        self._arrow_line(conn, dashed=e["dashed"])
+                    else:
+                        conn.line.color.rgb = (self.MUTED if e["dashed"]
+                                               else self.SECONDARY)
+                        conn.line.width = Pt(1.5)
+                        self._no_shadow(conn)
+                        if e["dashed"]:
+                            ln = conn.line._get_or_add_ln()
+                            ln.append(ln.makeelement(qn("a:prstDash"),
+                                                     {"val": "dash"}))
+                if e["label"]:
+                    mx = (p2[0] + p3[0]) // 2, (p2[1] + p3[1]) // 2
+                    lw = int(Pt(self._visual_em_width(e["label"]) * SZ_FOOT.pt) + Pt(10))
+                    lb = self._add_textbox(slide, int(mx[0] - lw // 2),
+                                           int(mx[1] + Inches(0.03)), lw,
+                                           int(Inches(0.2)))
+                    lb.name = "flow:label"
+                    pl = lb.text_frame.paragraphs[0]
+                    self._rich_line(pl, e["label"], SZ_FOOT, self.MUTED)
+                    pl.alignment = PP_ALIGN.CENTER
+
+        # ── nodes on top ──
+        for nid, info in nodes.items():
+            g = geo[nid]
+            shape_kind = {"stadium": MSO_SHAPE.ROUNDED_RECTANGLE,
+                          "diamond": MSO_SHAPE.DIAMOND}.get(
+                              info["shape"], MSO_SHAPE.ROUNDED_RECTANGLE)
+            bx = slide.shapes.add_shape(shape_kind, g["x"], g["y"], g["w"], g["h"])
+            bx.name = "flow:node"
+            if info["shape"] != "diamond":
+                bx.adjustments[0] = 0.5 if info["shape"] == "stadium" else CARD_RADIUS
+            cls = info.get("cls", "")
+            if cls == "accent":
+                bx.fill.solid(); bx.fill.fore_color.rgb = self._tint(self.ACCENT, 0.85)
+                bx.line.color.rgb = self.ACCENT
+            elif cls == "primary":
+                bx.fill.solid(); bx.fill.fore_color.rgb = self._tint(self.PRIMARY, 0.90)
+                bx.line.color.rgb = self.PRIMARY
+            elif cls == "muted":
+                bx.fill.solid(); bx.fill.fore_color.rgb = self.LIGHT
+                bx.line.color.rgb = self.HAIRLINE
+            else:
+                bx.fill.solid(); bx.fill.fore_color.rgb = self.SURFACE
+                bx.line.color.rgb = self.HAIRLINE
+            bx.line.width = Pt(1.1)
+            if self.LAYOUT.card_shadow and info["shape"] != "diamond":
+                self._soft_shadow(bx)
+            else:
+                self._no_shadow(bx)
+            tf = bx.text_frame
+            tf.word_wrap = True
+            tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+            tf.margin_left = tf.margin_right = pad
+            tf.margin_top = tf.margin_bottom = int(Pt(4))
+            for i, line in enumerate(info["label"].split("\n")):
+                pline = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+                if i == 0:
+                    self._set_rich_text(pline, line, SZ_ZONE_B, self.FG)
+                    for r in pline.runs:
+                        r.font.bold = True
+                else:
+                    self._set_rich_text(pline, line, Pt(11), self.MUTED)
+                pline.alignment = PP_ALIGN.CENTER
+        if sd.footnote:
+            self._add_footnote(slide, sd.footnote)
+
     def build_sections(self, sd: SlideData):
         """Hearing-style dense stack: 2-4 topic bands, each a colored lead
         line + indented body, separated by hairlines. The high-information
@@ -3940,6 +4160,7 @@ class PptxBuilder:
         "zone-process": "build_zone_process",
         "agenda": "build_agenda",
         "sections": "build_sections",
+        "flow": "build_flow",
         "rq": "build_rq",
         "result-dual": "build_result_dual",
         "summary": "build_summary",
