@@ -65,6 +65,7 @@ TYPE_REGISTRY: list[SlideTypeInfo] = [
     SlideTypeInfo("split-panel", "split-panel", "structure", "▮左色面│本文", "ハーフブリード色面パネル", "画面端まで塗った色面に主張を白抜きし、右に本文を置くとき（キーノート級の1枚）", "57-split-panel.md"),
     SlideTypeInfo("graphical-abstract", "graphical-abstract", "structure", "□→□→▪ 一枚絵", "グラフィカルアブストラクト", "表紙直後に課題→手法→成果を1枚の図で示すとき（研究発表の定番）", "58-graphical-abstract.md"),
     SlideTypeInfo("figure-full", "figure-full", "structure", "▣ 最大画角の図", "論文図の全面表示", "論文の特徴的な図を余白0.25inまで最大サイズで見せるとき（図が主役の1枚）", "59-figure-full.md"),
+    SlideTypeInfo("figure-story", "figure-story", "structure", "▤図│解説＋結論帯", "図の完全解剖", "図を左右どちらかに寄せ、リード文（h2）・横の解説・下のまとめ帯で1枚を完結させるとき", "60-figure-story.md"),
 
     # ── Flow ──
     SlideTypeInfo("zone-flow", "zone-flow", "flow", "□→□→□", "フロー・因果", "原因→結果の流れを示すとき", "18-zone-flow.md"),

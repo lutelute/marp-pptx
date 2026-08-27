@@ -275,6 +275,7 @@ class SlideData:
     paper_stats: str = ""
     paper_why: str = ""
     ga: dict = field(default_factory=dict)   # graphical-abstract panels
+    side: str = ""                 # figure-story: "right" puts the figure right
     build: bool = False            # <!-- build --> progressive disclosure
     build_upto: int | None = None  # expanded copies: show items < upto full
     build_total: int | None = None
@@ -454,6 +455,7 @@ def parse_slide(index: int, raw: str) -> SlideData:
     sd.speaker_notes = "\n\n".join(notes_chunks)
     sd.source = "; ".join(source_chunks)
     sd.dark = directives.get("bg", "").strip().lower() == "dark"
+    sd.side = directives.get("side", "").strip().lower()
 
     h1m = re.search(r"^#\s+(.+)$", content, re.MULTILINE)
     h2m = re.search(r"^##\s+(.+)$", content, re.MULTILINE)
@@ -1035,6 +1037,21 @@ def parse_slide(index: int, raw: str) -> SlideData:
                     "desc": strip_html(dm.group(1)) if dm else "",
                 })
 
+    elif cls == "figure-story":
+        img = re.search(r"!\[(?:w:\d+)?\]\(([^)]+)\)", content)
+        if img:
+            sd.image_path = img.group(1)
+        cap = extract_div(content, "caption")
+        if cap:
+            sd.caption = strip_html(cap)
+        pts = extract_div(content, "fs-points")
+        if pts:
+            sd.body_lines = [l for l in parse_markdown_lines(
+                html_lists_to_bullets(pts)) if l.strip()]
+        conc = extract_div(content, "fs-conclusion")
+        if conc:
+            sd.bottom_text = strip_html(conc)
+
     elif cls == "figure-full":
         img = re.search(r"!\[(?:w:\d+)?\]\(([^)]+)\)", content)
         if img:
@@ -1249,8 +1266,13 @@ def parse_slide(index: int, raw: str) -> SlideData:
             sd.image_path = img.group(1)
 
     # A data source falls back to the footnote slot so existing footnote
-    # rendering surfaces it (small-caps, bottom of slide).
-    if sd.source and not sd.footnote:
+    # rendering surfaces it (small-caps, bottom of slide) — except on types
+    # whose builders already fold `source` into the figure caption
+    # (図N｜…　出典｜…): there the fallback printed it twice.
+    _SOURCE_IN_CAPTION = {"figure", "diagram", "chart", "overview", "result",
+                          "figure-full", "figure-story", "graphical-abstract"}
+    if (sd.source and not sd.footnote
+            and sd.slide_class not in _SOURCE_IN_CAPTION):
         sd.footnote = sd.source
 
     return sd

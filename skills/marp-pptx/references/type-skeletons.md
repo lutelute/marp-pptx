@@ -263,17 +263,24 @@ $$E = mc^2$$
 
 # 本研究の全体像
 
-## 一枚で｜課題 → 提案 → 成果
+## 一枚で｜問い → 課題 → 提案 → 成果
+
+<div class="ga-top">
+  <span class="ga-label">問い</span>
+  <span class="ga-body">PV 連系申請の受入可否を、**当日中に**回答できるか？ — 総当たり計算 94 分の壁を、精度を落とさずに破れるかを検証する。</span>
+</div>
 
 <div class="ga-problem">
   <span class="ga-label">課題</span>
-  <span class="ga-body">PV 受入可否の判定は総当たり AC × 二分探索で **94 分**。申請ペースに計算が追いつかず、回答は翌日持ち越しになっている。</span>
+  ![w:400](figures/duck-curve.png)
+  <span class="ga-body">総当たり AC × 二分探索で **94 分**。回答は翌日持ち越し。</span>
 </div>
 
 <div class="ga-method">
   <span class="ga-label">提案</span>
+  ![w:400](figures/loop.png)
   <span class="ga-steps">感度行列 → LP 一括 → AC 検証</span>
-  <span class="ga-body">ヤコビアンから抽出した感度行列で LP が候補を一括生成し、AC 潮流は違反時のみ再検証。速さと正しさを ==分業== する。</span>
+  <span class="ga-body">速さと正しさを ==分業== する。</span>
 </div>
 
 <div class="ga-result">
@@ -298,6 +305,29 @@ $$E = mc^2$$
 ![w:1200](figures/transformer-architecture.png)
 
 <div class="caption">エンコーダ・デコーダとも自己注意＋FFN の積層のみで構成される</div>
+```
+
+### `figure-story` — 図の完全解剖
+<!-- ▤図│解説＋結論帯 · 図を左右どちらかに寄せ、リード文（h2）・横の解説・下のまとめ帯で1枚を完結させるとき -->
+
+```markdown
+<!-- _class: figure-story -->
+<!-- source: Vaswani et al. (2017), Figure 1 -->
+
+# アーキテクチャが並列化を解放する
+
+## 読み方｜再帰が無いから、全時刻を同時に計算できる
+
+![w:600](figures/architecture.png)
+
+<div class="fs-points">
+- **左**: エンコーダ — 自己注意＋FFN を $N=6$ 積層
+- **右**: デコーダ — マスク付き自己注意で未来を遮蔽
+- 系列方向の依存が無く、**全トークンを同時計算**
+- 位置情報は正弦波の位置符号で注入（学習不要）
+</div>
+
+<div class="fs-conclusion">まとめ: 逐次計算の除去こそが本質 — 学習 3.5 日（8 GPU）での SOTA 到達は、この構造選択の直接の帰結。</div>
 ```
 
 ## 時間（temporal）

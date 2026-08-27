@@ -2686,6 +2686,82 @@ class PptxBuilder:
         d2.fill.solid(); d2.fill.fore_color.rgb = self.ACCENT
         d2.line.fill.background(); self._no_shadow(d2)
 
+    def build_figure_story(self, sd: SlideData):
+        """図の完全解剖: リード（上）→ 図＋解説（左右）→ まとめ帯（下）。
+
+        The full explanatory anatomy of the hearing deck's figure pages.
+        The figure's own aspect decides the split: it takes the width it
+        needs (up to 58%) at the height available, and the commentary
+        column gets the rest. `<!-- _side: right -->` flips the figure to
+        the right. h2 renders as the lead line; fs-conclusion grounds the
+        slide in a conclusion box.
+        """
+        slide = self._blank_slide()
+        if sd.h1:
+            self._add_title(slide, sd.h1)
+        rleft, rtop, rwidth, rheight = self._content_region_with_lead(slide, sd)
+
+        concl_h = 0
+        if sd.bottom_text:
+            concl_h = int(self._estimate_text_height(
+                [sd.bottom_text], SZ_ZONE_B,
+                width=rwidth - int(Inches(0.5)))) + int(Inches(0.34))
+        mid_h = rheight - (concl_h + int(BLOCK_GAP) if concl_h else 0)
+
+        img_file = self._image_or_placeholder(sd.image_path) if sd.image_path else None
+        cap = self._fig_caption(sd.caption, sd.source)
+        gap = int(Inches(0.42))
+        pw = ph = 0
+        if img_file:
+            from PIL import Image
+            with Image.open(img_file) as im:
+                iw, ih = im.size
+            cap_h = (int(self._estimate_text_height(
+                [cap], SZ_SMALL, width=int(rwidth * 0.58))) + int(Inches(0.08))
+                if cap else 0)
+            fig_h_max = mid_h - cap_h
+            fig_w_max = int(rwidth * 0.58)
+            scale = min(fig_w_max / (iw * 914400 / 96),
+                        fig_h_max / (ih * 914400 / 96))
+            pw = int(iw * scale * 914400 / 96)
+            ph = int(ih * scale * 914400 / 96)
+            fig_col = max(pw, int(rwidth * 0.30))
+            txt_w = rwidth - fig_col - gap
+            fig_x = (rleft + rwidth - fig_col + (fig_col - pw) // 2
+                     if sd.side == "right" else rleft + (fig_col - pw) // 2)
+            fig_y = rtop + max(0, (mid_h - ph - cap_h) // 2)
+            slide.shapes.add_picture(img_file, int(fig_x), int(fig_y), pw, ph)
+            if cap:
+                ccol_x = (rleft + rwidth - fig_col if sd.side == "right"
+                          else rleft)
+                cb = self._add_textbox(slide, int(ccol_x),
+                                       int(fig_y + ph + Inches(0.06)),
+                                       int(fig_col), cap_h)
+                cb.text_frame.word_wrap = True
+                cp = cb.text_frame.paragraphs[0]
+                self._rich_line(cp, cap, SZ_SMALL, self.MUTED)
+                cp.alignment = PP_ALIGN.CENTER
+        else:
+            txt_w = rwidth
+            fig_col = 0
+
+        if sd.body_lines:
+            tx = (rleft if sd.side == "right"
+                  else rleft + (fig_col + gap if fig_col else 0))
+            body_sz = Pt(20) if len(sd.body_lines) <= 5 else SZ_COL
+            bh = int(self._estimate_text_height(sd.body_lines, body_sz,
+                                                width=txt_w, gap=PARA_GAP))
+            by = rtop + max(0, (mid_h - min(bh, mid_h)) // 2)
+            self._add_body_text(slide, sd.body_lines, left=int(tx), top=int(by),
+                                width=int(txt_w), height=int(min(bh, mid_h)),
+                                size=body_sz)
+        if sd.bottom_text:
+            self._add_conclusion_box(slide, sd.bottom_text, rleft,
+                                     int(rtop + mid_h + BLOCK_GAP),
+                                     rwidth, concl_h)
+        if sd.footnote:
+            self._add_footnote(slide, sd.footnote)
+
     def build_figure_full(self, sd: SlideData):
         """論文図のための最大画角: スリムな題 + 余白 0.25in まで使う画像領域。
 
@@ -4708,6 +4784,7 @@ class PptxBuilder:
         "split-panel": "build_split_panel",
         "graphical-abstract": "build_graphical_abstract",
         "figure-full": "build_figure_full",
+        "figure-story": "build_figure_story",
         "rq": "build_rq",
         "result-dual": "build_result_dual",
         "summary": "build_summary",
