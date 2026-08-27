@@ -1716,6 +1716,18 @@ class PptxBuilder:
         # with — reserving at 1.0 while rendering at LINE_TITLE clipped the
         # second line of any hero title that wrapped.
         hero_pt = SZ_DISPLAY.pt * getattr(self.LAYOUT, "title_scale", 1.0)
+        # Brevity buys size: a short declarative title fills the hero at up
+        # to 54pt instead of floating at 40 — the single biggest "designed
+        # vs generated" tell on a keynote-style cover.
+        hero_w = int(SW - (tx or int(Inches(0.8))) * 2)
+        if getattr(self.theme, "font_scale", 1.0) <= 1.06:
+            # Only at base scale — a keynote/1.3 deck is already big, and the
+            # taller band would push the meta block off the bottom edge.
+            for cand in (54.0, 48.0):
+                if cand > hero_pt and self._wrapped_lines(
+                        sd.h1 or "", cand, int(hero_w * 0.94), bold=True) <= 1:
+                    hero_pt = cand
+                    break
         title_h = int(self._fs(Pt(hero_pt * metrics.DEFAULT_LINE_FACTOR
                                   * LINE_TITLE * 2)))
         if is_box:
@@ -1786,6 +1798,7 @@ class PptxBuilder:
             gb = self._add_textbox(
                 slide, int(Inches(0.85)), int(Inches(0.85)), int(Inches(5.0)),
                 int(Pt(self._fs(Pt(150)).pt * metrics.DEFAULT_LINE_FACTOR)))
+            gb.name = "deco:ghost-number"
             gp = gb.text_frame.paragraphs[0]; gp.text = ghost
             gp.font.name = self.FONT_HEAD; gp.font.size = self._fs(Pt(150))
             gp.font.bold = True; gp.font.color.rgb = self._tint(self.PRIMARY, 0.88)
@@ -2687,7 +2700,16 @@ class PptxBuilder:
         pad = int(Inches(0.55))
         inner_w = panel_w - pad * 2
         kicker = (sd.h2 or "").strip()
-        title_pt = self._fs(Pt(SZ_TITLE.pt * 1.05))
+        # Panel claim scales to its box: try 40 -> 36 -> 31.5pt, take the
+        # largest that stays within 4 lines of the panel width.
+        base_pt = SZ_TITLE.pt * 1.05
+        for cand in (40.0, 36.0):
+            if self._wrapped_lines(sd.h1 or "", cand * getattr(
+                    self.theme, "font_scale", 1.0),
+                    panel_w - pad * 2, bold=True) <= 4:
+                base_pt = cand
+                break
+        title_pt = self._fs(Pt(base_pt))
         t_h = int(self._estimate_text_height([sd.h1], Pt(title_pt.pt / max(
             getattr(self.theme, "font_scale", 1.0), 0.01)), width=inner_w,
             line_spacing=LINE_TITLE)) if sd.h1 else 0
@@ -2712,11 +2734,13 @@ class PptxBuilder:
         if sd.body_lines:
             cx = panel_w + int(Inches(0.55))
             cw = int(SW) - cx - int(MARGIN_R)
-            bh = int(self._estimate_text_height(sd.body_lines, SZ_BODY,
+            body_sz = Pt(21) if len(sd.body_lines) <= 6 else SZ_BODY
+            bh = int(self._estimate_text_height(sd.body_lines, body_sz,
                                                 width=cw, gap=PARA_GAP))
             by = max(int(MARGIN_T), (int(SH) - int(FOOTER_RESERVE) - bh) // 2)
             self._add_body_text(slide, sd.body_lines, left=cx, top=by,
-                                width=cw, height=min(bh, int(SH - MARGIN_T - MARGIN_B)))
+                                width=cw, height=min(bh, int(SH - MARGIN_T - MARGIN_B)),
+                                size=body_sz)
         if sd.footnote:
             self._add_footnote(slide, sd.footnote)
 
@@ -2860,6 +2884,25 @@ class PptxBuilder:
                    if e["label"] and layer[e["dst"]] > layer[e["src"]]]
         hgap = int(max(int(Inches(0.62)), *label_w)) if label_w else int(Inches(0.62))
         vgap = int(Inches(0.34))
+        # Scale the diagram toward the canvas: content-hugging nodes on a
+        # 12in region read as a thumbnail, not a figure. Uniform upscale of
+        # boxes and gaps (fonts keep their size; the boxes gain air).
+        if horizontal:
+            pre_w = sum(max(geo[n]["w"] for n in c) for c in cols) + hgap * (ncols - 1)
+            pre_h = max(sum(geo[n]["h"] for n in c) + vgap * (len(c) - 1)
+                        for c in cols)
+        else:
+            pre_w = max(sum(geo[n]["w"] for n in c) + hgap * (len(c) - 1)
+                        for c in cols)
+            pre_h = sum(max(geo[n]["h"] for n in c) for c in cols) + vgap * (ncols - 1)
+        k = min(1.5, 0.96 * rwidth / max(pre_w, 1),
+                0.92 * (rheight - (int(Inches(0.55)) if any(
+                    layer[e["dst"]] <= layer[e["src"]] for e in edges) else 0))
+                / max(pre_h, 1))
+        if k > 1.05:
+            for g in geo.values():
+                g["w"] = int(g["w"] * k); g["h"] = int(g["h"] * k)
+            hgap = int(hgap * k); vgap = int(vgap * k)
         has_loop = any(layer[e["dst"]] <= layer[e["src"]] for e in edges)
         loop_lane = int(Inches(0.55)) if has_loop else 0
 
@@ -2905,8 +2948,15 @@ class PptxBuilder:
         loop_y = diagram_bottom + int(Inches(0.32))
         loop_x = right_edge + int(Inches(0.30))
 
+        upto = sd.build_upto
+        order_ix = {nid: ix for ix, nid in enumerate(order)}
+
+        def _ghosted(nid):
+            return upto is not None and order_ix.get(nid, 0) >= upto
+
         for e in edges:
             sg, dg = geo[e["src"]], geo[e["dst"]]
+            e_ghost = _ghosted(e["src"]) or _ghosted(e["dst"])
             forward = layer[e["dst"]] > layer[e["src"]]
             if forward:
                 if horizontal:
@@ -2917,7 +2967,9 @@ class PptxBuilder:
                     x2, y2 = dg["x"] + dg["w"] // 2, dg["y"]
                 conn = slide.shapes.add_connector(
                     MSO_CONNECTOR.STRAIGHT, int(x1), int(y1), int(x2), int(y2))
-                self._arrow_line(conn, dashed=e["dashed"])
+                self._arrow_line(conn, dashed=e["dashed"],
+                                 color=self._tint(self.SECONDARY, 0.72)
+                                 if e_ghost else None)
                 if e["label"]:
                     lw = int(Pt(self._visual_em_width(e["label"]) * SZ_FOOT.pt) + Pt(10))
                     lb = self._add_textbox(
@@ -2976,7 +3028,12 @@ class PptxBuilder:
             if info["shape"] != "diamond":
                 bx.adjustments[0] = 0.5 if info["shape"] == "stadium" else CARD_RADIUS
             cls = info.get("cls", "")
-            if cls == "accent":
+            n_ghost = _ghosted(nid)
+            if n_ghost:
+                bx.name = "build:ghost"
+                node_fill = self.LIGHT
+                bx.line.color.rgb = self.HAIRLINE
+            elif cls == "accent":
                 node_fill = self._tint(self.ACCENT, 0.85)
                 bx.line.color.rgb = self.ACCENT
             elif cls == "primary":
@@ -2999,15 +3056,17 @@ class PptxBuilder:
             tf.vertical_anchor = MSO_ANCHOR.MIDDLE
             tf.margin_left = tf.margin_right = pad
             tf.margin_top = tf.margin_bottom = int(Pt(4))
+            head_col = self._tint(self.FG, 0.62) if n_ghost else self.FG
             for i, line in enumerate(info["label"].split("\n")):
                 pline = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
                 if i == 0:
-                    self._set_rich_text(pline, line, SZ_ZONE_B, self.FG)
+                    self._set_rich_text(pline, line, SZ_ZONE_B, head_col)
                     for r in pline.runs:
                         r.font.bold = True
                 else:
-                    self._set_rich_text(pline, line, Pt(11),
-                                        self._text_safe(self.MUTED, node_fill))
+                    sub = (self._tint(self.MUTED, 0.45) if n_ghost
+                           else self._text_safe(self.MUTED, node_fill))
+                    self._set_rich_text(pline, line, Pt(11), sub)
                 pline.alignment = PP_ALIGN.CENTER
         if sd.footnote:
             self._add_footnote(slide, sd.footnote)
@@ -3036,12 +3095,18 @@ class PptxBuilder:
         total = sum(heights) + gap * 2 * max(0, len(items) - 1)
         top = rtop + (max(0, (rheight - total) // 2)
                       if self.LAYOUT.vertical_align == "center" else 0)
+        upto = sd.build_upto
         cur = top
         for i, (it, h) in enumerate(zip(items, heights)):
+            ghost = upto is not None and i >= upto
+            t_col = self._tint(self.SECONDARY, 0.62) if ghost else self.SECONDARY
+            b_col = self._tint(self.FG, 0.70) if ghost else self.FG
             if it["title"]:
                 tb = self._add_textbox(slide, rleft, int(cur), rwidth, lead_h)
+                if ghost:
+                    tb.name = "build:ghost"
                 p = tb.text_frame.paragraphs[0]
-                self._set_rich_text(p, it["title"], SZ_H3, self.SECONDARY)
+                self._set_rich_text(p, it["title"], SZ_H3, t_col)
                 for r in p.runs:
                     r.font.bold = True
                 cur += lead_h + (int(Pt(3)) if it["body"] else 0)
@@ -3049,12 +3114,13 @@ class PptxBuilder:
                 bh = h - (lead_h + int(Pt(3)) if it["title"] else 0)
                 bt = self._add_textbox(slide, rleft + indent, int(cur),
                                        rwidth - indent, max(bh, int(Pt(14))))
+                bt.name = "build:ghost" if ghost else bt.name
                 tf = bt.text_frame
                 tf.word_wrap = True
                 tf.auto_size = MSO_AUTO_SIZE.NONE
                 for j, line in enumerate(it["body"].split("\n")):
                     p = tf.paragraphs[0] if j == 0 else tf.add_paragraph()
-                    self._set_rich_text(p, line, SZ_ZONE_B, self.FG)
+                    self._set_rich_text(p, line, SZ_ZONE_B, b_col)
                     p.line_spacing = LINE_BODY
                 cur += bh
             if i < len(items) - 1:
@@ -3442,13 +3508,22 @@ class PptxBuilder:
         # Height from the content — a fixed 2.7in card left a value and a
         # one-line caption floating in an empty box.
         inner_w = box_w - int(CARD_PAD) * 2
+        # Few metrics on a wide canvas earn hero-scale numbers: take the
+        # largest step every value fits at (measured, bold) — 44pt was the
+        # "floating in space" look on a 3-4 item row.
+        val_pt = SZ_METRIC.pt
+        for cand in (60.0, 52.0):
+            if all(Pt(self._visual_em_width(it.get("value", "")) * cand * 1.06)
+                   <= inner_w * 0.94 for it in sd.kpi_items):
+                val_pt = cand
+                break
         label_h = 0
         for item in sd.kpi_items:
             label_h = max(label_h, int(self._estimate_text_height(
                 [item.get("label", "")], SZ_SMALL, width=inner_w)))
         box_h = int(min(rheight,
                         max(int(Inches(1.7)),
-                            int(self._fs(SZ_METRIC) * metrics.DEFAULT_LINE_FACTOR)
+                            int(self._fs(Pt(val_pt)) * metrics.DEFAULT_LINE_FACTOR)
                             + label_h + int(CARD_PAD) * 2 + int(CARD_ACCENT_H))))
         kpi_top = rtop + max(0, (rheight - box_h) // 2)
         for i, item in enumerate(sd.kpi_items):
@@ -3456,7 +3531,7 @@ class PptxBuilder:
             self._add_card(slide, (int(x), kpi_top, int(box_w), box_h),
                            value=item.get("value", ""), label=item.get("label", ""),
                            accent_bar=True, anchor="middle",
-                           value_size=self._fs(SZ_METRIC),
+                           value_size=self._fs(Pt(val_pt)),
                            label_size=SZ_SMALL, label_color=self.MUTED)
 
     def build_pros_cons(self, sd: SlideData):
@@ -4503,6 +4578,10 @@ class PptxBuilder:
                     for para in shape.text_frame.paragraphs:
                         for run in para.runs:
                             rPr = run._r.get_or_add_rPr()
+                            # Keep the deck's own type: no underline, and the
+                            # explicit solidFill already set beats the theme's
+                            # hyperlink color in PowerPoint.
+                            rPr.set("u", "none")
                             for old in rPr.findall(qn("a:hlinkClick")):
                                 rPr.remove(old)
                             rPr.append(rPr.makeelement(

@@ -274,6 +274,9 @@ class SlideData:
     paper_venue: str = ""
     paper_stats: str = ""
     paper_why: str = ""
+    build: bool = False            # <!-- build --> progressive disclosure
+    build_upto: int | None = None  # expanded copies: show items < upto full
+    build_total: int | None = None
     agenda_items: list = field(default_factory=list)
     rq_main: str = ""
     rq_sub: str = ""
@@ -429,6 +432,10 @@ def parse_slide(index: int, raw: str) -> SlideData:
     # directive pass so they don't get mistaken for _key directives.
     content = re.sub(r"<!--\s*note:\s*(.+?)\s*-->", note_repl, raw,
                      flags=re.DOTALL | re.IGNORECASE)
+    # Progressive disclosure: <!-- build --> (sections / flow) — the deck
+    # replays the slide item by item, future items ghosted (learning arc).
+    build_flag = bool(re.search(r"<!--\s*build\s*-->", content, re.IGNORECASE))
+    content = re.sub(r"<!--\s*build\s*-->", "", content, flags=re.IGNORECASE)
     # Data-source attribution: <!-- source: ... -->
     source_chunks: list[str] = []
     content = re.sub(r"<!--\s*source:\s*(.+?)\s*-->",
@@ -442,6 +449,7 @@ def parse_slide(index: int, raw: str) -> SlideData:
         paginate=directives.get("paginate", "true") != "false",
         raw=content,
     )
+    sd.build = build_flag
     sd.speaker_notes = "\n\n".join(notes_chunks)
     sd.source = "; ".join(source_chunks)
     sd.dark = directives.get("bg", "").strip().lower() == "dark"
@@ -1222,4 +1230,27 @@ def parse_marp(path: str | Path) -> list[SlideData]:
         chunk = chunk.strip()
         if chunk:
             slides.append(parse_slide(i, chunk))
-    return expand_step_slides(slides)
+    return expand_build_slides(expand_step_slides(slides))
+
+
+def expand_build_slides(slides: list[SlideData]) -> list[SlideData]:
+    """<!-- build -->: replay a sections/flow slide item by item.
+
+    The hearing-deck 概要(1/4)→(4/4) device — each click adds one band or
+    one node while the rest stays ghosted, so the audience follows the
+    derivation instead of receiving the finished picture.
+    """
+    out: list[SlideData] = []
+    for sd in slides:
+        n = 0
+        if sd.build:
+            if sd.slide_class == "sections":
+                n = len(sd.sections_items)
+            elif sd.slide_class == "flow" and sd.flow:
+                n = len(sd.flow.get("nodes", {}))
+        if n >= 2:
+            for k in range(1, n + 1):
+                out.append(replace(sd, build=False, build_upto=k, build_total=n))
+        else:
+            out.append(sd)
+    return out

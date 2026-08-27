@@ -318,6 +318,14 @@ def audit_pptx(path: str | Path, *, ea_font: str | None = None,
                     and _PAGE_NO.fullmatch(shape.text_frame.text.strip())):
                 continue
 
+            # Builder-declared intent: deco:* shapes are decorative chrome
+            # (ghost numerals, hero arcs) and build:ghost is the deliberately
+            # dimmed "not yet revealed" state of a <!-- build --> slide —
+            # their contrast/fit is a design choice, not a defect.
+            nm = (getattr(shape, "name", "") or "")
+            if nm.startswith("deco:") or nm.startswith("build:ghost"):
+                continue
+
             # Header-crumb chrome (research/hearing style): a small text box
             # living entirely above the top margin is builder chrome — author
             # content starts at MARGIN_T (0.5in), so nothing legitimate fits
