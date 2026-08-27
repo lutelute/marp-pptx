@@ -2561,6 +2561,58 @@ class PptxBuilder:
         if sd.footnote:
             self._add_footnote(slide, sd.footnote)
 
+    def build_sections(self, sd: SlideData):
+        """Hearing-style dense stack: 2-4 topic bands, each a colored lead
+        line + indented body, separated by hairlines. The high-information
+        workhorse — one slide carries what looser types spread over three."""
+        slide = self._blank_slide()
+        if sd.h1:
+            self._add_title(slide, sd.h1)
+        items = sd.sections_items
+        if not items:
+            return
+        rleft, rtop, rwidth, rheight = self._content_region(has_title=bool(sd.h1))
+        indent = int(Inches(0.28))
+        gap = int(Inches(0.18))
+        lead_h = int(Pt(SZ_H3.pt * metrics.DEFAULT_LINE_FACTOR))
+        heights = []
+        for it in items:
+            bh = int(self._estimate_text_height(
+                it["body"].split("\n"), SZ_ZONE_B,
+                width=rwidth - indent, line_spacing=LINE_BODY)) if it["body"] else 0
+            heights.append((lead_h if it["title"] else 0)
+                           + (int(Pt(3)) if it["title"] and it["body"] else 0) + bh)
+        total = sum(heights) + gap * 2 * max(0, len(items) - 1)
+        top = rtop + (max(0, (rheight - total) // 2)
+                      if self.LAYOUT.vertical_align == "center" else 0)
+        cur = top
+        for i, (it, h) in enumerate(zip(items, heights)):
+            if it["title"]:
+                tb = self._add_textbox(slide, rleft, int(cur), rwidth, lead_h)
+                p = tb.text_frame.paragraphs[0]
+                self._set_rich_text(p, it["title"], SZ_H3, self.SECONDARY)
+                for r in p.runs:
+                    r.font.bold = True
+                cur += lead_h + (int(Pt(3)) if it["body"] else 0)
+            if it["body"]:
+                bh = h - (lead_h + int(Pt(3)) if it["title"] else 0)
+                bt = self._add_textbox(slide, rleft + indent, int(cur),
+                                       rwidth - indent, max(bh, int(Pt(14))))
+                tf = bt.text_frame
+                tf.word_wrap = True
+                tf.auto_size = MSO_AUTO_SIZE.NONE
+                for j, line in enumerate(it["body"].split("\n")):
+                    p = tf.paragraphs[0] if j == 0 else tf.add_paragraph()
+                    self._set_rich_text(p, line, SZ_ZONE_B, self.FG)
+                    p.line_spacing = LINE_BODY
+                cur += bh
+            if i < len(items) - 1:
+                self._hairline(slide, rleft, int(cur + gap - Pt(1)), rwidth,
+                               color=self.HAIRLINE)
+                cur += gap * 2
+        if sd.footnote:
+            self._add_footnote(slide, sd.footnote)
+
     def build_agenda(self, sd: SlideData):
         slide = self._blank_slide()
         if sd.h1:
@@ -3828,6 +3880,7 @@ class PptxBuilder:
         "zone-matrix": "build_zone_matrix",
         "zone-process": "build_zone_process",
         "agenda": "build_agenda",
+        "sections": "build_sections",
         "rq": "build_rq",
         "result-dual": "build_result_dual",
         "summary": "build_summary",
@@ -3877,6 +3930,7 @@ class PptxBuilder:
     _LINT_LIMITS = {
         "academic": (6, 6, 42, 75),
         "keynote":  (4, 3, 30, 40),
+        "dense":    (9, 10, 56, 130),   # hearing-deck density: organized, not sparse
     }
 
     def _lint_slide(self, sd, idx: int):

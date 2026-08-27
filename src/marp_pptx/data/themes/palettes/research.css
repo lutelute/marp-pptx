@@ -24,12 +24,12 @@
   --color-accent6:   #2FBEEF;
   --color-marker:    #F8E0A6;   /* pale amber marker (==text== highlight) */
   --color-accent-text: #a63f00; /* brown Darker 25% for small labels (AA) */
-  --color-muted:     #767171;   /* bg2 Darker 50% — auxiliary text */
+  --color-muted:     #676363;   /* bg2系を暗色化 — light地(#f2f2f2)上でも4.5:1を実測クリア */
   --color-hairline:  #d9d9d9;   /* bg1 Darker 15% — light dividers */
   --color-light:     #f2f2f2;   /* bg1 Darker 5% — card / zebra surface */
   --color-border:    #bfbfbf;   /* bg1 Darker 25% */
 
-  --font-head: 'Segoe UI', 'Yu Gothic', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif;
-  --font-body: 'Segoe UI', 'Yu Gothic', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif;
-  --font-ea:   'Yu Gothic', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif;
+  --font-head: 'Segoe UI', 'Helvetica Neue', 'Yu Gothic', 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+  --font-body: 'Segoe UI', 'Helvetica Neue', 'Yu Gothic', 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+  --font-ea:   'Yu Gothic', 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif;
 }

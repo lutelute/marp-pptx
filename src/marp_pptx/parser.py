@@ -204,6 +204,7 @@ class SlideData:
     zone_compare: dict = field(default_factory=dict)
     zone_matrix: dict = field(default_factory=dict)
     zone_process_items: list = field(default_factory=list)
+    sections_items: list = field(default_factory=list)
     agenda_items: list = field(default_factory=list)
     rq_main: str = ""
     rq_sub: str = ""
@@ -954,6 +955,16 @@ def parse_slide(index: int, raw: str) -> SlideData:
                     "metric": strip_html(mm.group(1)) if mm else "",
                     "value": strip_html(vm.group(1)) if vm else "",
                     "desc": strip_html(dm.group(1)) if dm else "",
+                })
+
+    elif cls == "sections":
+        for child in extract_child_divs(content):
+            ttl = re.search(r'class="[^"]*sec-title[^"]*"[^>]*>(.*?)</span>', child, re.DOTALL)
+            bod = re.search(r'class="[^"]*sec-body[^"]*"[^>]*>(.*?)</span>', child, re.DOTALL)
+            if ttl or bod:
+                sd.sections_items.append({
+                    "title": strip_html(ttl.group(1)) if ttl else "",
+                    "body": text_with_breaks(bod.group(1)) if bod else "",
                 })
 
     elif cls == "takeaway":

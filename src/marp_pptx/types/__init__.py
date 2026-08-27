@@ -59,6 +59,7 @@ TYPE_REGISTRY: list[SlideTypeInfo] = [
     SlideTypeInfo("annotation", "annotation", "knowledge", "図＋注釈", "詳細解説", "図に注釈を付けるとき", "40-annotation.md"),
     SlideTypeInfo("code", "code", "knowledge", "コードブロック", "実装・手続き", "コードを見せるとき", "46-code.md"),
     SlideTypeInfo("blocks", "blocks", "knowledge", "▬題│本文 ×N", "定理・定義ブロック", "beamer 流の定理環境（theorem/example/alert）を並べるとき", "53-blocks.md"),
+    SlideTypeInfo("sections", "sections", "knowledge", "■リード│本文 ×N", "高密度トピック積層", "1枚に2〜4トピックを「色付きリード行＋本文」の帯で積むとき（公聴会流の高密度）", "54-sections.md"),
 
     # ── Flow ──
     SlideTypeInfo("zone-flow", "zone-flow", "flow", "□→□→□", "フロー・因果", "原因→結果の流れを示すとき", "18-zone-flow.md"),

@@ -125,6 +125,7 @@ marp: true
 | フロー(A→B→C) / 詳細フロー | `zone-flow` / `zone-process` |
 | 引用 / 沿革 / 人物 / 1文断言 | `quote` / `history` / `profile` / `statement` |
 | まとめ / キーメッセージ / 文献 / 表 | `summary` / `takeaway` / `references` / `table-slide` |
+| **1枚に2〜4トピックを高密度で**（公聴会流） | `sections`（色付きリード行＋本文の帯 ×N） |
 
 全52型の意味は `marp-pptx types`（`--json` で機械可読、`-c <category>` で絞り込み）。
 **各型の正確な HTML 骨組みは `references/type-skeletons.md` を参照**（崩さず埋める）。
@@ -228,6 +229,7 @@ marp-pptx convert deck.md -o deck.pptx        # 既定 claude テーマ（cream 
 marp-pptx convert deck.md -p midnight         # 題材で選ぶ（上の表）
 marp-pptx convert deck.md --math png          # LibreOffice・Keynote で開くなら数式を画像化
 marp-pptx convert deck.md --density keynote   # 投影向けに大きめ
+marp-pptx convert deck.md --density dense     # 公聴会級の高密度（文字数上限も緩む）
 ```
 
 - 数式は既定 `--math omml`（PowerPoint で編集可、要 pandoc）。pandoc 不在時や LibreOffice/Keynote 用途は `--math png`

@@ -28,9 +28,10 @@ def main(ctx):
 @click.option("--math", type=click.Choice(["omml", "png"]), default="omml",
               help="Math rendering: omml (editable, default) or png (matplotlib image — "
                    "use for LibreOffice/Keynote where OMML renders poorly)")
-@click.option("--density", type=click.Choice(["academic", "keynote"]), default="academic",
-              help="Content density: academic (dense, default) or keynote (sparse, "
-                   "bigger type for projection)")
+@click.option("--density", type=click.Choice(["academic", "keynote", "dense"]), default="academic",
+              help="Content density: academic (default), keynote (sparse, bigger type "
+                   "for projection), or dense (hearing-deck density: smaller type, "
+                   "more lines per slide)")
 def convert(input_file: str, output: str | None, palette: str | None, theme: str | None,
             font_scale: float, math: str, density: str):
     """Convert a Marp markdown file to editable PPTX."""
@@ -47,6 +48,9 @@ def convert(input_file: str, output: str | None, palette: str | None, theme: str
     if density == "keynote":
         font_scale *= 1.22
         tc.margin_scale = 1.12
+    # Dense density: hearing-deck information load — smaller type, same margins.
+    elif density == "dense":
+        font_scale *= 0.88
     tc.font_scale = font_scale
     tc.math_mode = math
 

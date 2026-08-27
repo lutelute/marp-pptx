@@ -30,7 +30,7 @@ from . import metrics as M
 
 # "7 / 17" in the corner is chrome the builder stamps, not author content:
 # measuring it reports the same two findings on every slide of every deck.
-_PAGE_NO = re.compile(r"\d+\s*/\s*\d+")
+_PAGE_NO = re.compile(r"\d+\s*[/／]\s*\d+")
 
 EMU_PT = 12700.0
 EMU_IN = 914400.0
@@ -316,6 +316,14 @@ def audit_pptx(path: str | Path, *, ea_font: str | None = None,
 
             if (shape.has_text_frame
                     and _PAGE_NO.fullmatch(shape.text_frame.text.strip())):
+                continue
+
+            # Header-crumb chrome (research/hearing style): a small text box
+            # living entirely above the top margin is builder chrome — author
+            # content starts at MARGIN_T (0.5in), so nothing legitimate fits
+            # wholly inside the top 0.38in.
+            if (shape.has_text_frame and rect is not None
+                    and rect[3] <= int(0.38 * 914400)):
                 continue
 
             if getattr(shape, "has_table", False) and shape.has_table:
