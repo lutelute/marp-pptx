@@ -1878,7 +1878,7 @@ class PptxBuilder:
         slide = self._blank_slide()
         if sd.h1:
             self._add_title(slide, sd.h1)
-        region = self._content_region(has_title=bool(sd.h1))
+        region = self._content_region_with_lead(slide, sd)
         _, rtop, _, rheight = region
         # A short identity (E=mc², a definition) at a fixed 34pt floats small
         # in 12in of canvas — let brevity buy size. The glyph proxy strips
@@ -2099,7 +2099,7 @@ class PptxBuilder:
         n = len(sd.eq_system)
         if n == 0:
             return
-        region = self._content_region(has_title=bool(sd.h1))
+        region = self._content_region_with_lead(slide, sd)
         _, rtop, _, rheight = region
         label_left = MARGIN_L + Inches(0.3)
         label_w = Inches(1.9)
