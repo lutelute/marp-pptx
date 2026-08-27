@@ -2820,7 +2820,7 @@ class PptxBuilder:
                 kp.font.name = self.FONT_HEAD
                 kp.font.size = self._fs(Pt(SZ_METRIC.pt * 1.15))
                 kp.font.bold = True
-                kp.font.color.rgb = self._hero_accent(2.5)
+                kp.font.color.rgb = self._hero_accent(3.0)   # large-text AA
                 kp.alignment = PP_ALIGN.CENTER
                 cy += kpi_h
             if pdata.get("steps"):
@@ -2830,14 +2830,21 @@ class PptxBuilder:
                     sb = self._add_textbox(slide, int(x + pad), int(cy),
                                            int(pw - pad * 2), int(Inches(0.45)))
                     sp = sb.text_frame.paragraphs[0]
+                    # Fit the chain to the panel: shrink until the measured
+                    # line (tokens + arrows) fits the inner width.
+                    chain = "  ▶  ".join(toks)
+                    sz = 12.5
+                    while sz > 9.0 and Pt(self._visual_em_width(chain)
+                                          * sz * 1.06) > (pw - pad * 2) * 0.97:
+                        sz -= 0.5
                     for ti, tok in enumerate(toks):
                         if ti:
                             ar = sp.add_run(); ar.text = "  ▶  "
-                            ar.font.size = self._fs(Pt(11))
+                            ar.font.size = self._fs(Pt(max(sz - 1.5, 8.0)))
                             ar.font.color.rgb = self.ACCENT
                         r = sp.add_run(); r.text = tok
                         r.font.name = self.FONT_HEAD
-                        r.font.size = self._fs(Pt(12.5))
+                        r.font.size = self._fs(Pt(sz))
                         r.font.bold = True
                         r.font.color.rgb = self.FG
                     sp.alignment = PP_ALIGN.CENTER
