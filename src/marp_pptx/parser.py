@@ -1026,6 +1026,13 @@ def parse_slide(index: int, raw: str) -> SlideData:
                     "desc": strip_html(dm.group(1)) if dm else "",
                 })
 
+    elif cls == "split-panel":
+        div = extract_div(content, "sp-body")
+        src = div if div else content
+        sd.body_lines = [l for l in parse_markdown_lines(src)
+                         if l.strip() and not l.strip().startswith("#")
+                         and not l.strip().startswith("<")]
+
     elif cls == "paper":
         meta = extract_div(content, "pp-meta")
         if meta:

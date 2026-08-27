@@ -31,3 +31,4 @@ layout:
   table_header_style: rule
   divider_number: true
   title_scale: 1.13       # short H1s render ~34pt; long ones auto-shrink as before
+  hero_deco: arc          # corner circle motif on title/end (Claude-deck device)

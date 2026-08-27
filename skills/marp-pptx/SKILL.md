@@ -130,6 +130,7 @@ marp: true
 | まとめ / キーメッセージ / 文献 / 表 | `summary` / `takeaway` / `references` / `table-slide` |
 | **1枚に2〜4トピックを高密度で**（公聴会流） | `sections`（色付きリード行＋本文の帯 ×N） |
 | **文献報告・輪読の書誌カード** | `paper`（著者・会議バッジ・被引用・選定理由・要点） |
+| **キーノート級の1枚**（色面に白抜き主張＋本文） | `split-panel`（左40%フルブリード色面。h2がキッカー） |
 
 全52型の意味は `marp-pptx types`（`--json` で機械可読、`-c <category>` で絞り込み）。
 **各型の正確な HTML 骨組みは `references/type-skeletons.md` を参照**（崩さず埋める）。

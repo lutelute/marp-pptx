@@ -1682,6 +1682,7 @@ class PptxBuilder:
         if hero is not None and self.LAYOUT.title_bg == "white":
             from marp_pptx.audit import contrast_ratio
             is_dark = contrast_ratio(tuple(hero), (255, 255, 255)) > 4.0
+        self._hero_deco_draw(slide, is_dark)
         is_box = self.LAYOUT.title_bg == "box"   # Madrid: navy hero box on white
         h_color = self.WHITE if (is_dark or is_box) else self.PRIMARY
         sub_color = self._tint(self.PRIMARY, 0.85) if is_dark else self.MUTED
@@ -2451,6 +2452,7 @@ class PptxBuilder:
         elif self.LAYOUT.end_bg == "light":
             self._set_bg(slide, self.LIGHT)
         is_dark = self.LAYOUT.end_bg == "dark"
+        self._hero_deco_draw(slide, is_dark)
         h_color = self.WHITE if is_dark else self.PRIMARY
         sub_color = self._tint(self.PRIMARY, 0.85) if is_dark else self.MUTED
         accent = self._hero_accent(2.5) if is_dark else self.ACCENT
@@ -2644,6 +2646,79 @@ class PptxBuilder:
         ln.append(ln.makeelement(qn("a:tailEnd"),
                                  {"type": "stealth", "w": "med", "len": "med"}))
         return conn
+
+    def _hero_deco_draw(self, slide, is_dark: bool):
+        """Corner circle motif on hero slides (hero_deco: arc) — the quiet
+        large-shape accent Claude-built decks use to keep a hero from being
+        just text on a field. Drawn right after the background so every
+        textbox stacks above it."""
+        if self.LAYOUT.hero_deco != "arc":
+            return
+        base = self.PRIMARY if is_dark else (self._hero_fill_color() or self.theme.bg)
+        big = int(Inches(5.2))
+        if is_dark:
+            fill = self._tint(base, 0.07)          # barely-lighter ink
+        else:
+            fill = self._tint(self.ACCENT, 0.90)   # pale accent wash
+        c = slide.shapes.add_shape(MSO_SHAPE.OVAL, int(SW - big * 0.42),
+                                   int(SH - big * 0.55), big, big)
+        c.name = "deco:arc"                     # audit: intentional bleed
+        c.fill.solid(); c.fill.fore_color.rgb = fill
+        c.line.fill.background(); self._no_shadow(c)
+        dot = int(Inches(0.30))
+        dx = int(SW - big * 0.42 + big * 0.146 - dot // 2)
+        dy = int(SH - big * 0.55 + big * 0.146 - dot // 2)
+        d2 = slide.shapes.add_shape(MSO_SHAPE.OVAL, dx, dy, dot, dot)
+        d2.name = "deco:dot"
+        d2.fill.solid(); d2.fill.fore_color.rgb = self.ACCENT
+        d2.line.fill.background(); self._no_shadow(d2)
+
+    def build_split_panel(self, sd: SlideData):
+        """Half-bleed color panel: the left 40% is a full-height PRIMARY
+        field carrying the claim in white; content sits right. The single
+        most "designed" page a text-only deck can produce — Claude's direct
+        pptxgenjs decks lean on exactly this device.
+        """
+        slide = self._blank_slide()
+        panel_w = int(SW * 0.40)
+        px = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, panel_w, int(SH))
+        px.fill.solid(); px.fill.fore_color.rgb = self.PRIMARY
+        px.line.fill.background(); self._no_shadow(px)
+        pad = int(Inches(0.55))
+        inner_w = panel_w - pad * 2
+        kicker = (sd.h2 or "").strip()
+        title_pt = self._fs(Pt(SZ_TITLE.pt * 1.05))
+        t_h = int(self._estimate_text_height([sd.h1], Pt(title_pt.pt / max(
+            getattr(self.theme, "font_scale", 1.0), 0.01)), width=inner_w,
+            line_spacing=LINE_TITLE)) if sd.h1 else 0
+        k_h = int(Inches(0.30)) if kicker else 0
+        block = k_h + t_h
+        y = max(int(Inches(0.6)), (int(SH) - block) // 2)
+        if kicker:
+            kb = self._add_textbox(slide, pad, y, inner_w, int(Inches(0.26)))
+            self._kicker_para(kb.text_frame.paragraphs[0], kicker,
+                              color=self._hero_accent(4.5), tracking=180)
+            y += k_h
+        if sd.h1:
+            tb = self._add_textbox(slide, pad, y, inner_w, t_h + int(Inches(0.2)))
+            tf = tb.text_frame; tf.word_wrap = True
+            pgh = tf.paragraphs[0]
+            pgh.text = sd.h1
+            pgh.font.name = self.FONT_HEAD
+            pgh.font.size = title_pt
+            pgh.font.bold = True
+            pgh.font.color.rgb = self.WHITE
+            pgh.line_spacing = LINE_TITLE
+        if sd.body_lines:
+            cx = panel_w + int(Inches(0.55))
+            cw = int(SW) - cx - int(MARGIN_R)
+            bh = int(self._estimate_text_height(sd.body_lines, SZ_BODY,
+                                                width=cw, gap=PARA_GAP))
+            by = max(int(MARGIN_T), (int(SH) - int(FOOTER_RESERVE) - bh) // 2)
+            self._add_body_text(slide, sd.body_lines, left=cx, top=by,
+                                width=cw, height=min(bh, int(SH - MARGIN_T - MARGIN_B)))
+        if sd.footnote:
+            self._add_footnote(slide, sd.footnote)
 
     def build_paper(self, sd: SlideData):
         """文献報告の書誌カード: paper title + authors / venue badge /
@@ -2902,17 +2977,18 @@ class PptxBuilder:
                 bx.adjustments[0] = 0.5 if info["shape"] == "stadium" else CARD_RADIUS
             cls = info.get("cls", "")
             if cls == "accent":
-                bx.fill.solid(); bx.fill.fore_color.rgb = self._tint(self.ACCENT, 0.85)
+                node_fill = self._tint(self.ACCENT, 0.85)
                 bx.line.color.rgb = self.ACCENT
             elif cls == "primary":
-                bx.fill.solid(); bx.fill.fore_color.rgb = self._tint(self.PRIMARY, 0.90)
+                node_fill = self._tint(self.PRIMARY, 0.90)
                 bx.line.color.rgb = self.PRIMARY
             elif cls == "muted":
-                bx.fill.solid(); bx.fill.fore_color.rgb = self.LIGHT
+                node_fill = self.LIGHT
                 bx.line.color.rgb = self.HAIRLINE
             else:
-                bx.fill.solid(); bx.fill.fore_color.rgb = self.SURFACE
+                node_fill = self.SURFACE
                 bx.line.color.rgb = self.HAIRLINE
+            bx.fill.solid(); bx.fill.fore_color.rgb = node_fill
             bx.line.width = Pt(1.1)
             if self.LAYOUT.card_shadow and info["shape"] != "diamond":
                 self._soft_shadow(bx)
@@ -2930,7 +3006,8 @@ class PptxBuilder:
                     for r in pline.runs:
                         r.font.bold = True
                 else:
-                    self._set_rich_text(pline, line, Pt(11), self.MUTED)
+                    self._set_rich_text(pline, line, Pt(11),
+                                        self._text_safe(self.MUTED, node_fill))
                 pline.alignment = PP_ALIGN.CENTER
         if sd.footnote:
             self._add_footnote(slide, sd.footnote)
@@ -4267,6 +4344,7 @@ class PptxBuilder:
         "sections": "build_sections",
         "flow": "build_flow",
         "paper": "build_paper",
+        "split-panel": "build_split_panel",
         "rq": "build_rq",
         "result-dual": "build_result_dual",
         "summary": "build_summary",

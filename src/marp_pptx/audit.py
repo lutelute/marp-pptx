@@ -535,6 +535,9 @@ def needed_height_emu(shape, *, latin: str = "Helvetica Neue",
 
 
 def _check_bounds(out, idx, shape, rect, sw, sh, margin_in, top_ig, bot_ig):
+    # deco:* shapes (hero corner motifs) bleed off the edge by design.
+    if (getattr(shape, "name", "") or "").startswith("deco:"):
+        return
     lo, t, r, b = rect
     if r <= 0 or b <= 0 or lo >= sw or t >= sh:
         out.append(Finding("offslide", "error", idx,

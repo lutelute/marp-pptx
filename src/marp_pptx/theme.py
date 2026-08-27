@@ -64,6 +64,7 @@ class ThemeLayout:
     header_crumb: bool = False         # hearing-style top chrome: section crumb + n／m
     figure_numbers: bool = False       # auto "図 N｜" caption prefix (deck-wide counter)
     hero_fill: str = ""                # hex bg for title/divider slides ("" = theme default)
+    hero_deco: str = ""                # "arc" = large corner circle motif on title/end
 
 
 @dataclass
