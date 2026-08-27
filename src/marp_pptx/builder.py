@@ -2686,6 +2686,141 @@ class PptxBuilder:
         d2.fill.solid(); d2.fill.fore_color.rgb = self.ACCENT
         d2.line.fill.background(); self._no_shadow(d2)
 
+    def build_graphical_abstract(self, sd: SlideData):
+        """研究の一枚絵: 課題 → 手法 → 成果 の3パネルを太矢印で繋ぐ。
+
+        The figure every research talk owes its audience right after the
+        cover — the whole story at a glance. All native shapes: a light
+        problem card, an accent-framed method card (optionally with a mini
+        step chain), and a dark result field with the hero number.
+        """
+        slide = self._blank_slide()
+        if sd.h1:
+            self._add_title(slide, sd.h1)
+        rleft, rtop, rwidth, rheight = self._content_region_with_lead(slide, sd)
+        ga = sd.ga or {}
+        panels = [(k, ga.get(k) or {}) for k in ("problem", "method", "result")]
+        if not any(p for _, p in panels):
+            self._warn("graphical-abstract: no ga-problem/ga-method/ga-result divs")
+            return
+        arrow_w = int(Inches(0.55))
+        gap = int(Inches(0.22))
+        pw = (rwidth - 2 * (arrow_w + 2 * gap)) // 3
+        pad = int(Pt(14))
+        inner = pw - pad * 2
+        label_h = int(Inches(0.34))
+        # measure: tallest panel decides the shared height
+        need = int(Inches(1.6))
+        for key, pdata in panels:
+            h = label_h + int(Pt(8))
+            if key == "result" and pdata.get("kpi"):
+                h += int(Pt(SZ_METRIC.pt * 1.15 * metrics.DEFAULT_LINE_FACTOR))
+            if pdata.get("steps"):
+                h += int(Inches(0.5))
+            if pdata.get("body"):
+                h += int(self._estimate_text_height(
+                    pdata["body"].split("\n"), SZ_ZONE_B, width=inner,
+                    line_spacing=LINE_BODY))
+            need = max(need, h + pad * 2)
+        foot = ga.get("foot", "")
+        foot_h = (int(self._estimate_text_height([foot], SZ_SMALL, width=rwidth))
+                  + int(Inches(0.14))) if foot else 0
+        ph = int(min(need, rheight - foot_h - int(Inches(0.1))))
+        top = rtop + max(0, (rheight - ph - foot_h) // 2)
+
+        x = rleft
+        for pi, (key, pdata) in enumerate(panels):
+            dark = key == "result"
+            bx = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE,
+                                        int(x), int(top), int(pw), ph)
+            bx.adjustments[0] = CARD_RADIUS
+            if dark:
+                bx.fill.solid(); bx.fill.fore_color.rgb = self.PRIMARY
+                bx.line.fill.background()
+            elif key == "method":
+                bx.fill.solid(); bx.fill.fore_color.rgb = self.SURFACE
+                bx.line.color.rgb = self.ACCENT
+                bx.line.width = Pt(1.5)
+            else:
+                bx.fill.solid(); bx.fill.fore_color.rgb = self.LIGHT
+                bx.line.color.rgb = self.HAIRLINE
+                bx.line.width = HAIRLINE_W
+            if self.LAYOUT.card_shadow and not dark:
+                self._soft_shadow(bx)
+            else:
+                self._no_shadow(bx)
+
+            cy = top + pad
+            label = pdata.get("label", {"problem": "課題", "method": "提案",
+                                        "result": "成果"}[key])
+            lb = self._add_textbox(slide, int(x + pad), int(cy),
+                                   int(pw - pad * 2), label_h)
+            lp = lb.text_frame.paragraphs[0]
+            l_col = (self._hero_accent(4.5) if dark
+                     else self._text_safe(self.ACCENT, self.SURFACE))
+            self._kicker_para(lp, label, color=l_col, tracking=160)
+            cy += label_h + int(Pt(4))
+
+            if key == "result" and pdata.get("kpi"):
+                kpi_h = int(Pt(SZ_METRIC.pt * 1.15 * metrics.DEFAULT_LINE_FACTOR))
+                kb = self._add_textbox(slide, int(x + pad), int(cy),
+                                       int(pw - pad * 2), kpi_h)
+                kp = kb.text_frame.paragraphs[0]
+                kp.text = pdata["kpi"]
+                kp.font.name = self.FONT_HEAD
+                kp.font.size = self._fs(Pt(SZ_METRIC.pt * 1.15))
+                kp.font.bold = True
+                kp.font.color.rgb = self._hero_accent(2.5)
+                kp.alignment = PP_ALIGN.CENTER
+                cy += kpi_h
+            if pdata.get("steps"):
+                toks = [s.strip() for s in re.split(r"[→>]+", pdata["steps"])
+                        if s.strip()]
+                if toks:
+                    sb = self._add_textbox(slide, int(x + pad), int(cy),
+                                           int(pw - pad * 2), int(Inches(0.45)))
+                    sp = sb.text_frame.paragraphs[0]
+                    for ti, tok in enumerate(toks):
+                        if ti:
+                            ar = sp.add_run(); ar.text = "  ▶  "
+                            ar.font.size = self._fs(Pt(11))
+                            ar.font.color.rgb = self.ACCENT
+                        r = sp.add_run(); r.text = tok
+                        r.font.name = self.FONT_HEAD
+                        r.font.size = self._fs(Pt(12.5))
+                        r.font.bold = True
+                        r.font.color.rgb = self.FG
+                    sp.alignment = PP_ALIGN.CENTER
+                    cy += int(Inches(0.5))
+            if pdata.get("body"):
+                bb = self._add_textbox(slide, int(x + pad), int(cy),
+                                       int(pw - pad * 2),
+                                       int(top + ph - pad - cy))
+                tf = bb.text_frame; tf.word_wrap = True
+                b_col = self._tint(self.PRIMARY, 0.85) if dark else self.FG
+                for j, line in enumerate(pdata["body"].split("\n")):
+                    pl = tf.paragraphs[0] if j == 0 else tf.add_paragraph()
+                    self._set_rich_text(pl, line, SZ_ZONE_B, b_col)
+                    pl.line_spacing = LINE_BODY
+            x += pw
+            if pi < 2:
+                ay = int(top + ph // 2 - Pt(16))
+                ar = slide.shapes.add_shape(MSO_SHAPE.CHEVRON,
+                                            int(x + gap), ay,
+                                            arrow_w, int(Pt(32)))
+                ar.fill.solid(); ar.fill.fore_color.rgb = self.ACCENT
+                ar.line.fill.background(); self._no_shadow(ar)
+                x += arrow_w + 2 * gap
+        if foot:
+            fb = self._add_textbox(slide, rleft, int(top + ph + Inches(0.12)),
+                                   rwidth, foot_h)
+            fb.text_frame.word_wrap = True
+            fp = fb.text_frame.paragraphs[0]
+            self._rich_line(fp, foot, SZ_SMALL, self.MUTED)
+            fp.alignment = PP_ALIGN.CENTER
+        if sd.footnote:
+            self._add_footnote(slide, sd.footnote)
+
     def build_split_panel(self, sd: SlideData):
         """Half-bleed color panel: the left 40% is a full-height PRIMARY
         field carrying the claim in white; content sits right. The single
@@ -4421,6 +4556,7 @@ class PptxBuilder:
         "flow": "build_flow",
         "paper": "build_paper",
         "split-panel": "build_split_panel",
+        "graphical-abstract": "build_graphical_abstract",
         "rq": "build_rq",
         "result-dual": "build_result_dual",
         "summary": "build_summary",

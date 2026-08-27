@@ -274,6 +274,7 @@ class SlideData:
     paper_venue: str = ""
     paper_stats: str = ""
     paper_why: str = ""
+    ga: dict = field(default_factory=dict)   # graphical-abstract panels
     build: bool = False            # <!-- build --> progressive disclosure
     build_upto: int | None = None  # expanded copies: show items < upto full
     build_total: int | None = None
@@ -1033,6 +1034,24 @@ def parse_slide(index: int, raw: str) -> SlideData:
                     "value": strip_html(vm.group(1)) if vm else "",
                     "desc": strip_html(dm.group(1)) if dm else "",
                 })
+
+    elif cls == "graphical-abstract":
+        for key in ("ga-problem", "ga-method", "ga-result"):
+            div = extract_div(content, key)
+            if not div:
+                continue
+            panel: dict = {}
+            for span, attr in (("ga-label", "label"), ("ga-body", "body"),
+                               ("ga-kpi", "kpi"), ("ga-steps", "steps")):
+                m2 = re.search(rf'class="[^"]*{span}[^"]*"[^>]*>(.*?)</span>',
+                               div, re.DOTALL)
+                if m2:
+                    panel[attr] = text_with_breaks(m2.group(1))
+            if panel:
+                sd.ga[key.replace("ga-", "")] = panel
+        foot = extract_div(content, "ga-foot")
+        if foot:
+            sd.ga["foot"] = strip_html(foot)
 
     elif cls == "split-panel":
         div = extract_div(content, "sp-body")

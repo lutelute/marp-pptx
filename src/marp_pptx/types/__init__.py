@@ -63,6 +63,7 @@ TYPE_REGISTRY: list[SlideTypeInfo] = [
     SlideTypeInfo("flow", "flow", "flow", "□→□→□ +loop", "ブロック図・ループ図", "mermaid flowchart 記法から編集可能なブロック図/機器構成図/反復ループ図を描くとき", "55-flow.md"),
     SlideTypeInfo("paper", "paper", "knowledge", "▤書誌+理由+要点", "文献報告の書誌カード", "輪読・文献調査で紹介論文の書誌情報・選定理由・要点を1枚にするとき", "56-paper.md"),
     SlideTypeInfo("split-panel", "split-panel", "structure", "▮左色面│本文", "ハーフブリード色面パネル", "画面端まで塗った色面に主張を白抜きし、右に本文を置くとき（キーノート級の1枚）", "57-split-panel.md"),
+    SlideTypeInfo("graphical-abstract", "graphical-abstract", "structure", "□→□→▪ 一枚絵", "グラフィカルアブストラクト", "表紙直後に課題→手法→成果を1枚の図で示すとき（研究発表の定番）", "58-graphical-abstract.md"),
 
     # ── Flow ──
     SlideTypeInfo("zone-flow", "zone-flow", "flow", "□→□→□", "フロー・因果", "原因→結果の流れを示すとき", "18-zone-flow.md"),
