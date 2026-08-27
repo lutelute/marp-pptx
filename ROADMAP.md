@@ -217,3 +217,35 @@ MD → 中間JSON (型・位置・サイズ・色をパラメータ化)
 - pip 一発インストール可能に
 - クロスプラットフォーム (Windows/Linux/macOS) の確実性
 - LLM 統合は後付け可能な設計にしてある
+
+---
+
+## 動きとインタラクティブ化（2026-08-27 計画）
+
+「GIF もインタラクティブ化も入ってくる予定」に向けた PPTX の実力マップと段階計画。
+
+### 現状すでに動くもの（実証済み）
+
+- **アニメーション GIF**: `![w:400](anim.gif)` で `ppt/media/*.gif` にそのまま埋め込み、
+  スライドショーで自動再生される（`_image_or_placeholder` 経由・欠像時プレースホルダも有効）
+- **クリック送りの「動き」**: `# [!step N action:M]` が code 型をステップごとに
+  スライド複製（tmu-cs 互換）。実質クリックアニメ
+- **内部ナビゲーション**: agenda の各項目が対応する divider へ
+  `ppaction://hlinksldjump` でジャンプ（`_link_agenda_sections`、i 番目の項目 → i 番目の divider）
+
+### 次の段階（実装順）
+
+1. **`<p:timing>` ネイティブアニメ注入** — step 展開を「1枚でクリック出現」に置換する
+   オプション（`--steps native`）。appear/fade をビルド時に XML 注入。スライド複製版は
+   フォールバックとして維持
+2. **ナビゲーション拡張** — divider から agenda へ戻るリンク、footer_bar のセル click、
+   appendix への「詳細は付録」ジャンプ
+3. **動画埋め込み** — `![w:800](demo.mp4)` → `p:video`（poster 画像自動生成）。
+   GIF と同じ経路で `_resolve_image` を拡張
+4. **セクションズーム / サマリーズーム** — PowerPoint の Zoom 機能（要 XML 調査。
+   壊れやすいので validate.py 系の検査を先に用意）
+
+### やらないこと（PPTX の外）
+
+- VBA / マクロ（.pptm の領分）・Python 実行デモ → terminal-slide（Pyodide）担当
+- ブラウザ実行前提の GIF 再生 UI・spectrogram（HTML 専用と判定済み、FEATURE-DESIGN.md）

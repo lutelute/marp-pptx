@@ -3088,6 +3088,7 @@ class PptxBuilder:
             np_.font.bold = True; np_.font.color.rgb = self.ACCENT
             tb = self._add_textbox(slide, rleft + num_w + int(Inches(0.2)), y,
                                    rwidth - num_w - int(Inches(0.2)), row_h)
+            tb.name = f"agenda:item:{i}"
             tb.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
             tb.text_frame.word_wrap = True
             tp = tb.text_frame.paragraphs[0]
@@ -4473,7 +4474,43 @@ class PptxBuilder:
                 self._slide_sections.append(current_section)
                 self._slide_classes.append(cls)
         self._add_global_footer()
+        self._link_agenda_sections()
         self._warn_text_collisions()
+
+    def _link_agenda_sections(self):
+        """First interactivity pass: agenda items hyperlink to their section
+        dividers (i-th item -> i-th divider), so the agenda doubles as an
+        in-deck navigation page during the talk."""
+        try:
+            from pptx.opc.constants import RELATIONSHIP_TYPE as RT
+            classes = getattr(self, "_slide_classes", [])
+            dividers = [i for i, c in enumerate(classes) if c == "divider"]
+            if not dividers:
+                return
+            for si, cls in enumerate(classes):
+                if cls != "agenda":
+                    continue
+                slide = self.prs.slides[si]
+                for shape in slide.shapes:
+                    name = getattr(shape, "name", "") or ""
+                    if not name.startswith("agenda:item:"):
+                        continue
+                    idx = int(name.rsplit(":", 1)[1])
+                    if idx >= len(dividers):
+                        continue
+                    target = self.prs.slides[dividers[idx]]
+                    rid = slide.part.relate_to(target.part, RT.SLIDE)
+                    for para in shape.text_frame.paragraphs:
+                        for run in para.runs:
+                            rPr = run._r.get_or_add_rPr()
+                            for old in rPr.findall(qn("a:hlinkClick")):
+                                rPr.remove(old)
+                            rPr.append(rPr.makeelement(
+                                qn("a:hlinkClick"),
+                                {qn("r:id"): rid,
+                                 "action": "ppaction://hlinksldjump"}))
+        except Exception:
+            pass   # navigation is sugar — never break a build over it
 
     def _warn_text_collisions(self):
         """Post-build geometric self-check: flag any text that overflows its
