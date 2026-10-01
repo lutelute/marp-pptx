@@ -846,8 +846,8 @@ def _survey_md(n_groups: int, refs_per: int, *, mark: str = "") -> str:
     groups = []
     for g in range(n_groups):
         refs = "\n".join(
-            f'- A. Author{g}{r} et al., "A distributionally robust method for '
-            f'network-constrained dispatch number {g}-{r}," IEEE Trans. Power Syst., 2024.'
+            f'- A. Author{g}{r} et al., "A sparse attention method for memory-'
+            f'constrained long sequence models number {g}-{r}," Proc. NeurIPS Wkshp, 2024.'
             for r in range(refs_per))
         groups.append(f'<div class="sv-group">\n<span class="sv-label">手法 {g}｜**KEY{g}**</span>\n'
                       f'<span class="sv-gap">GAP{g}</span>\n\n{refs}\n</div>')
@@ -856,19 +856,19 @@ def _survey_md(n_groups: int, refs_per: int, *, mark: str = "") -> str:
 
 
 def test_survey_parses_groups_refs_and_mark():
-    sd = parse_slide(0, _survey_md(3, 2, mark="distributionally robust, dispatch"))
+    sd = parse_slide(0, _survey_md(3, 2, mark="sparse attention, sequence"))
     assert [g["label"] for g in sd.survey_groups] == [
         "手法 0｜**KEY0**", "手法 1｜**KEY1**", "手法 2｜**KEY2**"]
     assert all(len(g["refs"]) == 2 and g["gap"].startswith("GAP")
                for g in sd.survey_groups)
     assert sd.survey_groups[0]["refs"][0].startswith("A. Author00 et al.")
-    assert sd.marks == ["distributionally robust", "dispatch"]
+    assert sd.marks == ["sparse attention", "sequence"]
     assert sd.bottom_text == "VERDICT_TOKEN"
 
 
 def test_survey_renders_counts_gap_tag_and_marked_keyword(tmp_path):
     b = _make_builder(tmp_path)
-    b.build_survey(parse_slide(0, _survey_md(2, 3, mark="distributionally robust")))
+    b.build_survey(parse_slide(0, _survey_md(2, 3, mark="sparse attention")))
     slide = b.prs.slides[0]
     txt = _all_text(slide)
     assert "3 件" in txt and "課題　GAP0" in txt and "VERDICT_TOKEN" in txt
@@ -876,7 +876,7 @@ def test_survey_renders_counts_gap_tag_and_marked_keyword(tmp_path):
     hl = [r for s in slide.shapes if getattr(s, "has_text_frame", False)
           for p in s.text_frame.paragraphs for r in p.runs
           if r._r.find(".//{http://schemas.openxmlformats.org/drawingml/2006/main}highlight") is not None]
-    assert hl and all(r.text.lower() == "distributionally robust" for r in hl)
+    assert hl and all(r.text.lower() == "sparse attention" for r in hl)
 
 
 def test_survey_goes_two_column_before_overflowing(tmp_path):
@@ -944,9 +944,9 @@ def test_survey_citation_parts_are_told_apart(tmp_path):
     runs = [r for r in p.runs if r.text.strip()]
     assert runs[0].text.startswith("A. Author00 et al.")
     assert runs[0].font.color.rgb == b.FG
-    assert "“A distributionally" in p.text and '"' not in p.text
+    assert "“A sparse attention" in p.text and '"' not in p.text
     assert runs[-1].font.color.rgb == b.MUTED
-    assert "Syst., 2024." in runs[-1].text
+    assert "Wkshp, 2024." in runs[-1].text
 
 
 def test_survey_hides_counts_when_there_is_nothing_to_compare(tmp_path):

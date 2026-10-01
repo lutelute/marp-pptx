@@ -82,18 +82,19 @@ def test_check_fidelity_flags_mislabeled_metric():
 
 def test_check_fidelity_verifies_excerpt_quotes_verbatim():
     # PDF text: hyphenated line breaks, a ligature, different quote marks
-    source = ("Directly incorporating a large popu-\nlation of DERs introduces "
-              "high comput-\ning efforts. The identiﬁcation of the AFPR respects "
-              "the network constraints.")
+    source = ("The dominant sequence transduction models are based on complex recur-\n"
+              "rent or convolutional neural networks that include an encoder and a de-\n"
+              "coder. We propose a new simple network architecture, the Transformer, "
+              "based solely on attention mechanisms, requiring signiﬁcantly less time.")
     def deck(q):
         return ("---\nmarp: true\n---\n\n<!-- _class: excerpt -->\n# R\n"
                 f'<div class="ex-item">\n<span class="ex-quote">{q}</span>\n</div>\n')
-    ok = check_fidelity(deck('"… directly incorporating a large population of DERs '
-                             'introduces high computing efforts. … the identification '
-                             'of the AFPR …"'), source)
+    ok = check_fidelity(deck('"… based on complex recurrent or convolutional neural '
+                             'networks that include an encoder and a decoder. … the '
+                             'Transformer, based solely on attention mechanisms …"'), source)
     assert ok["misquoted"] == [] and ok["quotes_verified"] == 1 and ok["score"] == 100
-    bad = check_fidelity(deck('"directly incorporating a large population of DERs '
-                              'reduces the computing efforts."'), source)
+    bad = check_fidelity(deck('"the Transformer, based partly on attention mechanisms"'),
+                         source)
     assert bad["quotes_verified"] == 0 and len(bad["misquoted"]) == 1
-    assert "reduces the computing" in bad["misquoted"][0]["fragment"]
+    assert "based partly on attention" in bad["misquoted"][0]["fragment"]
     assert bad["score"] < 100
