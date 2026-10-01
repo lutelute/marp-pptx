@@ -425,6 +425,9 @@ def from_paper(paper, repo, output, palette, math, slides, model, no_review):
     if res["fidelity"].get("mislabeled"):
         click.echo("  ⚠ possibly-mislabelled numbers: "
                    + ", ".join(f"{m['value']}({m['label']})" for m in res["fidelity"]["mislabeled"]), err=True)
+    if res["fidelity"].get("misquoted"):
+        click.echo("  ⚠ excerpts not found verbatim in the paper (slides "
+                   + ", ".join(str(q["slide"]) for q in res["fidelity"]["misquoted"]) + ")", err=True)
     left = [d for d in res.get("defects", []) if d["severity"] == "error"]
     if left:
         click.echo("  ⚠ measured defects remain on slides: "

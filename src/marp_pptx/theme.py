@@ -65,6 +65,9 @@ class ThemeLayout:
     figure_numbers: bool = False       # auto "図 N｜" caption prefix (deck-wide counter)
     hero_fill: str = ""                # hex bg for title/divider slides ("" = theme default)
     hero_deco: str = ""                # "arc" = large corner circle motif on title/end
+    marker_style: str = "highlight"    # ==x==: highlight (marker pen) / text (bold red)
+    footnote_style: str = "short"      # short hairline / rule (full-width, report decks)
+    lead_style: str = "accent"         # h2 lead line: accent (bold, colored) / plain (body text)
 
 
 @dataclass
@@ -175,6 +178,7 @@ class ThemeConfig:
         # Loop over dataclass fields so new layout tokens are picked up without
         # editing this construction (avoids the old two-place maintenance bug).
         name = palette_css.stem.replace("academic-", "")
+        self.palette_name = name
         yaml_path = palette_css.parent / f"config-{name}.yaml"
         if yaml_path.exists():
             import yaml

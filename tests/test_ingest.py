@@ -78,3 +78,22 @@ def test_check_fidelity_flags_mislabeled_metric():
     ok = check_fidelity(
         "---\nmarp: true\n---\n\n# R\n<span>3.5</span><span>days</span>\n", source)
     assert ok["mislabeled"] == []
+
+
+def test_check_fidelity_verifies_excerpt_quotes_verbatim():
+    # PDF text: hyphenated line breaks, a ligature, different quote marks
+    source = ("Directly incorporating a large popu-\nlation of DERs introduces "
+              "high comput-\ning efforts. The identiﬁcation of the AFPR respects "
+              "the network constraints.")
+    def deck(q):
+        return ("---\nmarp: true\n---\n\n<!-- _class: excerpt -->\n# R\n"
+                f'<div class="ex-item">\n<span class="ex-quote">{q}</span>\n</div>\n')
+    ok = check_fidelity(deck('"… directly incorporating a large population of DERs '
+                             'introduces high computing efforts. … the identification '
+                             'of the AFPR …"'), source)
+    assert ok["misquoted"] == [] and ok["quotes_verified"] == 1 and ok["score"] == 100
+    bad = check_fidelity(deck('"directly incorporating a large population of DERs '
+                              'reduces the computing efforts."'), source)
+    assert bad["quotes_verified"] == 0 and len(bad["misquoted"]) == 1
+    assert "reduces the computing" in bad["misquoted"][0]["fragment"]
+    assert bad["score"] < 100

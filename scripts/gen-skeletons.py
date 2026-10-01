@@ -26,7 +26,8 @@ def main() -> None:
     lines = [
         "# 型ごとの HTML 骨組みリファレンス",
         "",
-        "marp-pptx の全 52 型の正確な構造。`<!-- _class: -->` とその下の HTML を**崩さずに**埋める。",
+        f"marp-pptx の全 {len(TYPE_REGISTRY)} 型の正確な構造。"
+        "`<!-- _class: -->` とその下の HTML を**崩さずに**埋める。",
         "（このファイルは `scripts/gen-skeletons.py` が `src/marp_pptx/data/templates/` から自動生成）",
         "",
     ]

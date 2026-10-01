@@ -1,13 +1,13 @@
 ---
 name: marp-pptx
-description: "marp-pptx で「編集可能な PowerPoint(.pptx)」を作るためのオーサリングガイド。以下の場面で使用: (1) スライド・プレゼン・デッキ・発表資料を marp-pptx で作るとき、(2) Markdown から編集可能な PPTX を生成するとき、(3) 52種のセマンティック型(kpi/equation/timeline/sandwich/statement 等)からスライドを構成するとき、(4) 学術発表・講義・プロダクト紹介などの資料を素早く組むとき、(5) 既存 Marp Markdown を marp-pptx 形式に直すとき。一枚絵ではなく実テキストボックス＋実テーブル＋OMML数式で出力する。"
+description: "marp-pptx で「編集可能な PowerPoint(.pptx)」を作るためのオーサリングガイド。以下の場面で使用: (1) スライド・プレゼン・デッキ・発表資料を marp-pptx で作るとき、(2) Markdown から編集可能な PPTX を生成するとき、(3) 64種のセマンティック型(kpi/equation/timeline/sandwich/statement 等)からスライドを構成するとき、(4) 学術発表・講義・プロダクト紹介などの資料を素早く組むとき、(5) 既存 Marp Markdown を marp-pptx 形式に直すとき。一枚絵ではなく実テキストボックス＋実テーブル＋OMML数式で出力する。"
 ---
 
 # marp-pptx オーサリングガイド
 
 **marp-pptx** は Marp Markdown を **完全に編集可能な PowerPoint** に変換するツール。
 画像化された一枚絵ではなく、実テキストボックス・実テーブル・OMML 数式（PowerPoint で編集可）を出力する。
-価値の核は **52 種のセマンティックなスライド型**。「何を伝えたいか」から型を選んで書く。
+価値の核は **64 種のセマンティックなスライド型**。「何を伝えたいか」から型を選んで書く。
 
 ## ワークフロー
 
@@ -87,6 +87,22 @@ MCP 接続時（`marp-pptx[mcp]`）は以下のツールを使う:
 > 図抽出・本文抽出は `pip install "marp-pptx[ingest]"`（PyMuPDF）が必要。
 > 人間がエージェント無しで一発生成するなら **`marp-pptx from-paper paper.pdf --repo . -o deck.pptx`**（`marp-pptx[ai]` + `ANTHROPIC_API_KEY`）。上記の取り込み→下書き→数値自動修正→ビルドを内蔵。
 
+## 関連研究（文献調査）のスライド
+
+関連研究は「論文リスト」ではなく、**論文から拾った根拠で課題を導く**構成にする。
+
+1. **`survey`** — 手法の分類ごとに、その手法を採る論文を下に並べる。分類ラベルは手法名（キーワードを `**太字**`）、
+   `sv-gap` にその分類の課題、h2 リードに全分類共通の短所、`sv-verdict` に未解決点（＝自研究の位置づけ）。
+   文献は実在する書誌だけを書く（著者・題目・誌名・年）。各行は「左: 手法名＋件数／右: 課題と文献」の 2 ゾーンに組まれ、件数でどこに研究が集中しているかが見える。
+   ある用語が近年のタイトルに並ぶこと自体を根拠にしたいときは `<!-- _mark: distributionally robust -->` で全タイトル中の語をマーカー表示する。
+   文献の無い「手法→性質→課題」の整理（従来手法の弱点比較）も `sv-body` + `sv-gap` で同じ型に載る。
+2. **`excerpt`** — 論文の一文をそのまま `ex-quote` に引き、その下の `ex-read` に日本語の読み（要点は `==マーカー==`）。
+   省略は `…` で示す。**引用は `read_paper` の本文からコピーし、言い換えない**。
+   論文 PDF が手元にあれば `<!-- _paper: path/to/paper.pdf -->` を付ける — 引用が論文の組版のまま
+   切り抜き画像になり（引用部にマーカー、ページ番号付き）、「論文から取ってきた」ことが見て分かる。`check_deck_against_source` は
+   `ex-quote` が論文本文に逐語で存在するかを照合し、無ければ `misquoted` に出す（出典 PDF と突き合わせるときに必ず確認）。
+3. 流れの例: `survey`（分類と共通課題）→ `excerpt`（決め手になる論文の一節）→ `rq` / `sections`（本研究の問い）。
+
 ## 基本ルール（必須）
 
 ```markdown
@@ -110,34 +126,47 @@ marp: true
 - `**太字**` / `` `code` `` / `$x^2$`（インライン数式）/ `$$...$$`（ディスプレイ数式）/
   `==マーカー==`（蛍光ペン強調・キーワードを1枚に1〜2個）対応。*斜体* は無効
 - 改行のみ＝同一段落（ソフトラップ）、空行＝段落分け
+- コードは ```` ```言語 ```` のフェンスをそのまま書く（通常スライドの本文でも、`code` 型でも div なしで可）。
+  json / geojson / jsonl はキー・値・数値が色分けされる。`code` 型でコードが見つからないと警告が出る
 
 ## 型選択フロー（意図 → 型）
 
 | 伝えたいこと | 型 |
 |---|---|
 | 表紙 / 章区切り / 終わり | `title` / `divider` / `end` |
+| **写真つき表紙**（サムネイルで中身が分かる） | `title-figure`（写真を半面フルブリード。`<!-- _side: bottom/top/left/right/full -->`）|
 | 目次・構成 | `agenda` |
 | 研究課題・問い | `rq` |
 | 2つ比較 / 3つ分類 | `cols-2` / `cols-3` |
 | 概要→詳細→結論 | `sandwich`（3条件なら `sandwich-3col`） |
 | 賛否・長短 / 2軸評価 | `pros-cons` / `zone-matrix` |
+| 2項を正面から比較（VS） | `zone-compare` |
 | 時系列（横/縦）/ 手順 / 前後比較 | `timeline-h` / `timeline-v` / `steps` / `before-after` |
 | 絞り込み / 積層 / 全体像 / 1つ強調 | `funnel` / `stack` / `overview` / `highlight` |
 | KPI・数値 / 単一指標 / グラフ | `kpi` / `big-number` / `chart` |
 | 結果（単/二/複） | `result` / `result-dual` / `multi-result` |
 | 定義 / 数式 / 連立式 / 図 / 注釈図 / コード | `definition` / `equation` / `equations` / `diagram` / `annotation` / `code` |
+| 数式の記号を注釈で解く / 特定項を色で強調 | `equation-annotated` / `equation-highlight` |
+| 定理・定義・例のブロックを並べる（beamer 流） | `blocks` |
 | フロー(A→B→C) / 詳細フロー | `zone-flow` / `zone-process` |
 | **ブロック図・機器構成図・反復ループ図** | `flow`（```mermaid flowchart 記法→編集可能な図形＋矢印。戻り辺 `-.->` でループ） |
 | 引用 / 沿革 / 人物 / 1文断言 | `quote` / `history` / `profile` / `statement` |
+| 図＋キャプション / 図と解説を左右に | `figure` / `figure-cols` |
+| 横長画像で没入 / 複数画像を並べる | `panorama` / `gallery-img` |
+| 左右で補完的な本文 / 進捗・完了状態 | `split-text` / `checklist` |
 | まとめ / キーメッセージ / 文献 / 表 | `summary` / `takeaway` / `references` / `table-slide` |
+| 補足資料（本編の後ろ） | `appendix` |
 | **1枚に2〜4トピックを高密度で**（公聴会流） | `sections`（色付きリード行＋本文の帯 ×N） |
 | **文献報告・輪読の書誌カード** | `paper`（著者・会議バッジ・被引用・選定理由・要点） |
+| **関連研究を手法ごとに分類**（各分類の下に該当論文・課題） | `survey`（`sv-group` ×N。左に手法＋件数・右に課題と文献の 2 ゾーン、`<!-- _mark: kw -->` で文献タイトル中のキーワードを強調、多いと自動2段組） |
+| **定義・カード・コード・手順・結論を区画パネルで1枚に**（研究報告の密な1枚） | `board`（`defn` 定義帯 / `row` 内に `col`・`panel wN 色` / `### :point:` カード / コードフェンス＝暗色パネル / `callout` / `steps` / `band`。`-p report` テーマと組む） |
+| **論文の一節を引用して読みを添える** | `excerpt`（原文カード→「→ 読み」×N、`ex-verdict` で利点/課題、`ex-source` で出典） |
 | **キーノート級の1枚**（色面に白抜き主張＋本文） | `split-panel`（左40%フルブリード色面。h2がキッカー） |
 | **グラフィカルアブストラクト**（課題▶提案▶成果の一枚絵） | `graphical-abstract`（3パネル＋太矢印＋大数字＋実測条件フット） |
 | **論文の特徴図を最大サイズで**（図が主役） | `figure-full`（余白0.25inまで画像。図未配置でも枠＝プレースホルダが立つ） |
 | **図の完全解剖**（リード＋横解説＋まとめ帯） | `figure-story`（図は左右どちらか=`<!-- _side: right -->`で反転。アスペクト比で幅自動配分） |
 
-全52型の意味は `marp-pptx types`（`--json` で機械可読、`-c <category>` で絞り込み）。
+全64型の意味は `marp-pptx types`（`--json` で機械可読、`-c <category>` で絞り込み）。
 **各型の正確な HTML 骨組みは `references/type-skeletons.md` を参照**（崩さず埋める）。
 
 ### バリエーション（カタログ外・応用）

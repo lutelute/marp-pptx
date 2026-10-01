@@ -96,13 +96,19 @@ def _fix_prompt(markdown: str, fidelity: dict) -> str:
     mis = "\n".join(f"- slide {m['slide']}: '{m['value']}' labelled '{m['label']}' but the"
                     f" paper does not pair that value with that metric ({m['context']})"
                     for m in fidelity.get("mislabeled", []))
-    return f"""The deck below has quantitative claims that don't trace back to the source paper. Fix EACH against the paper (use the correct value/metric, or drop the claim if no source value exists). Change nothing else.
+    quo = "\n".join(f"- slide {q['slide']}: excerpt text not found verbatim in the paper: "
+                    f"'{q['fragment']}'"
+                    for q in fidelity.get("misquoted", []))
+    return f"""The deck below has claims that don't trace back to the source paper. Fix EACH against the paper (use the correct value/metric, or drop the claim if no source value exists; an ex-quote must be copied word for word from the paper — replace it with the exact sentence, or drop the excerpt). Change nothing else.
 
 HALLUCINATED NUMBERS (not in the paper):
 {uns or '(none)'}
 
 MISLABELLED NUMBERS (value present but wrong metric/pairing):
 {mis or '(none)'}
+
+MISQUOTED EXCERPTS (ex-quote text not in the paper):
+{quo or '(none)'}
 
 DECK:
 {markdown}
@@ -183,7 +189,7 @@ def build_deck_from_paper(
     markdown = _strip_fences(call(skill + "\n\n" + _draft_prompt(paper, repo, n_slides)))
 
     def _issues(f: dict) -> list:
-        return f["unsupported"] + f.get("mislabeled", [])
+        return f["unsupported"] + f.get("mislabeled", []) + f.get("misquoted", [])
 
     rounds = 0
     fidelity = check_fidelity(markdown, source)

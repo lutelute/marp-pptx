@@ -62,6 +62,9 @@ TYPE_REGISTRY: list[SlideTypeInfo] = [
     SlideTypeInfo("sections", "sections", "knowledge", "■リード│本文 ×N", "高密度トピック積層", "1枚に2〜4トピックを「色付きリード行＋本文」の帯で積むとき（公聴会流の高密度）", "54-sections.md"),
     SlideTypeInfo("flow", "flow", "flow", "□→□→□ +loop", "ブロック図・ループ図", "mermaid flowchart 記法から編集可能なブロック図/機器構成図/反復ループ図を描くとき", "55-flow.md"),
     SlideTypeInfo("paper", "paper", "knowledge", "▤書誌+理由+要点", "文献報告の書誌カード", "輪読・文献調査で紹介論文の書誌情報・選定理由・要点を1枚にするとき", "56-paper.md"),
+    SlideTypeInfo("survey", "survey", "knowledge", "▌手法 → 論文群 ×N", "関連研究マップ", "関連研究を手法ごとに分類し、各分類の下に該当論文・課題を並べるとき（`_mark` で文献タイトル中のキーワードを強調）", "62-survey.md"),
+    SlideTypeInfo("excerpt", "excerpt", "knowledge", "▤原文 → 読み ×N", "原文抜粋＋読み", "論文の一節をそのまま引用し、その下に自分の解釈を添えて課題を導くとき", "63-excerpt.md"),
+    SlideTypeInfo("board", "board", "structure", "▭定義帯＋□カード│▮コード＋▭帯", "区画ボード", "定義帯・カード・コード・図・番号付き手順・結論・出典を区画パネルに組んで1枚に詰めるとき（report テーマ推奨）", "64-board.md"),
     SlideTypeInfo("split-panel", "split-panel", "structure", "▮左色面│本文", "ハーフブリード色面パネル", "画面端まで塗った色面に主張を白抜きし、右に本文を置くとき（キーノート級の1枚）", "57-split-panel.md"),
     SlideTypeInfo("graphical-abstract", "graphical-abstract", "structure", "□→□→▪ 一枚絵", "グラフィカルアブストラクト", "表紙直後に課題→手法→成果を1枚の図で示すとき（研究発表の定番）", "58-graphical-abstract.md"),
     SlideTypeInfo("figure-full", "figure-full", "structure", "▣ 最大画角の図", "論文図の全面表示", "論文の特徴的な図を余白0.25inまで最大サイズで見せるとき（図が主役の1枚）", "59-figure-full.md"),
@@ -85,6 +88,7 @@ TYPE_REGISTRY: list[SlideTypeInfo] = [
 
     # ── Meta ──
     SlideTypeInfo("title", "title", "meta", "大タイトル", "始まり", "プレゼンの冒頭", "01-title.md"),
+    SlideTypeInfo("title-figure", "title-figure", "meta", "▤写真 半面＋大タイトル", "写真つき表紙", "サムネイルで中身が分かる表紙にするとき（写真を下/上/左/右に半面ブリード、full で全面）", "61-title-figure.md"),
     SlideTypeInfo("divider", "divider", "meta", "セクション区切り", "転換", "章の区切り", "02-divider.md"),
     SlideTypeInfo("summary", "summary", "meta", "まとめリスト", "まとめ", "内容を要約するとき", "25-summary.md"),
     SlideTypeInfo("rq", "rq", "meta", "中央に問い", "問いの提示", "研究質問を示すとき", "23-rq.md"),

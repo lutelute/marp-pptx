@@ -14,6 +14,7 @@ PDF reading needs PyMuPDF: ``pip install "marp-pptx[ingest]"``.
 from __future__ import annotations
 
 import re
+import unicodedata
 import urllib.request
 from pathlib import Path
 
@@ -281,6 +282,40 @@ def _slides_of(markdown: str) -> list[str]:
 _CLAIM_NUM_RE = re.compile(r"(\d+\.\d+\s?%?|\d+\s?%|\d+(?:\.\d+)?\s?[×x](?![a-zA-Z]))")
 
 
+_EX_QUOTE_RE = re.compile(r'class="[^"]*ex-quote[^"]*"[^>]*>(.*?)</span>', re.DOTALL)
+
+
+def _quote_key(s: str) -> str:
+    """Fold what a PDF extraction and a slide disagree on without touching
+    the words: width/ligatures (NFKC), case, quotes, hyphenated line breaks,
+    spacing. Only letters, digits and kana/kanji survive."""
+    s = unicodedata.normalize("NFKC", re.sub(r"<[^>]+>", "", s)).lower()
+    return re.sub(r"[^0-9a-z\u3040-\u30ff\u3400-\u9fff]+", "", s)
+
+
+def check_quotes(markdown: str, source_text: str) -> tuple[int, list]:
+    """Every excerpt quote (``ex-quote``) must occur verbatim in the source.
+
+    The quote is split at ellipses (… / ... / [...]) and each fragment of
+    10+ significant characters is looked up in the folded source text.
+    Returns (verified_count, misquoted[]).
+    """
+    src = _quote_key(source_text)
+    ok, bad = 0, []
+    for idx, slide in enumerate(_slides_of(markdown), 1):
+        for m in _EX_QUOTE_RE.finditer(slide):
+            quote = " ".join(re.sub(r"<[^>]+>", "", m.group(1)).split())
+            frags = [f for f in re.split(r"\[?(?:…|\.\.\.)\]?", quote)
+                     if len(_quote_key(f)) >= 10]
+            missing = next((f.strip(" \"'“”") for f in frags
+                            if _quote_key(f) not in src), None)
+            if missing is None:
+                ok += 1
+            else:
+                bad.append({"slide": idx, "quote": quote, "fragment": missing})
+    return ok, bad
+
+
 def check_fidelity(markdown: str, source_text: str) -> dict:
     """Ground a deck against its source paper (deterministic — no AI/key).
 
@@ -292,7 +327,11 @@ def check_fidelity(markdown: str, source_text: str) -> dict:
       Present but never near its label -> `mislabeled` (likely a right-number /
       wrong-metric mix-up, e.g. swapping EN-DE and EN-FR scores).
 
-    Returns {score, supported[], unsupported[], mislabeled[]}. Bare integers and
+    - **quotes**: every ``ex-quote`` excerpt must appear verbatim in the
+      source (see check_quotes). Not found -> `misquoted`.
+
+    Returns {score, supported[], unsupported[], mislabeled[], quotes_verified,
+    misquoted[]}. Bare integers and
     years are ignored as too noisy. Heuristic: checks numeric + lexical
     proximity, not full semantics.
     """
@@ -330,8 +369,12 @@ def check_fidelity(markdown: str, source_text: str) -> dict:
             else:
                 supported.append({"value": val, "slide": idx})
 
-    total = len(supported) + len(unsupported) + len(mislabeled)
-    score = round(100 * len(supported) / total) if total else 100
+    quotes_ok, misquoted = check_quotes(markdown, source_text)
+    total = (len(supported) + len(unsupported) + len(mislabeled)
+             + quotes_ok + len(misquoted))
+    good = len(supported) + quotes_ok
+    score = round(100 * good / total) if total else 100
     return {"score": score, "supported": supported,
-            "unsupported": unsupported, "mislabeled": mislabeled}
+            "unsupported": unsupported, "mislabeled": mislabeled,
+            "quotes_verified": quotes_ok, "misquoted": misquoted}
 

@@ -354,11 +354,13 @@ def wrap_text(text: str, font: str, size_pt: float, width_pt: float, *,
 
 
 def _tokens(s: str, wide: bool = False) -> list[str]:
-    """Split into break-eligible units: Latin words, whitespace, single CJK."""
+    """Split into break-eligible units: Latin words, whitespace, single CJK.
+    A no-break space (U+00A0) binds its neighbours into one word, as it does
+    in PowerPoint."""
     toks: list[str] = []
     buf = ""
     for ch in s:
-        if _is_ea(ch, wide) or ch.isspace():
+        if _is_ea(ch, wide) or (ch.isspace() and ch != "\u00a0"):
             if buf:
                 toks.append(buf)
                 buf = ""

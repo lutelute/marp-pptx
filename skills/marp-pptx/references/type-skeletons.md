@@ -1,6 +1,6 @@
 # 型ごとの HTML 骨組みリファレンス
 
-marp-pptx の全 52 型の正確な構造。`<!-- _class: -->` とその下の HTML を**崩さずに**埋める。
+marp-pptx の全 64 型の正確な構造。`<!-- _class: -->` とその下の HTML を**崩さずに**埋める。
 （このファイルは `scripts/gen-skeletons.py` が `src/marp_pptx/data/templates/` から自動生成）
 
 ## 構造（structure）
@@ -235,6 +235,63 @@ $$E = mc^2$$
 </div>
 
 </div>
+```
+
+### `board` — 区画ボード
+<!-- ▭定義帯＋□カード│▮コード＋▭帯 · 定義帯・カード・コード・図・番号付き手順・結論・出典を区画パネルに組んで1枚に詰めるとき（report テーマ推奨） -->
+
+```markdown
+<!-- _class: board -->
+<!-- _kicker: 基礎 ｜ データ形式 -->
+
+# GeoJSON は「地理を JSON で書く」地理フォーマット
+
+<div class="defn">
+
+**GeoJSON（Geographic JSON・RFC 7946）**
+JSON の書き方で「点・線・面」の地物と属性を表す。座標は [経度, 緯度] の順で並べる。
+
+</div>
+
+<div class="row">
+<div class="col">
+
+#### 3 つのプリミティブ
+
+### :point: Point ｜ 点
+変電所・発電所などの地点
+
+### :line: LineString ｜ 線
+送電線の経路（頂点の並び）
+
+### :polygon: Polygon ｜ 面
+供給エリア・発電所の敷地
+
+<div class="callout">→ 系統の構成要素は すべて 点・線・面 に集約<br>==地理データのまま 系統モデルへ==</div>
+
+</div>
+<div class="col">
+
+#### 例：変電所を GeoJSON で書くと
+
+```geojson
+{
+  "type": "Feature",
+  "geometry": {
+    "type": "Point",
+    "coordinates": [136.22, 36.06]
+  },
+  "properties": {
+    "name": "福井変電所",
+    "voltage": 500
+  }
+}
+```
+
+</div>
+</div>
+
+<!-- source: 出典：RFC 7946 The GeoJSON Format (IETF, 2016) -->
 ```
 
 ### `split-panel` — ハーフブリード色面パネル
@@ -1154,6 +1211,68 @@ class SparseAttention(nn.Module):
 </div>
 ```
 
+### `survey` — 関連研究マップ
+<!-- ▌手法 → 論文群 ×N · 関連研究を手法ごとに分類し、各分類の下に該当論文・課題を並べるとき（`_mark` で文献タイトル中のキーワードを強調） -->
+
+```markdown
+<!-- _class: survey -->
+<!-- _mark: distributionally robust -->
+
+# 関連研究｜ネットワーク制約の扱い
+
+## 共通の短所｜緩和・近似モデルではネットワーク制約の充足が保証されない
+
+<div class="sv-group">
+<span class="sv-label">電力潮流方程式の**線形近似**モデル</span>
+<span class="sv-gap">近似誤差の分だけ電圧・電流の制約を逸脱しうる</span>
+
+- Y. Wen et al., "Centralized distributionally robust chance-constrained dispatch of integrated transmission-distribution systems," IEEE Trans. Power Syst., 2024.
+- S. Talari et al., "Sequential clearing of network-aware local energy and flexibility markets in community-based grids," IEEE Trans. Smart Grid, 2024.
+- X. Shi et al., "Day-ahead distributionally robust optimization-based scheduling for distribution systems with electric vehicles," IEEE Trans. Smart Grid, 2023.
+- Y. Zhou et al., "Aggregated feasible active power region for distributed energy resources with a distributionally robust joint probabilistic guarantee," IEEE Trans. Power Syst., 2025.
+</div>
+
+<div class="sv-group">
+<span class="sv-label">電力潮流方程式の**二次錐緩和**モデル</span>
+<span class="sv-gap">緩和が厳密にならない条件では解が物理的に実現できない</span>
+
+- T. Jiang et al., "Flexibility clearing in joint energy and flexibility markets considering TSO-DSO coordination," IEEE Trans. Smart Grid, 2023.
+</div>
+
+<div class="sv-group">
+<span class="sv-label">アフィン方策で**緩和**＋機会制約を**近似**</span>
+
+- M. Rayati et al., "Distributionally robust chance constrained optimization for providing flexibility in an active distribution network," IEEE Trans. Smart Grid, 2022.
+</div>
+
+<div class="sv-verdict">未解決: 不確実性の下でネットワーク制約の充足を保証しつつ、計算負荷を抑える方法</div>
+```
+
+### `excerpt` — 原文抜粋＋読み
+<!-- ▤原文 → 読み ×N · 論文の一節をそのまま引用し、その下に自分の解釈を添えて課題を導くとき -->
+
+```markdown
+<!-- _class: excerpt -->
+
+# 研究課題（補足）｜DER の aggregation
+
+## 他アプローチ｜フレキシビリティを集約して扱う（Zhou et al., 2025）
+
+<div class="ex-item">
+<span class="ex-quote">"… directly incorporating a large population of DERs in system-wide scheduling introduces high computing efforts."</span>
+<span class="ex-read">DER を個別に直接制御すると==計算負荷が大きい==</span>
+</div>
+
+<div class="ex-item">
+<span class="ex-quote">"Another promising solution is DER aggregation, which requires the identification of the Aggregated Feasible Power Region (AFPR) … while respecting the network constraints."</span>
+<span class="ex-read">集約した実行可能電力領域 AFPR（＝ネットワーク制約を充足する領域）を同定する</span>
+</div>
+
+<div class="ex-verdict">**利点**　ネットワーク制約を満たしたまま TSO-DSO 協調に使える<br>**課題**　==不確実性下==での制約充足と disaggregation（計算負荷が大きい）</div>
+
+<div class="ex-source">Y. Zhou, C. Essayeh and T. Morstyn, "Aggregated feasible active power region for distributed energy resources with a distributionally robust joint probabilistic guarantee," IEEE Trans. Power Syst., vol. 40, no. 1, pp. 556–571, 2025.</div>
+```
+
 ## 流れ・構造（flow）
 
 ### `flow` — ブロック図・ループ図
@@ -1472,6 +1591,27 @@ flowchart LR
 $^{1}$ 所属大学 / 学部 &emsp; $^{2}$ 所属機関
 
 Conference Name 2026 &ensp;|&ensp; 2026年 X月 X日
+```
+
+### `title-figure` — 写真つき表紙
+<!-- ▤写真 半面＋大タイトル · サムネイルで中身が分かる表紙にするとき（写真を下/上/左/右に半面ブリード、full で全面） -->
+
+```markdown
+<!-- _class: title-figure -->
+<!-- _side: bottom -->
+<!-- source: 地理院タイル（2026-08 撮影） -->
+
+# 公開地理データからの変電所内部構成の実証的機械生成
+
+## Evidence-Paired Substation Single-Line Diagramming
+
+著者名 $^{1}$, 共著者名 $^{2}$
+
+$^{1}$ 所属大学 / 学部 &emsp; $^{2}$ 所属機関 &emsp; 2026年 X月 X日
+
+![](figures/cover.png)
+
+<div class="caption">図: 実出力例 — 公開衛星写真に推定結果を重畳</div>
 ```
 
 ### `divider` — 転換

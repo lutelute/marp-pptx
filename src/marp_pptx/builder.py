@@ -21,7 +21,7 @@ from pptx.oxml.ns import qn
 from lxml import etree
 
 from marp_pptx import metrics
-from marp_pptx.parser import SlideData, strip_html
+from marp_pptx.parser import SlideData, strip_html, split_code_line
 from marp_pptx.theme import ThemeConfig
 from marp_pptx.layout import (
     SW, SH, MARGIN_L, MARGIN_R, MARGIN_T, MARGIN_B, CONTENT_W,
@@ -41,6 +41,17 @@ except ImportError:
     HAS_CAIROSVG = False
 
 NS_A = "http://schemas.openxmlformats.org/drawingml/2006/main"
+
+# Slide types that own the whole canvas — no page number, no breadcrumb.
+# rule2 header (report decks): compact title sitting on a two-tone rule —
+# the rule is drawn on the slide layout (master), the title fills to it.
+R2_TITLE_TOP = Inches(0.22)
+R2_TITLE_H = Inches(0.62)
+R2_RULE_Y = Inches(0.92)
+MARKER_RED = RGBColor(0xC6, 0x28, 0x28)
+
+HERO_CLASSES = {"title", "title-figure", "divider", "end", "statement",
+                "dark", "big-statement"}
 
 
 class PptxBuilder:
@@ -178,7 +189,7 @@ class PptxBuilder:
         outlines; a soft shadow is the elevation cue that doesn't add a line.
         Opt-in per theme via ThemeLayout.card_shadow.
         """
-        sp_pr = shape.fill._xPr  # <p:spPr> — python-pptx has no shadow API
+        sp_pr = shape._element.spPr  # python-pptx has no shadow API (pictures too)
         for old in sp_pr.findall(qn("a:effectLst")):
             sp_pr.remove(old)
         effect = etree.SubElement(sp_pr, qn("a:effectLst"))
@@ -192,6 +203,50 @@ class PptxBuilder:
         alpha = etree.SubElement(clr, qn("a:alpha"))
         alpha.set("val", "15000")
         return shape
+
+    def _scrim(self, slide, left, top, width, height, *, alpha: float = 0.55):
+        """Semi-transparent black veil over a photo.
+
+        The only thing that keeps white text legible on an *arbitrary*
+        image — a theme color would tint the photograph, so this stays
+        neutral black and only varies in opacity.
+        """
+        rect = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, int(left), int(top),
+                                      int(width), int(height))
+        rect.fill.solid()
+        rect.fill.fore_color.rgb = RGBColor(0x11, 0x11, 0x10)
+        rect.line.fill.background()
+        self._no_shadow(rect)
+        solid = rect.fill._xPr.find(qn("a:solidFill"))
+        clr = solid.find(qn("a:srgbClr")) if solid is not None else None
+        if clr is not None:
+            a = etree.SubElement(clr, qn("a:alpha"))
+            a.set("val", str(int(max(0.0, min(1.0, alpha)) * 100000)))
+        return rect
+
+    def _add_picture_cover(self, slide, img_file, left, top, width, height):
+        """Place an image so it FILLS the box edge-to-edge, center-cropping
+        the overflow instead of stretching it.
+
+        add_picture(w, h) alone distorts anything whose aspect doesn't match
+        the box, which is every real photograph. The crop is PPTX-native
+        (a:srcRect), so the picture keeps the original file and stays
+        re-croppable by hand in PowerPoint.
+        """
+        from PIL import Image
+        with Image.open(img_file) as im:
+            iw, ih = im.size
+        pic = slide.shapes.add_picture(img_file, int(left), int(top),
+                                       int(width), int(height))
+        box_ar = (width / height) if height else 1.0
+        src_ar = (iw / ih) if ih else box_ar
+        if src_ar > box_ar:                    # too wide -> trim the sides
+            keep = box_ar / src_ar
+            pic.crop_left = pic.crop_right = (1.0 - keep) / 2
+        elif src_ar < box_ar:                  # too tall -> trim top and bottom
+            keep = src_ar / box_ar
+            pic.crop_top = pic.crop_bottom = (1.0 - keep) / 2
+        return pic
 
     def _content_region(self, has_title: bool = True, *, full: bool = False,
                         lead: bool = False):
@@ -211,6 +266,8 @@ class PptxBuilder:
             if self.LAYOUT.h1_deco == "band":
                 # thin frametitle band → the body starts higher (denser canvas)
                 top = int(Inches(0.08) + TITLE_H + TITLE_GAP)
+            elif self.LAYOUT.h1_deco == "rule2":
+                top = int(R2_RULE_Y + Inches(0.22))
             else:
                 top = int(MARGIN_T + TITLE_H + TITLE_GAP)
         else:
@@ -232,10 +289,18 @@ class PptxBuilder:
         band = self.LAYOUT.h1_deco == "band"
         title_top = int(Inches(0.08)) if band else int(TITLE_TOP)
         top = title_top + int(TITLE_H) + int(Inches(0.08))
+        if self.LAYOUT.h1_deco == "rule2":
+            top = int(R2_RULE_Y + Inches(0.12))
         lead_h = int(self._fs(Pt(SZ_H3.pt * metrics.DEFAULT_LINE_FACTOR)))
         tb = self._add_textbox(slide, int(MARGIN_L), top,
                                int(CONTENT_W), lead_h)
         p = tb.text_frame.paragraphs[0]
+        if getattr(self.LAYOUT, "lead_style", "accent") == "plain":
+            # report decks: the lead is the first sentence of the slide
+            tb.text_frame.word_wrap = True
+            self._set_rich_text(p, text, Pt(13.5 * getattr(self.theme, "font_scale", 1.0)),
+                                self.FG)
+            return tb
         self._set_rich_text(p, text, SZ_H3, self.SECONDARY)
         for r in p.runs:
             r.font.bold = True
@@ -540,6 +605,8 @@ class PptxBuilder:
     @property
     def LIGHT(self): return self.theme.light
     @property
+    def BORDER(self): return getattr(self.theme, "border", None) or self.HAIRLINE
+    @property
     def WHITE(self): return self.theme.white
     @property
     def FONT(self): return self.theme.font
@@ -676,15 +743,136 @@ class PptxBuilder:
         return (pw, ph)
 
     # ── Basic shape helpers ──
+    # Which master layout a slide type sits on: covers on タイトル スライド,
+    # dividers on セクション見出し, everything else on タイトルのみ — so the
+    # slide's H1 lands in a real title placeholder PowerPoint can see.
+    _LAYOUT_FOR = {"title": "title", "title-figure": "title", "divider": "section"}
+
+    def _ensure_master(self):
+        """Rewrite theme / master / layouts from this deck's theme (once)."""
+        if getattr(self, "_layouts", None) is None:
+            from marp_pptx.master import apply_master
+            self._layouts = apply_master(self)
+        return self._layouts
+
     def _blank_slide(self):
-        layout = self.prs.slide_layouts[6]
-        slide = self.prs.slides.add_slide(layout)
-        # Apply the theme background (e.g. warm cream) to every slide. Hero
-        # builders may override this with their own bg.
-        bg = self.theme.bg
-        if (bg[0], bg[1], bg[2]) != (0xff, 0xff, 0xff):
-            self._set_bg(slide, bg)
+        layouts = self._ensure_master()
+        key = self._LAYOUT_FOR.get(getattr(self, "_cur_class", ""), "title_only")
+        slide = self.prs.slides.add_slide(layouts[key])
+        # The background comes from the master (theme bg1). Hero builders
+        # still paint their own over it.
         return slide
+
+    def _title_box(self, slide, left, top, width, height):
+        """The slide's title placeholder, placed and flushed like a textbox —
+        or a plain textbox when the layout has none / it is already used."""
+        ph = None
+        for shape in slide.placeholders:
+            t = str(shape.placeholder_format.type).split(".")[-1].split(" ")[0]
+            if t in ("TITLE", "CENTER_TITLE") and not shape.text_frame.text:
+                ph = shape
+                break
+        if ph is None:
+            return self._add_textbox(slide, left, top, width, height)
+        ph.left, ph.top, ph.width, ph.height = (int(v) for v in (left, top, width, height))
+        # z-order: drawn where a textbox created now would be (above any
+        # band or panel painted before it)
+        el = ph._element
+        tree = el.getparent()
+        tree.remove(el)
+        tree.append(el)
+        tf = ph.text_frame
+        tf.auto_size = MSO_AUTO_SIZE.NONE
+        tf.margin_left = tf.margin_right = tf.margin_top = tf.margin_bottom = 0
+        # a textbox's defaults, not the layout's: callers set their own
+        # anchor and line spacing
+        tf.vertical_anchor = MSO_ANCHOR.TOP
+        tf.paragraphs[0].line_spacing = 1.0
+        return ph
+
+    @staticmethod
+    def _pin_para_font(p):
+        """Copy a paragraph's default font onto its runs, so a placeholder's
+        inherited title style can't override what the builder chose."""
+        f = p.font
+        for r in p.runs:
+            if f.name:
+                r.font.name = f.name
+            if f.size:
+                r.font.size = f.size
+            if f.bold is not None:
+                r.font.bold = f.bold
+            try:
+                r.font.color.rgb = f.color.rgb
+            except (AttributeError, TypeError):
+                pass
+
+    def _field_number(self, p, number, tail=""):
+        """Page number as PowerPoint's slide-number field (it follows the
+        slide when the deck is reordered) + a static tail such as " / 18".
+        Fonts come from the paragraph defaults the caller already set."""
+        import uuid
+        for r in list(p._p.findall(qn("a:r"))):
+            p._p.remove(r)
+        f = p.font
+
+        def rpr():
+            el = etree.Element(qn("a:rPr"))
+            el.set("lang", "en-US")
+            if f.size:
+                el.set("sz", str(int(round(f.size.pt * 100))))
+            try:
+                rgb = f.color.rgb
+            except (AttributeError, TypeError):
+                rgb = None
+            if rgb is not None:
+                fill = etree.SubElement(el, qn("a:solidFill"))
+                etree.SubElement(fill, qn("a:srgbClr")).set("val", str(rgb))
+            if f.name:
+                etree.SubElement(el, qn("a:latin")).set("typeface", f.name)
+            return el
+
+        fld = etree.Element(qn("a:fld"))
+        fld.set("id", "{%s}" % str(uuid.uuid4()).upper())
+        fld.set("type", "slidenum")
+        fld.append(rpr())
+        etree.SubElement(fld, qn("a:t")).text = str(number)
+        end = p._p.find(qn("a:endParaRPr"))
+        if end is not None:
+            end.addprevious(fld)
+        else:
+            p._p.append(fld)
+        if tail:
+            r = p.add_run()
+            r.text = tail
+            r._r.insert(0, rpr())
+
+    def _warn_if_bodyless(self, sd, n, first):
+        """A content slide that came out as nothing but its title means the
+        body didn't match the type's skeleton (a list outside the expected
+        div, a misspelled class) — say so instead of shipping a blank slide."""
+        if (sd.slide_class or "") in HERO_CLASSES or first >= len(self.prs.slides):
+            return
+        slide = self.prs.slides[first]
+        # title chrome (band, kicker, accent rule) ends above the body region
+        body_top = self._content_region(has_title=True)[1] - int(Pt(2))
+        body = [sh for sh in slide.shapes if not sh.is_placeholder
+                and sh.top + sh.height > body_top
+                and not (sh.has_text_frame and not sh.text_frame.text.strip()
+                         and sh.shape_type == 17)]            # 17 = empty textbox
+        if not body:
+            kind = sd.slide_class or "default"
+            self._warn(f"slide {n} ({kind}): only the title was drawn — the body "
+                       f"didn't match the {kind} skeleton (see "
+                       f"skills/marp-pptx/references/type-skeletons.md, or the "
+                       f"MCP tool slide_template)")
+
+    def _strip_empty_placeholders(self, slide):
+        """A title placeholder the slide didn't use would show "Click to add
+        title" in the editor — remove it."""
+        for shape in list(slide.placeholders):
+            if not (shape.has_text_frame and shape.text_frame.text.strip()):
+                shape._element.getparent().remove(shape._element)
 
     def _add_textbox(self, slide, left, top, width, height):
         tb = slide.shapes.add_textbox(left, top, width, height)
@@ -722,6 +910,9 @@ class PptxBuilder:
         accent_rule='short-left' for a colored tick)."""
         if color is None:
             color = self.PRIMARY
+        if self.LAYOUT.h1_deco == "rule2":
+            return self._add_title_rule2(slide, text, color, width,
+                                         kicker=getattr(self, "_cur_kicker", ""))
         band = self.LAYOUT.h1_deco == "band"
         if top is None:
             # The frametitle band hugs the top edge — pull the title up so the
@@ -761,7 +952,7 @@ class PptxBuilder:
             bar.line.fill.background(); self._no_shadow(bar)
             text_left = int(MARGIN_L + deco_w + Pt(12))
 
-        tb = self._add_textbox(slide, text_left, int(top), text_w, int(title_h))
+        tb = self._title_box(slide, text_left, int(top), text_w, int(title_h))
         tf = tb.text_frame
         tf.word_wrap = True
         tf.vertical_anchor = MSO_ANCHOR.MIDDLE
@@ -772,6 +963,7 @@ class PptxBuilder:
         p.font.bold = True
         p.font.color.rgb = color
         p.line_spacing = LINE_TITLE
+        self._pin_para_font(p)
 
         # Opt-in under-title rules only (off by default to avoid the AI-deck look).
         if not left_bar:
@@ -781,6 +973,38 @@ class PptxBuilder:
             if self.LAYOUT.accent_rule == "short-left":
                 self._hairline(slide, MARGIN_L, rule_y, Inches(0.7),
                                thickness=ACCENT_RULE_W, color=self.ACCENT)
+        return tb
+
+    def _add_title_rule2(self, slide, text, color, width=None, kicker=""):
+        """Report header: the title stands on the layout's two-tone rule. One
+        line is the design; a longer title shrinks, then takes a second line
+        that grows upward — the rule (on the master) never moves."""
+        text_w = int(width if width is not None else CONTENT_W)
+        title_pt, need_h, _ = self._fit_title(text, text_w, int(R2_TITLE_TOP))
+        bottom = int(R2_RULE_Y - Inches(0.07))
+        h = max(int(R2_TITLE_H), int(need_h))
+        top = max(int(Inches(0.05)), bottom - h)
+        if kicker:
+            # 「章 ｜ 話題」 above the title, in the accent color
+            kb = self._add_textbox(slide, int(MARGIN_L), int(Inches(0.1)),
+                                   text_w, int(Inches(0.26)))
+            self._set_rich_text(kb.text_frame.paragraphs[0], kicker,
+                                self._fs(Pt(12.5)), self.ACCENT)
+            for r in kb.text_frame.paragraphs[0].runs:
+                r.font.bold = True
+            top = max(top, int(Inches(0.36)))
+        tb = self._title_box(slide, int(MARGIN_L), top, text_w, bottom - top)
+        tf = tb.text_frame
+        tf.word_wrap = True
+        tf.vertical_anchor = MSO_ANCHOR.BOTTOM
+        p = tf.paragraphs[0]
+        p.text = text
+        p.font.name = self.FONT_HEAD
+        p.font.size = Pt(title_pt)
+        p.font.bold = True
+        p.font.color.rgb = color
+        p.line_spacing = LINE_TITLE
+        self._pin_para_font(p)
         return tb
 
     def _fit_title(self, text: str, text_w: int, top: int) -> tuple[float, int, int]:
@@ -884,7 +1108,7 @@ class PptxBuilder:
                                   bold=bold)
 
     def _estimate_text_height(self, lines, size, width=None, gap=None,
-                              line_spacing=1.0):
+                              line_spacing=1.0, bold=False):
         """Tight height for a block of markdown lines at given font size.
 
         Slightly over-estimates so the shape hugs content but never clips.
@@ -913,7 +1137,7 @@ class PptxBuilder:
             if not s:
                 continue
             mult = 1.35 if s.startswith(("## ", "### ")) else 1.0
-            wraps = self._wrapped_lines(s, eff * mult, width) if width else 1
+            wraps = self._wrapped_lines(s, eff * mult, width, bold=bold) if width else 1
             total += line_h * mult * wraps
             if not first:
                 total += gap_pt      # written as a literal Pt(); never scaled
@@ -944,6 +1168,10 @@ class PptxBuilder:
     def _add_body_text(self, slide, lines, left=None, top=None, width=None, height=None, size=None):
         # Safety net: \x00 box sentinels (parser.column_lines) are consumed by
         # _add_column_content; any that reach a plain text path must not print.
+        if any(split_code_line(l.strip()) for l in lines):
+            self._warn("a ``` code block can't be drawn in this part of the "
+                       "slide — it was left out (use a default slide or the "
+                       "code type for code)")
         lines = [l for l in lines if not l.strip().startswith("\x00")]
         if size is None:
             size = SZ_BODY
@@ -1094,11 +1322,16 @@ class PptxBuilder:
         breaking the containing textbox. Runs co-exist with Japanese+Latin
         mixed text via the ea-font patch applied at save time.
         """
+        para.clear()
+        self._append_rich_text(para, text, size, color)
+
+    def _append_rich_text(self, para, text, size=None, color=None):
+        """_set_rich_text without clearing — for a paragraph assembled from
+        differently styled parts (a citation's authors / title / venue)."""
         if size is None:
             size = SZ_BODY
         if color is None:
             color = self.FG
-        para.clear()
         if not text:
             return
 
@@ -1123,11 +1356,168 @@ class PptxBuilder:
                     if color is not None:
                         run.font.color.rgb = color
             elif m.group(4):  # ==marker== highlight
-                self._add_plain_run(para, m.group(4)[2:-2], size, color)
-                self._run_highlight(para.runs[-1], self.MARKER)
+                if getattr(self.LAYOUT, "marker_style", "highlight") == "text":
+                    # report decks: emphasis as bold red type, not a pen stroke
+                    self._add_plain_run(para, m.group(4)[2:-2], size, MARKER_RED,
+                                        bold=True)
+                else:
+                    self._add_plain_run(para, m.group(4)[2:-2], size, color)
+                    self._run_highlight(para.runs[-1], self.MARKER)
             pos = m.end()
         if pos < len(text):
             self._add_plain_run(para, text[pos:], size, color)
+
+    def _apply_marks(self, text: str, marks) -> str:
+        """Wrap every case-insensitive hit of each `<!-- _mark: -->` keyword in
+        ==marker==, so one keyword lights up across a whole citation list.
+        Only plain stretches are touched — never inside existing markup."""
+        if not marks or not text:
+            return text
+        pat = re.compile("|".join(re.escape(k) for k in
+                                  sorted(marks, key=len, reverse=True)),
+                         re.IGNORECASE)
+        out, pos = [], 0
+        for m in self._RICH_PATTERN.finditer(text):
+            out.append(pat.sub(lambda h: f"=={h.group(0)}==", text[pos:m.start()]))
+            out.append(m.group(0))
+            pos = m.end()
+        out.append(pat.sub(lambda h: f"=={h.group(0)}==", text[pos:]))
+        return "".join(out)
+
+    # Where a Japanese heading may break: after a run of hiragana (the
+    # particle closing a phrase — の / を / により), after closing brackets
+    # and ＋・／, and at spaces. Never inside a kanji or katakana word.
+    _PHRASE_BREAK = re.compile(
+        r"(?<=[\u3041-\u3096])(?=[^\u3041-\u3096\u30FC\u3001\u3002\uFF0C\uFF0E"
+        r"\uFF09\u300D\u300F\u3011\s])"
+        r"|(?<=[\u3001\u3002\uFF0C\uFF09\u300D\u300F\u3011\uFF0B\u30FB\uFF0F])"
+        r"|(?<=\s)")
+
+    def _phrase_lines(self, text: str, size_pt: float, width_pt: float) -> list[str]:
+        """Wrap a short heading at phrase boundaries; returns its lines with
+        the inline markup rebuilt per line (a **bold** span split by a break
+        is closed and reopened). A phrase wider than the line falls back to
+        ordinary wrapping."""
+        # 1. styled characters: (char, open, close) markers per inline token
+        chars = []
+        pos = 0
+        for m in self._RICH_PATTERN.finditer(text):
+            chars += [(c, "", "") for c in text[pos:m.start()]]
+            tok = m.group(0)
+            mk = ("**" if tok.startswith("**") else "==" if tok.startswith("==")
+                  else tok[0])
+            body = tok[len(mk):-len(mk)]
+            if mk in ("$", "`"):            # atomic: never split
+                chars.append((tok, "", ""))
+            else:
+                chars += [(c, mk, mk) for c in body]
+            pos = m.end()
+        chars += [(c, "", "") for c in text[pos:]]
+        plain = "".join(c for c, _, _ in chars)
+
+        def width(a, b):
+            return metrics.measure_em(self._plain(plain[a:b]), self.FONT,
+                                      ea_font=self.FONT_EA) * size_pt
+
+        # 2. greedy fill by phrase
+        cuts = [0] + [m.start() for m in self._PHRASE_BREAK.finditer(plain)
+                      if 0 < m.start() < len(plain)] + [len(plain)]
+        lines, start = [], 0
+        for a, b in zip(cuts, cuts[1:]):
+            if width(start, b) <= width_pt:
+                continue
+            # [start, b) overflows: break before this phrase — unless that
+            # leaves a stub (「②」 alone on a line)
+            if a > start and width(start, a) >= width_pt * 0.25:
+                lines.append((start, a))
+                start = a
+                if width(start, b) <= width_pt:
+                    continue
+            # a phrase wider than the line: ordinary wrapping inside it
+            for seg in metrics.wrap_text(plain[start:b], self.FONT, size_pt,
+                                         width_pt, ea_font=self.FONT_EA)[:-1]:
+                lines.append((start, start + len(seg)))
+                start += len(seg)
+                while start < b and plain[start].isspace():
+                    start += 1
+        lines.append((start, len(plain)))
+
+        # 3. rebuild markup per line from the styled characters (the plain
+        # string maps 1:1 onto `chars` except atomic tokens)
+        idx, acc = [], 0
+        for i, (c, _, _) in enumerate(chars):
+            idx.append(acc)
+            acc += len(c)
+        out = []
+        for a, b in lines:
+            parts, cur_mk = [], ""
+            for i, (c, mk, _) in enumerate(chars):
+                if not (a <= idx[i] < b):
+                    continue
+                if mk != cur_mk:
+                    parts.append(cur_mk + mk if cur_mk else mk)
+                    cur_mk = mk
+                parts.append(c)
+            if cur_mk:
+                parts.append(cur_mk)
+            out.append("".join(parts).strip())
+        return [l for l in out if l]
+
+    @staticmethod
+    def _smart_quotes(text: str) -> str:
+        """Straight double quotes → “ ” (opening after a space/bracket or at
+        the start, closing elsewhere). Display only — quotes are matched
+        against the paper with punctuation folded away."""
+        text = re.sub(r'(^|[\s(\[（「])"', "\\1\u201C", text)
+        return text.replace('"', "\u201D")
+
+    _CITE_RE = re.compile(r'^(?P<auth>[^"“]+?)\s*(?P<title>[“"].+?[”"])\s*(?P<venue>.*)$')
+
+    def _add_citation(self, para, ref, size, marks=()):
+        """One reference with its parts told apart: authors in ink, the
+        quoted title a step lighter (keyword marks land here), venue and
+        year muted. An unparseable reference is written whole."""
+        ref = self._apply_marks(self._smart_quotes(ref), marks)
+        m = self._CITE_RE.match(ref)
+        title_col = self._tint(self.FG, 0.30)
+        if not m:
+            self._set_rich_text(para, ref, size, title_col)
+            return
+        para.clear()
+        self._append_rich_text(para, m.group("auth") + " ", size, self.FG)
+        self._append_rich_text(para, m.group("title"), size, title_col)
+        if m.group("venue"):
+            # the year never wraps onto a line of its own
+            venue = re.sub(r" (\S+)$", "\u00a0\\1", m.group("venue"))
+            self._append_rich_text(para, " " + venue, size, self.MUTED)
+
+    def _prepend_run(self, para, text, size, color, bold=True):
+        """Put a styled lead-in run (「課題」, 「→」) before a paragraph's
+        existing runs — _set_rich_text clears the paragraph, so it has to be
+        written first and moved to the front afterwards."""
+        self._add_plain_run(para, text, size, color, bold=bold)
+        r = para.runs[-1]._r
+        para._p.remove(r)
+        first = para._p.find(qn("a:r"))
+        if first is not None:
+            first.addprevious(r)
+        else:
+            para._p.append(r)
+
+    def _hang_bullet(self, para, char, hang_emu, color=None):
+        """Bullet with a hanging indent: wrapped lines align with the text,
+        not the bullet — a two-line citation stays one visual item."""
+        pPr = para._p.get_or_add_pPr()
+        pPr.set("marL", str(int(hang_emu)))
+        pPr.set("indent", str(-int(hang_emu)))
+        for tag in ("a:buClr", "a:buChar", "a:buNone"):
+            for el in pPr.findall(qn(tag)):
+                pPr.remove(el)
+        if color is not None:
+            clr = pPr.makeelement(qn("a:buClr"), {})
+            etree.SubElement(clr, qn("a:srgbClr")).set("val", str(color))
+            pPr.append(clr)
+        pPr.append(pPr.makeelement(qn("a:buChar"), {"char": char}))
 
     # Backward-compatible alias for callers that used the math-only name
     def _set_text_with_inline_math(self, para, text, size, color):
@@ -1259,6 +1649,109 @@ class PptxBuilder:
                 self._set_rich_text(p, s, size, color)
                 p.space_before = Pt(4)
 
+    _JSON_LANGS = {"json", "geojson", "jsonl", "jsonc", "ndjson", "topojson"}
+    _JSON_TOKEN = re.compile(r'("(?:\\.|[^"\\])*")(\s*:)?'
+                             r'|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)'
+                             r'|\b(true|false|null)\b')
+
+    def _code_runs(self, p, line, lang, size, colors):
+        """One code line as runs. JSON-family code (json / geojson / jsonl …)
+        tells keys, string values and literals apart — the structure of a
+        record is what a data-format slide is there to show."""
+        def run(text, color):
+            if text:
+                r = p.add_run()
+                r.text = text
+                r.font.name = self.FONT_MONO
+                r.font.size = size
+                r.font.color.rgb = color
+        if not line:
+            run("\u00a0", colors["base"])     # keep blank lines tall
+            return
+        if (lang or "").lower() not in self._JSON_LANGS:
+            run(line, colors["base"])
+            return
+        pos = 0
+        for m in self._JSON_TOKEN.finditer(line):
+            run(line[pos:m.start()], colors["base"])
+            if m.group(1):
+                run(m.group(1), colors["key"] if m.group(2) else colors["string"])
+                run(m.group(2), colors["base"])
+            else:
+                run(m.group(0), colors["literal"])
+            pos = m.end()
+        run(line[pos:], colors["base"])
+
+    _CODE_PAD = 12                      # pt, inside the in-flow code block
+
+    _CODE_LABEL = 11                    # pt, the language label's own strip
+
+    def _code_block_fit(self, code, width_emu, base=14.0, floor=10.0, lang=""):
+        """(size Pt, height EMU, wrap) for an in-flow code block: the type
+        shrinks until the longest line fits (down to `floor`), past that the
+        lines wrap."""
+        fs = getattr(self.theme, "font_scale", 1.0)
+        lines = code.split("\n") or [""]
+        inner = width_emu / 12700 - 2 * self._CODE_PAD
+        longest = max((metrics.measure_em(l, self.FONT_MONO, ea_font=self.FONT_EA)
+                       for l in lines), default=1) or 1
+        size = min(base * fs, inner / longest)
+        wrap = size < floor * fs
+        size = max(size, floor * fs)
+        n = (sum(max(1, metrics.line_count(l, self.FONT_MONO, size, inner,
+                                           ea_font=self.FONT_EA)) for l in lines)
+             if wrap else len(lines))
+        height = int(Pt(n * size * 1.3 + 2 * self._CODE_PAD
+                        + (self._CODE_LABEL if lang else 0)))
+        return Pt(size), height, wrap
+
+    def _add_code_block(self, slide, lang, code, left, top, width, height, size, wrap):
+        """A fenced block inside ordinary slide text: a light panel, monospace,
+        the language as a small label — a sibling of the `code` type's dark
+        window, quiet enough to sit between paragraphs."""
+        left, top, width, height = int(left), int(top), int(width), int(height)
+        bg = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, left, top, width, height)
+        bg.adjustments[0] = 0.04
+        bg.fill.solid(); bg.fill.fore_color.rgb = self._tint(self.FG, 0.94)
+        bg.line.color.rgb = self.HAIRLINE; bg.line.width = HAIRLINE_W
+        self._no_shadow(bg)
+        pad = int(Pt(self._CODE_PAD))
+        label_h = int(Pt(self._CODE_LABEL)) if lang else 0
+        if lang:
+            # its own strip above the code: never over a full-width line
+            lb = self._add_textbox(slide, left + width - int(Inches(1.2)) - pad,
+                                   top + int(Pt(5)), int(Inches(1.2)), label_h)
+            lp = lb.text_frame.paragraphs[0]
+            self._add_plain_run(lp, lang, self._fs(Pt(9)), self.MUTED)
+            lp.alignment = PP_ALIGN.RIGHT
+        tb = self._add_textbox(slide, left + pad, top + pad + label_h,
+                               width - 2 * pad, height - 2 * pad - label_h)
+        tf = tb.text_frame
+        tf.word_wrap = wrap
+        colors = {"base": self.FG, "key": self.ACCENT_TEXT,
+                  "string": self._tint(self.FG, 0.22), "literal": self.SECONDARY}
+        for i, ln in enumerate(code.split("\n")):
+            p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+            self._code_runs(p, ln, lang, size, colors)
+            p.line_spacing = Pt(size.pt * 1.3)
+        return tb
+
+    def _body_segments(self, lines):
+        """Split body lines into ("text", [lines]) / ("code", (lang, code))."""
+        segs, cur = [], []
+        for line in lines:
+            c = split_code_line(line.strip())
+            if c:
+                if cur:
+                    segs.append(("text", cur))
+                    cur = []
+                segs.append(("code", c))
+            else:
+                cur.append(line)
+        if any(l.strip() for l in cur):
+            segs.append(("text", cur))
+        return segs
+
     def _add_accent_box(self, slide, text, left, top, width, height, border_color=None):
         if border_color is None:
             border_color = self.ACCENT
@@ -1298,6 +1791,16 @@ class PptxBuilder:
     def _add_footnote(self, slide, text):
         left = int(MARGIN_L)
         top = int(SH - Inches(0.62))
+        if getattr(self.LAYOUT, "footnote_style", "short") == "rule":
+            # report decks: a full-width hairline, the source line under it
+            self._hairline(slide, left, top, CONTENT_W, color=self.HAIRLINE)
+            tb = self._add_textbox(slide, left, top + int(Pt(5)),
+                                   int(CONTENT_W - Inches(1.2)), int(Inches(0.4)))
+            tb.text_frame.word_wrap = True
+            self._set_rich_text(tb.text_frame.paragraphs[0], text,
+                                Pt(10), self.MUTED)
+            tb.text_frame.auto_size = MSO_AUTO_SIZE.SHAPE_TO_FIT_TEXT
+            return
         if self.LAYOUT.footer_bar:
             top -= int(Inches(0.30))      # sit above the beamer bar
         # Stop short of the page number in the same band — a long source line
@@ -1577,6 +2080,14 @@ class PptxBuilder:
             remaining_h = top + height - cur_top
             if remaining_h <= 0:
                 break
+            if kind == "code":
+                lang, code = split_code_line(seg_lines[0])
+                size, ch, wrap = self._code_block_fit(code, width, lang=lang)
+                ch = min(int(remaining_h), ch)
+                self._add_code_block(slide, lang, code, left, int(cur_top),
+                                     width, ch, size, wrap)
+                cur_top += ch + int(Inches(0.12))
+                continue
             if kind == "text":
                 # Hug content height (capped at remaining), don't force full
                 # column. Measure at the column's own width — without it this
@@ -1610,7 +2121,12 @@ class PptxBuilder:
         segs, kind, cur = [], "text", []
         for line in lines:
             s = line.strip()
-            if s.startswith("\x00BOX"):
+            if split_code_line(s):
+                if cur:
+                    segs.append((kind, cur))
+                segs.append(("code", [s]))
+                cur = []
+            elif s.startswith("\x00BOX"):
                 if cur:
                     segs.append((kind, cur))
                 parts = s.split()
@@ -1636,6 +2152,9 @@ class PptxBuilder:
             first = False
             if kind == "text":
                 total += int(self._estimate_text_height(seg_lines, size, width=width))
+            elif kind == "code":
+                lang, code = split_code_line(seg_lines[0])
+                total += self._code_block_fit(code, width, lang=lang)[1]
             else:
                 total += int(self._estimate_text_height(
                     seg_lines, SZ_ZONE_B, width=int(width - Pt(34))) + Pt(16))
@@ -1657,6 +2176,8 @@ class PptxBuilder:
                 continue
             if s.startswith("## "):
                 continue   # H2 is used as the kicker
+            if s.startswith("!["):
+                continue   # the cover figure is not a subtitle line
             if past_h1 and s and not s.startswith(("<!--", "<div", "</div", ">")):
                 t = strip_html(s)
                 if not t:
@@ -1744,18 +2265,19 @@ class PptxBuilder:
             bx.adjustments[0] = 0.16
             bx.fill.solid(); bx.fill.fore_color.rgb = self.PRIMARY
             bx.line.fill.background(); self._no_shadow(bx)
-            tb = self._add_textbox(slide, int(Inches(1.15)), box_y,
-                                   int(SW - Inches(2.3)), box_h)
+            tb = self._title_box(slide, int(Inches(1.15)), box_y,
+                                 int(SW - Inches(2.3)), box_h)
             tf = tb.text_frame; tf.word_wrap = True
             tf.vertical_anchor = MSO_ANCHOR.MIDDLE
         else:
-            tb = self._add_textbox(slide, tx or int(Inches(0.8)), int(Inches(3.34)),
-                                   int(SW - (tx or int(Inches(0.8))) * 2), title_h)
+            tb = self._title_box(slide, tx or int(Inches(0.8)), int(Inches(3.34)),
+                                 int(SW - (tx or int(Inches(0.8))) * 2), title_h)
             tf = tb.text_frame; tf.word_wrap = True; tf.vertical_anchor = MSO_ANCHOR.TOP
         p = tf.paragraphs[0]; p.text = sd.h1
         p.font.name = self.FONT_HEAD; p.font.size = self._fs(Pt(hero_pt))
         p.font.bold = True; p.font.color.rgb = h_color; p.alignment = align
         p.line_spacing = LINE_TITLE
+        self._pin_para_font(p)
         # (4) subtitle — rich text so $math$ (e.g. author superscripts) renders
         if subs:
             # Follow the title block instead of a fixed y: at font_scale 1.3
@@ -1782,6 +2304,218 @@ class PptxBuilder:
             mp = mb.text_frame.paragraphs[0]
             self._set_rich_text(mp, "   ·   ".join(meta), SZ_SMALL, sub_color)
             mp.alignment = align
+
+    def _hero_text_stack(self, slide, sd, left, top, width, height, *,
+                         is_dark: bool, align=PP_ALIGN.LEFT,
+                         max_lines: int = 3):
+        """Cover typography — kicker / accent rule / title / subtitle / meta —
+        measured and vertically centered inside an arbitrary rect.
+
+        build_title owns the full-bleed cover with its hand-tuned y-stops;
+        this is the same visual language re-flowed into whatever half a
+        title-figure slide leaves for text. The title shrinks by steps until
+        it fits `max_lines` at the given width, so a long Japanese title in a
+        44%-wide column doesn't overrun the photo.
+        """
+        h_color = self.WHITE if is_dark else self.PRIMARY
+        sub_color = self._tint(self.PRIMARY, 0.85) if is_dark else self.MUTED
+        accent = self._hero_accent(2.5) if is_dark else self.ACCENT
+        kicker_color = self._hero_accent(4.5) if is_dark else self.ACCENT_TEXT
+        scale = getattr(self.theme, "font_scale", 1.0)
+        kicker = sd.h2 if (sd.h2 and len(sd.h2.split()) <= 10) else None
+        subs, meta = self._hero_meta(sd)
+
+        # (a) title size — largest step that stays within max_lines
+        base = SZ_DISPLAY.pt * getattr(self.LAYOUT, "title_scale", 1.0)
+        title_pt = base * 0.60
+        for cand in (base, base * 0.86, base * 0.74, base * 0.66, base * 0.60):
+            if self._wrapped_lines(sd.h1 or "", cand * scale,
+                                   int(width * 0.98), bold=True) <= max_lines:
+                title_pt = cand
+                break
+
+        # (b) measure the whole stack, then center it in the rect
+        gap_k = int(Inches(0.10))
+        rule_h = int(Inches(0.30))
+        title_h = int(self._estimate_text_height(
+            [sd.h1], Pt(title_pt), width=int(width * 0.98),
+            line_spacing=LINE_TITLE)) if sd.h1 else 0
+        sub_h = int(self._estimate_text_height(
+            subs[:3], SZ_BODY, width=width, gap=Pt(4))) if subs else 0
+        meta_h = int(Inches(0.34)) if meta else 0
+        gap_s = int(Inches(0.22)) if subs else 0
+        gap_m = int(Inches(0.20)) if meta else 0
+        total = ((int(KICKER_H) + gap_k) if kicker else 0) + rule_h + \
+            title_h + gap_s + sub_h + gap_m + meta_h
+        y = int(top) + max(0, (int(height) - total) // 2)
+        x = int(left)
+        w = int(width)
+
+        if kicker:
+            kb = self._add_textbox(slide, x, y, w, int(KICKER_H))
+            self._kicker_para(kb.text_frame.paragraphs[0], kicker,
+                              color=kicker_color, align=align, tracking=200)
+            y += int(KICKER_H) + gap_k
+        rule_w = int(Inches(1.1))
+        self._hairline(slide, x if align == PP_ALIGN.LEFT else int(x + (w - rule_w) // 2),
+                       y + int(Inches(0.09)), rule_w, thickness=Pt(1.6), color=accent)
+        y += rule_h
+        if sd.h1:
+            tb = self._title_box(slide, x, y, w, title_h)
+            tf = tb.text_frame
+            tf.word_wrap = True
+            tf.vertical_anchor = MSO_ANCHOR.TOP
+            pg = tf.paragraphs[0]
+            pg.text = sd.h1
+            pg.font.name = self.FONT_HEAD
+            pg.font.size = self._fs(Pt(title_pt))
+            pg.font.bold = True
+            pg.font.color.rgb = h_color
+            pg.alignment = align
+            pg.line_spacing = LINE_TITLE
+            self._pin_para_font(pg)
+            y += title_h
+        if subs:
+            y += gap_s
+            sb = self._add_textbox(slide, x, y, w, sub_h)
+            sb.text_frame.word_wrap = True
+            for i, line in enumerate(subs[:3]):
+                sp = (sb.text_frame.paragraphs[0] if i == 0
+                      else sb.text_frame.add_paragraph())
+                self._set_rich_text(sp, line, SZ_BODY, sub_color)
+                sp.alignment = align
+                if i:
+                    sp.space_before = Pt(4)
+            y += sub_h
+        if meta:
+            y += gap_m
+            mb = self._add_textbox(slide, x, y, w, meta_h)
+            mp = mb.text_frame.paragraphs[0]
+            self._set_rich_text(mp, "   \u00b7   ".join(meta), SZ_SMALL, sub_color)
+            mp.alignment = align
+
+    def build_title_figure(self, sd: SlideData):
+        """写真つき表紙 — サムネイルで中身が分かるカバー。
+
+        Half the page is a full-bleed figure — bottom band by default,
+        `side:` selects top / left / right / full — center-cropped so a
+        photograph of any aspect fills its half without stretching. The other
+        half carries the normal cover stack. A caption rides on a dark scrim
+        strip inside the image, the one treatment that stays legible over an
+        arbitrary photo.
+        """
+        slide = self._blank_slide()
+        side = (sd.side or "bottom").strip().lower()
+        if side not in ("bottom", "top", "left", "right", "full"):
+            self._warn(f"title-figure: unknown side '{side}' "
+                       "(bottom/top/left/right/full) — using bottom")
+            side = "bottom"
+
+        # ── regions: the image half is full-bleed, the text half is inset ──
+        if side == "full":
+            img_rect = (0, 0, int(SW), int(SH))
+            pad = int(Inches(1.0))
+            txt_rect = (pad, int(Inches(1.0)), int(SW - pad * 2),
+                        int(SH - Inches(2.1)))
+        elif side in ("bottom", "top"):
+            band = int(SH * 0.42)
+            pad = int(Inches(0.85))
+            if side == "bottom":
+                img_rect = (0, int(SH) - band, int(SW), band)
+                txt_rect = (pad, int(Inches(0.70)), int(SW) - pad * 2,
+                            int(SH) - band - int(Inches(1.05)))
+            else:
+                img_rect = (0, 0, int(SW), band)
+                txt_rect = (pad, band + int(Inches(0.45)), int(SW) - pad * 2,
+                            int(SH) - band - int(Inches(0.95)))
+        else:
+            col = int(SW * 0.44)
+            pad = int(Inches(0.72))
+            txt_w = int(SW) - col - pad * 2
+            if side == "left":
+                img_rect = (0, 0, col, int(SH))
+                txt_rect = (col + pad, int(Inches(0.75)), txt_w,
+                            int(SH - Inches(1.5)))
+            else:
+                img_rect = (int(SW) - col, 0, col, int(SH))
+                txt_rect = (pad, int(Inches(0.75)), txt_w,
+                            int(SH - Inches(1.5)))
+
+        # ── the text half's ground (same title_bg contract as build_title) ──
+        hero = self._hero_fill_color()
+        is_dark = False
+        if side == "full":
+            is_dark = True                      # the scrim below guarantees it
+        elif self.LAYOUT.title_bg == "gradient":
+            self._set_gradient_bg(slide, self.PRIMARY, self.SECONDARY)
+            is_dark = True
+        elif self.LAYOUT.title_bg in ("dark", "box"):
+            self._set_bg(slide, self.PRIMARY)
+            is_dark = True
+        elif self.LAYOUT.title_bg == "light":
+            self._set_bg(slide, self.LIGHT)
+        elif hero is not None:
+            self._set_bg(slide, hero)
+            from marp_pptx.audit import contrast_ratio
+            is_dark = contrast_ratio(tuple(hero), (255, 255, 255)) > 4.0
+
+        # ── the figure ──
+        if not sd.image_path:
+            self._warn("title-figure: no image — drawing the cover frame "
+                       "placeholder (add ![](path.png))")
+        resolved = self._resolve_image(sd.image_path) if sd.image_path else None
+        img_file = resolved or self._image_or_placeholder(
+            sd.image_path or "cover-image.png")
+        if img_file and resolved:
+            self._add_picture_cover(slide, img_file, *img_rect)
+            if side == "full":
+                self._scrim(slide, *img_rect, alpha=0.62)
+        elif img_file:
+            # A placeholder is a diagnostic, not a photograph — cropping it to
+            # fill the band hides the very filename the author needs to fix.
+            # Letterbox it on a flat field instead.
+            ix, iy, iw, ih = img_rect
+            field = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, ix, iy, iw, ih)
+            field.fill.solid()
+            field.fill.fore_color.rgb = self.PRIMARY if side == "full" else self.LIGHT
+            field.line.fill.background()
+            self._no_shadow(field)
+            from PIL import Image
+            with Image.open(img_file) as im:
+                sw_px, sh_px = im.size
+            fit = min(iw * 0.50 / (sw_px * 914400 / 96),
+                      ih * 0.70 / (sh_px * 914400 / 96))
+            pw = int(sw_px * fit * 914400 / 96)
+            ph = int(sh_px * fit * 914400 / 96)
+            slide.shapes.add_picture(img_file, ix + (iw - pw) // 2,
+                                     iy + (ih - ph) // 2, pw, ph)
+
+        # ── caption on its own scrim strip, inside the image ──
+        cap = self._fig_caption(sd.caption, sd.source)
+        if cap and img_file:
+            ix, iy, iw, ih = img_rect
+            cpad = int(Inches(0.36))
+            cap_w = iw - cpad * 2
+            cap_h = max(int(Inches(0.30)),
+                        int(self._estimate_text_height([cap], SZ_SMALL,
+                                                       width=cap_w)))
+            strip_h = cap_h + int(Inches(0.26))
+            strip_y = iy + ih - strip_h
+            if side != "full":
+                self._scrim(slide, ix, strip_y, iw, strip_h, alpha=0.55)
+            cb = self._add_textbox(slide, ix + cpad, strip_y + int(Inches(0.13)),
+                                   cap_w, cap_h)
+            cb.name = "edge:caption"   # inside the full-bleed figure by design
+            cb.text_frame.word_wrap = True
+            cp = cb.text_frame.paragraphs[0]
+            self._rich_line(cp, cap, SZ_SMALL, self.WHITE)
+
+        # ── the cover stack ──
+        narrow = side in ("left", "right")
+        align = (PP_ALIGN.LEFT if (narrow or self.LAYOUT.title_align == "left")
+                 else PP_ALIGN.CENTER)
+        self._hero_text_stack(slide, sd, *txt_rect, is_dark=is_dark,
+                              align=align, max_lines=4 if narrow else 3)
 
     def build_divider(self, sd: SlideData):
         slide = self._blank_slide()
@@ -1820,12 +2554,13 @@ class PptxBuilder:
             ea_font=self.FONT_EA, bold=True))
         title_h = int(Pt(title_pt.pt * LINE_TITLE * metrics.DEFAULT_LINE_FACTOR
                          * max(1, title_lines)))
-        tb = self._add_textbox(slide, x, title_y, w, title_h)
+        tb = self._title_box(slide, x, title_y, w, title_h)
         tf = tb.text_frame; tf.word_wrap = True
         tp = tf.paragraphs[0]; tp.text = sd.h1
         tp.font.name = self.FONT_HEAD; tp.font.size = title_pt
         tp.font.bold = True; tp.font.color.rgb = self.PRIMARY; tp.alignment = align
         tp.line_spacing = LINE_TITLE
+        self._pin_para_font(tp)
         # accent rule
         rule_y = title_y + title_h + int(Inches(0.18))
         rx = cx if is_center else int(Inches(1.4) + Inches(0.35))
@@ -1849,22 +2584,32 @@ class PptxBuilder:
         left, _, width, _ = region
 
         # Measure each block, then center/justify the stack in the body region.
-        blocks = []  # (kind, height)
-        if sd.body_lines:
-            bh = int(self._estimate_text_height(sd.body_lines, SZ_BODY, width=width))
-            blocks.append(("body", min(bh, region[3])))
+        # Body text and ``` code blocks are separate blocks in author order.
+        blocks = []  # (kind, height, payload)
+        segs = self._body_segments(sd.body_lines or [])
+        for kind, seg in segs:
+            if kind == "text":
+                bh = int(self._estimate_text_height(seg, SZ_BODY, width=width))
+                blocks.append(("body", min(bh, region[3]), seg))
+            else:
+                size, ch, wrap = self._code_block_fit(seg[1], width, lang=seg[0])
+                blocks.append(("code", ch, (seg[0], seg[1], size, wrap)))
         if sd.table_rows:
-            blocks.append(("table", self._table_height(sd.table_rows, width)))
+            blocks.append(("table", self._table_height(sd.table_rows, width), None))
         if sd.bottom_text:
-            blocks.append(("accent", int(Inches(1.0))))
+            blocks.append(("accent", int(Inches(1.0)), None))
 
-        heights = [h for _, h in blocks]
-        mode = "center" if len(heights) <= 2 else "justify"
+        heights = [h for _, h, _ in blocks]
+        has_code = any(k == "code" for k, _, _ in blocks)
+        mode = "center" if len(heights) <= 2 or has_code else "justify"
         tops = self._stack_tops(heights, region, mode=mode)
-        for (kind, h), t in zip(blocks, tops):
+        for (kind, h, payload), t in zip(blocks, tops):
             if kind == "body":
-                self._add_body_text(slide, sd.body_lines, left=left, top=t,
+                self._add_body_text(slide, payload, left=left, top=t,
                                     width=width, height=h)
+            elif kind == "code":
+                lang, code, size, wrap = payload
+                self._add_code_block(slide, lang, code, left, t, width, h, size, wrap)
             elif kind == "table":
                 self._styled_table(slide, sd.table_rows, left, t, width, h)
             elif kind == "accent":
@@ -2475,12 +3220,13 @@ class PptxBuilder:
                        Inches(1.1), thickness=Pt(1.6), color=accent)
         # thank-you
         hero_pt = SZ_DISPLAY.pt * getattr(self.LAYOUT, "title_scale", 1.0)
-        tb = self._add_textbox(slide, int(Inches(1)), int(Inches(3.15)),
-                               int(SW - Inches(2)), int(self._fs(Pt(hero_pt * 1.3))))
+        tb = self._title_box(slide, int(Inches(1)), int(Inches(3.15)),
+                             int(SW - Inches(2)), int(self._fs(Pt(hero_pt * 1.3))))
         tf = tb.text_frame; tf.word_wrap = True
         p = tf.paragraphs[0]; p.text = sd.h1 or "Thank You"
         p.font.name = self.FONT_HEAD; p.font.size = self._fs(Pt(hero_pt))
         p.font.bold = True; p.font.color.rgb = h_color; p.alignment = PP_ALIGN.CENTER
+        self._pin_para_font(p)
         # sub lines
         remaining = [strip_html(s.strip()) for s in sd.raw.split("\n")
                      if s.strip() and not s.strip().startswith(("#", "<!--", "<div", "</div", ">"))]
@@ -3187,6 +3933,445 @@ class PptxBuilder:
             cur += h + gap
         if sd.footnote:
             self._add_footnote(slide, sd.footnote)
+
+    def build_board(self, sd: SlideData):
+        """A slide composed of zones (definition band, card / code / figure
+        columns, callout, numbered steps, emphasis band) — see board.py."""
+        from marp_pptx.board import render_board
+        render_board(self, sd)
+
+    def _verdict_height(self, sd, width):
+        """Height of the closing verdict band (sv-/ex-verdict), 0 if none."""
+        if not sd.bottom_text:
+            return 0
+        return int(self._estimate_text_height(
+            sd.bottom_text.split("\n"), SZ_ZONE_B,
+            width=width - int(Inches(0.5)),
+            bold="**" in sd.bottom_text)) + int(Inches(0.34))
+
+    def _spread(self, total, n, avail, cap):
+        """Give an item stack its share of free space: inner gaps grow first
+        (up to `cap` each) so the items fill their zone, then whatever is
+        left follows the theme's vertical alignment. Returns (extra, offset)."""
+        free = max(0, avail - total)
+        extra = min(free // (n - 1), int(cap)) if n > 1 else 0
+        left = free - extra * max(0, n - 1)
+        return extra, (left // 2 if self.LAYOUT.vertical_align == "center" else 0)
+
+    def build_survey(self, sd: SlideData):
+        """関連研究マップ: 手法の分類ごとに、その手法を採る論文を並べる。
+
+        The related-work device of a research-progress deck. Each approach is
+        a row in two zones: the approach itself on the left (accent tick,
+        label, paper count), its description / 課題 / papers on the right,
+        rows ruled across the full width — who does what and where it falls
+        short reads off one slide. `<!-- _mark: kw -->` lights one keyword up
+        across every citation, a trend made visible in the titles
+        themselves. A survey too long for that grid stacks label-over-papers
+        in two columns instead.
+        """
+        slide = self._blank_slide()
+        if sd.h1:
+            self._add_title(slide, sd.h1)
+        groups = sd.survey_groups
+        if not groups:
+            return
+        rleft, rtop, rwidth, rheight = self._content_region_with_lead(slide, sd)
+        concl_h = self._verdict_height(sd, rwidth)
+        avail = rheight - (concl_h + int(BLOCK_GAP) if concl_h else 0)
+
+        cjk = any(ord(c) > 0x2E7F for g in groups for c in g["label"])
+        counts = sum(1 for g in groups if g["refs"]) >= 2
+        tick_w = int(Pt(14))           # accent tick + gap: the text edge
+        hang = int(Pt(12))
+        zone_gap = int(Inches(0.35))   # label zone | detail zone
+        col_gap = int(Inches(0.45))    # stacked fallback: column | column
+        row_gap = int(Inches(0.26))    # between rows (the rule sits mid-gap)
+        inner = 0                      # blocks in a zone abut: each box's pad is the gap
+        tail = int(Pt(6))              # _estimate_text_height's safety pad
+
+        def count_text(n):
+            return f"{n} 件" if cjk else f"{n} paper{'s' if n > 1 else ''}"
+
+        def cnt_w(k):          # the count column at the right of a label
+            if not counts:
+                return 0
+            em = max(self._visual_em_width(count_text(len(g["refs"])))
+                     for g in groups if g["refs"])
+            return int(Pt(em * SZ_SMALL.pt * k + 10))
+
+        fs = getattr(self.theme, "font_scale", 1.0)
+
+        def label_lines(g, k, w):
+            """The label's lines at text width `w` (EMU), broken by phrase."""
+            return self._phrase_lines(g["label"], 18 * k * fs, w / 12700)
+
+        def label_h(g, k, w):
+            return est(label_lines(g, k, w), Pt(18 * k), None, gap=0)
+
+        def label_zone(k):
+            """Label-zone width in 24–36% of the row: the one whose labels
+            take the fewest lines without ending in a stub, and, other things
+            equal, the narrower (more room for the papers)."""
+            lo, hi, step = int(rwidth * 0.24), int(rwidth * 0.36), int(Inches(0.1))
+            best = None
+            for w in range(lo, hi + 1, step):
+                tw = w - tick_w - cnt_w(k)
+                pen = (w - lo) / max(1, hi - lo) * 0.5
+                for g in groups:
+                    if not g["label"]:
+                        continue
+                    lines = label_lines(g, k, tw)
+                    pen += len(lines) - 1
+                    last = metrics.measure_em(self._plain(lines[-1]), self.FONT,
+                                              ea_font=self.FONT_EA) * 18 * k * fs
+                    if len(lines) > 1 and last < tw / 12700 * 0.3:
+                        pen += 3
+                if best is None or pen < best[0]:
+                    best = (pen, w)
+            return best[1]
+
+        def est(lines, size, width, gap=None, bold=False):
+            return int(self._estimate_text_height(lines, size, width=width,
+                                                  gap=gap, bold=bold))
+
+        def stack(blocks):
+            """Height of blocks one under another. Boxes never overlap (each
+            keeps its safety pad); only the last pad is left out, so the rule
+            between rows sits mid-gap between the texts, not the boxes."""
+            return (sum(h for _, h in blocks) + inner * (len(blocks) - 1)
+                    - tail) if blocks else 0
+
+        def details(g, k, kr, width):
+            out = []
+            if g["body"]:
+                out.append(("body", est([g["body"]], Pt(15 * k), width)))
+            if g["gap"]:
+                # a paragraph with a bold run measures as bold (as audit does)
+                out.append(("gap", est(["課題　" + g["gap"]], Pt(15 * k), width,
+                                       bold=True)))
+            if g["refs"]:
+                out.append(("refs", est(g["refs"], Pt(12 * kr), width - hang, Pt(2))))
+            return out
+
+        def grid(k, kr):
+            lz = label_zone(k)
+            dw = rwidth - lz - zone_gap
+            rows = []
+            for g in groups:
+                left = []
+                if g["label"]:
+                    left.append(("label", label_h(g, k, lz - tick_w - cnt_w(k))))
+                right = details(g, k, kr, dw)
+                rows.append({"left": left, "right": right,
+                             "h": max(stack(left), stack(right))})
+            return {"mode": "grid", "k": k, "kr": kr, "lz": lz, "dw": dw,
+                    "cols": [list(range(len(groups)))], "rows": rows}
+
+        def stacked(k, ncol):
+            col_w = rwidth if ncol == 1 else (rwidth - col_gap) // 2
+            rows = []
+            for g in groups:
+                blocks = []
+                if g["label"]:
+                    blocks.append(("label", label_h(g, k, col_w - tick_w - cnt_w(k))))
+                blocks += details(g, k, k, col_w - tick_w)
+                rows.append({"blocks": blocks, "h": stack(blocks)})
+            if ncol == 1:
+                cols = [list(range(len(groups)))]
+            else:
+                def col_h(idx):
+                    return sum(rows[i]["h"] for i in idx) + row_gap * (len(idx) - 1)
+                split = min(range(1, len(groups)), key=lambda s: max(
+                    col_h(range(s)), col_h(range(s, len(groups)))))
+                cols = [list(range(split)), list(range(split, len(groups)))]
+            return {"mode": "stack", "k": k, "kr": k, "col_w": col_w,
+                    "cols": cols, "rows": rows}
+
+        def height(plan):
+            return max(sum(plan["rows"][i]["h"] for i in c) + row_gap * (len(c) - 1)
+                       for c in plan["cols"])
+
+        # With papers, the grid comes first — it grows to fill a sparse
+        # survey (while a sixth of the zone stays free) and shrinks the
+        # citations before the labels: the classification is the message,
+        # the papers its evidence. Without papers (手法 → 性質 → 課題) the
+        # rows are sentences that read best at full width, stacked. Past 9pt
+        # citations a survey stacks in two columns; the smallest single stack
+        # is the last resort.
+        scales = ((1.1, 1.2), (1.05, 1.1), (1.0, 1.0), (1.0, 0.92), (1.0, 0.84),
+                  (0.93, 0.8), (0.93, 0.75))
+        if any(g["refs"] for g in groups):
+            tries = [lambda k=k, kr=kr: grid(k, kr) for k, kr in scales]
+        else:
+            tries = [lambda k=k: stacked(k, 1) for k in (1.1, 1.05, 1.0, 0.93, 0.86)]
+        if len(groups) >= 2:
+            tries += [lambda k=k: stacked(k, 2) for k in (1.0, 0.93, 0.86, 0.80, 0.75)]
+        tries += [lambda: stacked(0.75, 1)]
+        best = None
+        for make in tries:
+            plan = make()
+            h = height(plan)
+            fits = h <= (avail * 5 // 6 if plan["k"] > 1 else avail)
+            if best is None or h < best[1] or fits:
+                best = (plan, h)
+            if fits:
+                break
+        else:
+            self._warn(f"survey \"{sd.h1}\": {len(groups)} groups overflow "
+                       "the slide — split them across two slides")
+        plan, total = best
+        k, kr = plan["k"], plan["kr"]
+        lab_sz, note_sz, ref_sz = Pt(18 * k), Pt(15 * k), Pt(12 * kr)
+        line_h = int(Pt(lab_sz.pt * metrics.DEFAULT_LINE_FACTOR))
+        glyph = int(Pt(lab_sz.pt * 0.9))
+        n_rows = max(len(c) for c in plan["cols"])
+        extra, offset = self._spread(total, n_rows, avail, Inches(0.22))
+        gap = row_gap + extra
+
+        def put_label(g, x, y, w, h):
+            text_h = max(line_h, h - tail)
+            self._hairline(slide, x, int(y + (line_h - glyph) // 2),
+                           text_h - (line_h - glyph), thickness=Pt(3),
+                           color=self.ACCENT, vertical=True)
+            cw = cnt_w(k)
+            tb = self._add_textbox(slide, x + tick_w, int(y), w - tick_w - cw, h)
+            tb.text_frame.word_wrap = True
+            p = tb.text_frame.paragraphs[0]
+            p.clear()
+            # the measured phrase lines, written with explicit breaks so the
+            # viewer can't re-wrap them mid-word
+            for i, ln in enumerate(label_lines(g, k, w - tick_w - cw)):
+                if i:
+                    p.add_line_break()
+                self._append_rich_text(p, ln, lab_sz, self.FG)
+            if g["refs"] and counts:
+                # its own box at the end of the zone: never split by a wrap,
+                # and the counts line up down the rows
+                cb = self._add_textbox(slide, x + w - cw, int(y), cw, line_h)
+                cb.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
+                cp = cb.text_frame.paragraphs[0]
+                self._add_plain_run(cp, count_text(len(g["refs"])),
+                                    Pt(SZ_SMALL.pt * k), self.MUTED)
+                cp.alignment = PP_ALIGN.RIGHT
+
+        def put_detail(g, kind, x, y, w, h):
+            tb = self._add_textbox(slide, x, int(y), w, h)
+            tf = tb.text_frame
+            tf.word_wrap = True
+            if kind in ("body", "gap"):
+                p = tf.paragraphs[0]
+                self._set_rich_text(p, g[kind], note_sz, self.FG)
+                if kind == "gap":
+                    self._prepend_run(p, "課題　", note_sz, self.ACCENT_TEXT)
+                return
+            for j, ref in enumerate(g["refs"]):
+                p = tf.paragraphs[0] if j == 0 else tf.add_paragraph()
+                self._add_citation(p, ref, ref_sz, sd.marks)
+                self._hang_bullet(p, "–", hang, color=self.MUTED)
+                if j:
+                    p.space_before = Pt(2)
+
+        top = rtop + offset
+        if plan["mode"] == "grid":
+            lz, dw = plan["lz"], plan["dw"]
+            dx = rleft + lz + zone_gap
+            cur = top
+            for i, (g, row) in enumerate(zip(groups, plan["rows"])):
+                y = cur
+                for kind, h in row["left"]:
+                    put_label(g, rleft, y, lz, h)
+                    y += h + inner
+                y = cur
+                for kind, h in row["right"]:
+                    put_detail(g, kind, dx, y, dw, h)
+                    y += h + inner
+                cur += row["h"]
+                if i < len(groups) - 1:
+                    self._hairline(slide, rleft, int(cur + gap // 2), rwidth,
+                                   color=self.HAIRLINE)
+                    cur += gap
+        else:
+            col_w = plan["col_w"]
+            for c, idxs in enumerate(plan["cols"]):
+                x = rleft + c * (col_w + col_gap)
+                cur = top          # columns share a top so their rows align
+                for n, gi in enumerate(idxs):
+                    g = groups[gi]
+                    y = cur
+                    for kind, h in plan["rows"][gi]["blocks"]:
+                        if kind == "label":
+                            put_label(g, x, y, col_w, h)
+                        else:
+                            put_detail(g, kind, x + tick_w, y, col_w - tick_w, h)
+                        y += h + inner
+                    cur += plan["rows"][gi]["h"]
+                    if n < len(idxs) - 1:
+                        self._hairline(slide, x, int(cur + gap // 2), col_w,
+                                       color=self.HAIRLINE)
+                        cur += gap
+        if sd.bottom_text:
+            self._add_conclusion_box(slide, sd.bottom_text, rleft,
+                                     int(rtop + avail + BLOCK_GAP),
+                                     rwidth, concl_h)
+        if sd.footnote:
+            self._add_footnote(slide, sd.footnote)
+
+    def _excerpt_clips(self, sd):
+        """Crop each ex-quote out of the `<!-- _paper: -->` PDF (None where
+        there is no PDF or the quote is not in it — that item stays typed)."""
+        clips = [None] * len(sd.excerpt_items)
+        if not sd.paper_pdf:
+            return clips
+        pdf = Path(sd.paper_pdf).expanduser()
+        if not pdf.is_absolute():
+            pdf = self.base_path / pdf
+        if not pdf.exists():
+            self._warn(f"excerpt: paper not found: {sd.paper_pdf} — quotes shown as text")
+            return clips
+        try:
+            from marp_pptx.clip import clip_quote
+            mk = str(self.MARKER)
+            marker = tuple(int(mk[i:i + 2], 16) for i in (0, 2, 4))
+            for i, it in enumerate(sd.excerpt_items):
+                clips[i] = clip_quote(pdf, it["quote"], marker=marker)
+                if clips[i] is None:
+                    self._warn(f"excerpt: not found in {pdf.name}, shown as text: "
+                               f"{it['quote'][:48]}…")
+        except ImportError:
+            self._warn("excerpt: cropping from the paper needs PyMuPDF "
+                       "(pip install 'marp-pptx[ingest]') — quotes shown as text")
+        return clips
+
+    def build_excerpt(self, sd: SlideData):
+        """原文抜粋＋読み: 論文の一節をそのまま引き、その下に自分の読みを置く。
+
+        Quoting the paper and then saying what it means for this research
+        keeps evidence and interpretation apart, so the audience can check
+        one against the other. With `<!-- _paper: paper.pdf -->` each quote
+        is cut out of the PDF itself — the paper's own column and type, the
+        quoted words marked, the lines around them dimmed — and the reading
+        sits beside it. Without a PDF (or for a quote the PDF does not
+        contain) the quote is typed into a tinted card with the reading
+        under it. ex-verdict closes with 利点／課題; ex-source prints the
+        full reference in the footnote band.
+        """
+        slide = self._blank_slide()
+        if sd.h1:
+            self._add_title(slide, sd.h1)
+        items = sd.excerpt_items
+        if not items:
+            return
+        rleft, rtop, rwidth, rheight = self._content_region_with_lead(slide, sd)
+        concl_h = self._verdict_height(sd, rwidth)
+        avail = rheight - (concl_h + int(BLOCK_GAP) if concl_h else 0)
+        clips = self._excerpt_clips(sd)
+
+        bar = int(Pt(3))
+        pad_x, pad_y = int(Pt(16)), int(Pt(10))
+        text_x = rleft + bar + pad_x
+        text_w = rwidth - bar - 2 * pad_x
+        read_gap = int(Pt(6))
+        item_gap = int(Inches(0.24))
+        side_gap = int(Inches(0.45))
+
+        def locator(it, c):
+            return ", ".join(x for x in (it["cite"], f"p. {c['page']}") if x)
+
+        for k in (1.0, 0.93, 0.86, 0.80, 0.74):
+            q_sz, r_sz, c_sz = Pt(16 * k), Pt(18 * k), Pt(12 * k)
+            rows = []
+            for it, c in zip(items, clips):
+                if c:
+                    # the paper's body type shown at ~16pt, the crop capped at
+                    # 58% of the width so the reading keeps a real column
+                    s = min(16 * k / c["body_pt"],
+                            rwidth * 0.58 / 12700 / c["width_pt"])
+                    w = int(Pt(c["width_pt"] * s))
+                    h = int(Pt(c["height_pt"] * s))
+                    loc_h = int(Pt(c_sz.pt * 1.25 + 4))
+                    r_w = rwidth - w - side_gap
+                    r_h = int(self._estimate_text_height(
+                        ["→ " + it["read"]], r_sz, width=r_w,
+                        bold=True)) if it["read"] else 0
+                    rows.append(("clip", w, h, loc_h, r_w, r_h,
+                                 max(h + loc_h, r_h)))
+                else:
+                    q_txt = it["quote"] + ("　" + it["cite"] if it["cite"] else "")
+                    q_h = int(self._estimate_text_height(
+                        [q_txt], q_sz, width=text_w,
+                        line_spacing=1.2)) + 2 * pad_y
+                    r_h = int(self._estimate_text_height(
+                        ["→ " + it["read"]], r_sz, width=text_w,
+                        bold=True)) if it["read"] else 0
+                    rows.append(("text", q_h, r_h,
+                                 q_h + (read_gap + r_h if r_h else 0)))
+            total = sum(r[-1] for r in rows) + item_gap * (len(items) - 1)
+            if total <= avail:
+                break
+
+        extra, offset = self._spread(total, len(items), avail, Inches(0.25))
+        item_gap += extra
+        cur = rtop + offset
+        for it, c, row in zip(items, clips, rows):
+            if row[0] == "clip":
+                _, w, h, loc_h, r_w, r_h, row_h = row
+                y = cur + (row_h - h - loc_h) // 2
+                pic = slide.shapes.add_picture(c["png"], rleft, int(y), w, h)
+                pic.line.color.rgb = self.HAIRLINE
+                pic.line.width = HAIRLINE_W
+                self._soft_shadow(pic)          # a slip of paper on the slide
+                lb = self._add_textbox(slide, rleft, int(y + h + Pt(4)), w, loc_h)
+                self._add_plain_run(lb.text_frame.paragraphs[0],
+                                    locator(it, c), c_sz, self.MUTED)
+                lb.text_frame.paragraphs[0].alignment = PP_ALIGN.RIGHT
+                if r_h:
+                    rb = self._add_textbox(slide, rleft + w + side_gap,
+                                           int(cur + (row_h - r_h) // 2), r_w, r_h)
+                    rb.text_frame.word_wrap = True
+                    rp = rb.text_frame.paragraphs[0]
+                    self._set_rich_text(rp, it["read"], r_sz, self.FG)
+                    self._prepend_run(rp, "→ ", r_sz, self.ACCENT_TEXT)
+                cur += row_h + item_gap
+                continue
+            _, q_h, r_h, row_h = row
+            card = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, rleft, int(cur),
+                                          rwidth, q_h)
+            card.fill.solid(); card.fill.fore_color.rgb = self.SURFACE
+            card.line.fill.background(); self._no_shadow(card)
+            tick = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, rleft, int(cur),
+                                          bar, q_h)
+            tick.fill.solid(); tick.fill.fore_color.rgb = self._tint(self.ACCENT, 0.35)
+            tick.line.fill.background(); self._no_shadow(tick)
+            tb = self._add_textbox(slide, text_x, int(cur + pad_y), text_w,
+                                   q_h - 2 * pad_y)
+            tf = tb.text_frame
+            tf.word_wrap = True
+            tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+            p = tf.paragraphs[0]
+            # The paper's words a step lighter than the reading below them:
+            # evidence first, but the interpretation is what the slide says.
+            self._set_rich_text(
+                p, self._apply_marks(self._smart_quotes(it["quote"]), sd.marks),
+                q_sz, self._tint(self.FG, 0.25))
+            p.line_spacing = 1.2
+            if it["cite"]:
+                self._add_plain_run(p, "　" + it["cite"], c_sz, self.MUTED)
+            if r_h:
+                # the arrow starts where the quote text starts
+                rb = self._add_textbox(slide, text_x, int(cur + q_h + read_gap),
+                                       text_w, r_h)
+                rb.text_frame.word_wrap = True
+                rp = rb.text_frame.paragraphs[0]
+                self._set_rich_text(rp, it["read"], r_sz, self.FG)
+                self._prepend_run(rp, "→ ", r_sz, self.ACCENT_TEXT)
+            cur += row_h + item_gap
+        if sd.bottom_text:
+            self._add_conclusion_box(slide, sd.bottom_text, rleft,
+                                     int(rtop + avail + BLOCK_GAP),
+                                     rwidth, concl_h)
+        if sd.footnote:
+            self._add_footnote(slide, self._smart_quotes(sd.footnote))
 
     def build_flow(self, sd: SlideData):
         """mermaid flowchart subset drawn as EDITABLE native shapes.
@@ -4376,6 +5561,9 @@ class PptxBuilder:
         slide = self._blank_slide()
         if sd.h1:
             self._add_title(slide, sd.h1)
+        if not (sd.code_text or "").strip():
+            self._warn(f'code slide "{sd.h1}": no code found — put the code '
+                       "in a ``` fence (an empty panel was drawn)")
         rleft, rtop, rwidth, rheight = self._content_region(has_title=bool(sd.h1))
         desc_h = int(Inches(0.7)) if sd.code_desc else 0
         code_lines = (sd.code_text or "").split("\n")
@@ -4448,11 +5636,16 @@ class PptxBuilder:
         # contrast check is the deck's own bar, de-emphasis included).
         dim = RGBColor(0x88, 0x8C, 0xA0)
         normal = RGBColor(0xCD, 0xD6, 0xF4)
+        # Catppuccin-style roles on the dark window (keys blue, strings
+        # green, literals peach); a dimmed step line stays one tone.
+        lit = {"base": normal, "key": RGBColor(0x89, 0xB4, 0xFA),
+               "string": RGBColor(0xA6, 0xE3, 0xA1), "literal": RGBColor(0xFA, 0xB3, 0x87)}
+        low = {k: dim for k in lit}
         for i, ln in enumerate(code_lines):
             p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
-            p.text = ln if ln.strip() else " "   # keep blank lines tall
-            p.font.name = self.FONT_MONO; p.font.size = self._fs(Pt(CODE_PT))
-            p.font.color.rgb = normal if (not stepping or i in active) else dim
+            self._code_runs(p, ln if ln.strip() else "", sd.code_lang,
+                            self._fs(Pt(CODE_PT)),
+                            lit if (not stepping or i in active) else low)
             p.line_spacing = Pt(CODE_PT * 1.5 * scale)
         if sd.code_desc:
             dtb = self._add_textbox(slide, rleft, int(top + code_h + Inches(0.2)),
@@ -4759,6 +5952,7 @@ class PptxBuilder:
     # ══════════════════════════════════════════════
     BUILDERS = {
         "title": "build_title",
+        "title-figure": "build_title_figure",
         "divider": "build_divider",
         "cols-2": "build_columns",
         "cols-2-wide-l": "build_columns",
@@ -4781,6 +5975,9 @@ class PptxBuilder:
         "sections": "build_sections",
         "flow": "build_flow",
         "paper": "build_paper",
+        "survey": "build_survey",
+        "board": "build_board",
+        "excerpt": "build_excerpt",
         "split-panel": "build_split_panel",
         "graphical-abstract": "build_graphical_abstract",
         "figure-full": "build_figure_full",
@@ -4850,7 +6047,7 @@ class PptxBuilder:
             return sum(2 if ord(c) > 0x2E7F else 1 for c in s)
 
         body = [l.strip() for l in (sd.body_lines or []) if l.strip()
-                and not l.strip().startswith(("#", "<"))]
+                and not l.strip().startswith(("#", "<", "\x00"))]
         if len(body) > max_lines:
             warn(f"{len(body)} body lines (>{max_lines}) — split or trim")
         for l in body:
@@ -4866,7 +6063,8 @@ class PptxBuilder:
                        "steps_items", "card_items", "timeline_items", "agenda_items",
                        "summary_points", "checklist_items", "funnel_items", "stack_items",
                        "multi_result_items", "gallery_items", "history_items",
-                       "eq_system", "ref_items", "annotation_notes")
+                       "eq_system", "ref_items", "annotation_notes",
+                       "survey_groups", "excerpt_items")
         items = max([len(getattr(sd, f, []) or []) for f in item_fields] + [0])
         elements = max(items, len(body)) + (1 if sd.image_path else 0) + (1 if sd.table_rows else 0)
         if elements > max_el:
@@ -4893,7 +6091,8 @@ class PptxBuilder:
             if sd.slide_class == "divider":
                 self._divider_no += 1
                 current_section = re.sub(r"^\s*\d+[\.．]?\s*", "", sd.h1 or "")
-            if sd.slide_class == "title" and not self._deck_title:
+            if (sd.slide_class in ("title", "title-figure")
+                    and not self._deck_title):
                 self._deck_title = sd.h1 or ""
             # A specified-but-unknown _class silently fell back to a plain
             # bullet slide before — warn so typos in the type name surface.
@@ -4902,7 +6101,12 @@ class PptxBuilder:
                            "rendered as a plain slide (check the _class name)")
             method_name = self.BUILDERS.get(sd.slide_class, "build_default")
             before_n = len(self.prs.slides)
+            self._cur_class = sd.slide_class or ""
+            self._cur_kicker = getattr(sd, "kicker", "")
             getattr(self, method_name)(sd)
+            for i in range(before_n, len(self.prs.slides)):
+                self._strip_empty_placeholders(self.prs.slides[i])
+            self._warn_if_bodyless(sd, n, before_n)
             # Embed the slide class (+ any speaker note) into the notes of the
             # slide(s) just created so pptx2md can recover the semantic type.
             cls = sd.slide_class or "default"
@@ -4914,7 +6118,65 @@ class PptxBuilder:
                 self._slide_classes.append(cls)
         self._add_global_footer()
         self._link_agenda_sections()
+        self._write_sections()
+        self._write_properties()
         self._warn_text_collisions()
+
+    _SECTION_EXT = "{521415D9-36F7-43E2-AB2F-B90AF26B5E84}"
+    _NS_P14 = "http://schemas.microsoft.com/office/powerpoint/2010/main"
+
+    def _write_sections(self):
+        """Dividers become PowerPoint sections: the slide sorter and the
+        thumbnail pane group the deck by chapter, and a section can be moved
+        or hidden as a unit. A deck without dividers stays one section."""
+        import uuid
+        classes = getattr(self, "_slide_classes", [])
+        names = getattr(self, "_slide_sections", [])
+        if "divider" not in classes:
+            return
+        cjk = any(ord(c) > 0x2E7F for c in "".join(names) + (self._deck_title or ""))
+        ids = [el.get("id") for el in self.prs.slides._sldIdLst]
+        groups: list[list] = []
+        for i, sid in enumerate(ids):
+            if i == 0 or (classes[i] if i < len(classes) else "") == "divider":
+                label = (names[i] if i < len(names) else "") if i else ""
+                groups.append([label or ("はじめに" if cjk else "Opening"), []])
+            groups[-1][1].append(sid)
+        pres = self.prs.part._element
+        ext_lst = pres.find(qn("p:extLst"))
+        if ext_lst is None:
+            ext_lst = etree.SubElement(pres, qn("p:extLst"))
+        for ext in ext_lst.findall(qn("p:ext")):
+            if ext.get("uri") == self._SECTION_EXT:
+                ext_lst.remove(ext)
+        ext = etree.SubElement(ext_lst, qn("p:ext"))
+        ext.set("uri", self._SECTION_EXT)
+        lst = etree.SubElement(ext, f"{{{self._NS_P14}}}sectionLst",
+                               nsmap={"p14": self._NS_P14})
+        for label, sids in groups:
+            sec = etree.SubElement(lst, f"{{{self._NS_P14}}}section")
+            sec.set("name", label)
+            sec.set("id", "{%s}" % str(uuid.uuid4()).upper())
+            sl = etree.SubElement(sec, f"{{{self._NS_P14}}}sldIdLst")
+            for sid in sids:
+                etree.SubElement(sl, f"{{{self._NS_P14}}}sldId").set("id", sid)
+
+    def _write_properties(self):
+        """Document properties: the deck's title, not python-pptx's template
+        author; and a 16:9 format in app.xml instead of the template's 4:3."""
+        import datetime as _dt
+        cp = self.prs.core_properties
+        cp.title = self._deck_title or cp.title or ""
+        cp.author = ""
+        cp.last_modified_by = "marp-pptx"
+        now = _dt.datetime.now(_dt.timezone.utc).replace(tzinfo=None, microsecond=0)
+        cp.created = now
+        cp.modified = now
+        cp.revision = 1
+        for part in self.prs.part.package.iter_parts():
+            if str(part.partname) == "/docProps/app.xml":
+                part._blob = part.blob.replace(b"On-screen Show (4:3)",
+                                               b"Widescreen")
 
     def _link_agenda_sections(self):
         """First interactivity pass: agenda items hyperlink to their section
@@ -5014,7 +6276,7 @@ class PptxBuilder:
         n = len(self.prs.slides)
         sections = getattr(self, "_slide_sections", [])
         classes = getattr(self, "_slide_classes", [])
-        skip = {"title", "divider", "end", "statement", "dark", "big-statement"}
+        skip = HERO_CLASSES
         for i, slide in enumerate(self.prs.slides):
             cls = classes[i] if i < len(classes) else ""
             if i == 0 or cls in skip:
@@ -5032,11 +6294,11 @@ class PptxBuilder:
                                    int(Inches(0.10)), int(Inches(1.6)),
                                    int(Inches(0.22)))
             p = tb.text_frame.paragraphs[0]
-            p.text = f"{i + 1}／{n}"
             p.font.name = self.FONT
             p.font.size = self._fs(SZ_FOOT)
             p.font.color.rgb = self.MUTED
             p.alignment = PP_ALIGN.RIGHT
+            self._field_number(p, i + 1, f"／{n}")
 
     def _add_global_footer(self):
         if self.LAYOUT.footer_bar:
@@ -5044,17 +6306,21 @@ class PptxBuilder:
         if self.LAYOUT.header_crumb:
             return self._add_header_crumb()
         n = len(self.prs.slides)
+        classes = getattr(self, "_slide_classes", [])
         for i, slide in enumerate(self.prs.slides):
-            if i == 0 or i == n - 1:
+            # A page number stamped on a full-bleed cover photo is the tell
+            # of a generated deck. Scoped to title-figure on purpose: numbered
+            # dividers/statements are the existing (deliberate) look.
+            if i == 0 or i == n - 1 or (classes[i] if i < len(classes) else "") == "title-figure":
                 continue
             tb = self._add_textbox(slide, int(MARGIN_L), int(SH - Inches(0.42)),
                                    int(CONTENT_W), int(Inches(0.25)))
             p = tb.text_frame.paragraphs[0]
-            p.text = f"{i + 1} / {n}"
             p.font.name = self.FONT
             p.font.size = self._fs(SZ_FOOT)
             p.font.color.rgb = self.MUTED
             p.alignment = PP_ALIGN.RIGHT
+            self._field_number(p, i + 1, f" / {n}")
 
     def _add_beamer_footer(self):
         """beamer-style footer bar: deck title | current section | page.
@@ -5066,8 +6332,12 @@ class PptxBuilder:
         sections = getattr(self, "_slide_sections", [])
         deck_title = getattr(self, "_deck_title", "")
         cell_pts = (0.0, 0.40, 0.74, 1.0)      # cell boundaries as SW fractions
+        classes = getattr(self, "_slide_classes", [])
         for i, slide in enumerate(self.prs.slides):
-            if i == 0:
+            # The bar is deck chrome and rides over divider/statement by
+            # design — but a title-figure owns the bottom edge (full-bleed
+            # photo + caption strip), so the bar would clip its caption.
+            if i == 0 or (classes[i] if i < len(classes) else "") == "title-figure":
                 continue
             mid = slide.shapes.add_shape(
                 MSO_SHAPE.RECTANGLE, int(SW * cell_pts[1]), int(SH - bar_h),
@@ -5097,3 +6367,5 @@ class PptxBuilder:
                 p.font.name = self.FONT
                 p.font.size = self._fs(Pt(9.5))
                 p.font.color.rgb = self.WHITE
+                if cell == 2:
+                    self._field_number(p, i + 1, f" / {n}")

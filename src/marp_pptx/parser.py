@@ -180,10 +180,46 @@ def parse_mermaid_flow(src: str) -> dict:
     return {"dir": direction, "nodes": nodes, "edges": edges} if nodes else {}
 
 
+# A fenced code block survives parse_markdown_lines as ONE sentinel line:
+# "\x00CODE <lang>\x1f<code with \x1f for newlines>". Without it every line
+# of the block went through strip_html (eating `<T>`), the soft-wrap merger
+# glued the fence onto one line, and the backticks leaked onto the slide as
+# "``json {…}``".
+CODE_SENTINEL = "\x00CODE "
+_FENCE_RE = re.compile(r"^[ \t]*(`{3,}|~{3,})[ \t]*([\w+#.-]*)[^\n]*\n(.*?)^[ \t]*\1[ \t]*$",
+                       re.DOTALL | re.MULTILINE)
+
+
+def code_block_line(lang: str, code: str) -> str:
+    return f"{CODE_SENTINEL}{lang}\x1f" + code.rstrip("\n").replace("\n", "\x1f")
+
+
+def split_code_line(line: str) -> tuple[str, str] | None:
+    """(lang, code) for a code sentinel line, else None."""
+    if not line.startswith(CODE_SENTINEL):
+        return None
+    head, _, body = line[len(CODE_SENTINEL):].partition("\x1f")
+    return head, body.replace("\x1f", "\n")
+
+
+def md_list_items(content: str) -> list[str]:
+    """Top-level Markdown list items (- / * / 1.) of a slide body, outside
+    code fences. The natural way to write an agenda or a summary — used when
+    the type's skeleton div is absent instead of rendering nothing."""
+    body = _FENCE_RE.sub("", content)
+    return [m.group(1).strip() for m in re.finditer(
+        r"^(?:[-*]|\d+[.)])\s+(.+)$", body, re.MULTILINE)]
+
+
 def parse_markdown_lines(text: str) -> list[str]:
+    text = _FENCE_RE.sub(
+        lambda m: "\n\n" + code_block_line(m.group(2), m.group(3)) + "\n\n", text)
     lines = []
     for line in text.split("\n"):
         s = line.strip()
+        if s.startswith(CODE_SENTINEL):
+            lines.append(s)
+            continue
         if s.startswith("<div") or s.startswith("</div>") or s.startswith("<p ") or s.startswith("<ol") or s.startswith("</ol") or s.startswith("<li") or s.startswith("</li"):
             inner = strip_html(s)
             if inner:
@@ -214,7 +250,7 @@ def parse_markdown_lines(text: str) -> list[str]:
     # - line that follows a list/heading (so we don't glue them together)
     def _is_block_starter(s: str) -> bool:
         stripped = s.strip()
-        if not stripped:
+        if not stripped or stripped.startswith("\x00"):
             return True
         if stripped.startswith(("# ", "## ", "### ", "#### ")):
             return True
@@ -274,6 +310,12 @@ class SlideData:
     paper_venue: str = ""
     paper_stats: str = ""
     paper_why: str = ""
+    survey_groups: list = field(default_factory=list)   # survey: approach → papers
+    excerpt_items: list = field(default_factory=list)   # excerpt: quote → reading
+    marks: list = field(default_factory=list)  # <!-- _mark: kw, kw --> highlight
+    board: list = field(default_factory=list)  # board: zones (see board.py)
+    paper_pdf: str = ""        # excerpt: <!-- _paper: x.pdf --> crop quotes from it
+    kicker: str = ""           # <!-- _kicker: 章 ｜ 話題 --> label above the title
     ga: dict = field(default_factory=dict)   # graphical-abstract panels
     side: str = ""                 # figure-story: "right" puts the figure right
     build: bool = False            # <!-- build --> progressive disclosure
@@ -315,6 +357,7 @@ class SlideData:
     split_left: dict = field(default_factory=dict)
     split_right: dict = field(default_factory=dict)
     code_text: str = ""
+    code_lang: str = ""
     code_desc: str = ""
     multi_result_items: list = field(default_factory=list)
     takeaway_main: str = ""
@@ -456,6 +499,10 @@ def parse_slide(index: int, raw: str) -> SlideData:
     sd.source = "; ".join(source_chunks)
     sd.dark = directives.get("bg", "").strip().lower() == "dark"
     sd.side = directives.get("side", "").strip().lower()
+    sd.marks = [k.strip() for k in directives.get("mark", "").split(",")
+                if k.strip()]
+    sd.paper_pdf = directives.get("paper", "").strip()
+    sd.kicker = directives.get("kicker", "").strip()
 
     h1m = re.search(r"^#\s+(.+)$", content, re.MULTILINE)
     h2m = re.search(r"^##\s+(.+)$", content, re.MULTILINE)
@@ -711,6 +758,8 @@ def parse_slide(index: int, raw: str) -> SlideData:
         if agenda:
             for m in re.finditer(r"\d+\.\s*(.+)", agenda):
                 sd.agenda_items.append(strip_html(m.group(1).strip()))
+        else:
+            sd.agenda_items = [strip_html(i) for i in md_list_items(content)]
 
     elif cls == "rq":
         main = extract_div(content, "rq-main")
@@ -741,6 +790,8 @@ def parse_slide(index: int, raw: str) -> SlideData:
         if sp:
             for li_m in re.finditer(r"<li>(.*?)</li>", sp, re.DOTALL):
                 sd.summary_points.append(strip_html(li_m.group(1)))
+        if not sd.summary_points:
+            sd.summary_points = [strip_html(i) for i in md_list_items(content)]
 
     elif cls == "appendix":
         lbl = re.search(r'class="[^"]*appendix-label[^"]*"[^>]*>(.*?)</span>', content, re.DOTALL)
@@ -920,6 +971,14 @@ def parse_slide(index: int, raw: str) -> SlideData:
                     "text": strip_html(li.group(2)),
                     "done": li.group(1) is not None,
                 })
+        else:
+            # GitHub task-list syntax: - [x] done / - [ ] todo
+            for item in md_list_items(content):
+                m2 = re.match(r"\[([ xX])\]\s*(.*)", item)
+                sd.checklist_items.append({
+                    "text": strip_html(m2.group(2) if m2 else item),
+                    "done": bool(m2 and m2.group(1).lower() == "x"),
+                })
 
     elif cls == "annotation":
         fig = extract_div(content, "an-figure")
@@ -1012,17 +1071,26 @@ def parse_slide(index: int, raw: str) -> SlideData:
 
     elif cls == "code":
         cd = extract_div(content, "cd-code")
-        if cd:
-            code_m = re.search(r"```[\w]*\n(.*?)```", cd, re.DOTALL)
-            if code_m:
-                sd.code_text = code_m.group(1).rstrip()
-            else:
-                sd.code_text = strip_html(cd)
-            if "[!step" in sd.code_text:
-                sd.code_text, sd.code_steps = extract_code_steps(sd.code_text)
+        # The natural way to write it — a bare fence under the title — used
+        # to draw an empty panel: only a fence inside cd-code was read.
+        src = cd if cd else content
+        code_m = _FENCE_RE.search(src)
+        if code_m:
+            sd.code_text = code_m.group(3).rstrip()
+            sd.code_lang = code_m.group(2)
+        elif cd:
+            sd.code_text = strip_html(cd)
+        if "[!step" in sd.code_text:
+            sd.code_text, sd.code_steps = extract_code_steps(sd.code_text)
         desc = extract_div(content, "cd-desc")
         if desc:
             sd.code_desc = strip_html(desc)
+        elif not cd and code_m:
+            # prose around a bare fence is the description
+            rest = content[:code_m.start()] + content[code_m.end():]
+            prose = [l for l in parse_markdown_lines(rest)
+                     if l.strip() and not l.strip().startswith(("#", "<", "\x00"))]
+            sd.code_desc = " ".join(prose)
 
     elif cls == "multi-result":
         container = extract_div(content, "mr-container")
@@ -1036,6 +1104,17 @@ def parse_slide(index: int, raw: str) -> SlideData:
                     "value": strip_html(vm.group(1)) if vm else "",
                     "desc": strip_html(dm.group(1)) if dm else "",
                 })
+
+    elif cls == "title-figure":
+        # A cover with a half-bleed photo. Everything else (h1/h2/subtitle/
+        # author lines) is read straight off sd.raw by the hero builder, so
+        # only the figure and its caption need pulling out here.
+        img = re.search(r"!\[(?:w:\d+)?\]\(([^)]+)\)", content)
+        if img:
+            sd.image_path = img.group(1)
+        cap = extract_div(content, "caption")
+        if cap:
+            sd.caption = strip_html(cap)
 
     elif cls == "figure-story":
         img = re.search(r"!\[(?:w:\d+)?\]\(([^)]+)\)", content)
@@ -1130,6 +1209,48 @@ def parse_slide(index: int, raw: str) -> SlideData:
                     "title": strip_html(ttl.group(1)) if ttl else "",
                     "body": text_with_breaks(bod.group(1)) if bod else "",
                 })
+
+    elif cls == "survey":
+        # 関連研究マップ: one sv-group per approach — its label, an optional
+        # description and 課題, and the papers that take it as a list.
+        for child in extract_child_divs(content):
+            grp = {}
+            for key in ("label", "body", "gap"):
+                m2 = re.search(rf'class="[^"]*sv-{key}[^"]*"[^>]*>(.*?)</span>',
+                               child, re.DOTALL)
+                grp[key] = strip_html(m2.group(1)) if m2 else ""
+            rest = re.sub(r"<span[^>]*>.*?</span>", "", child, flags=re.DOTALL)
+            grp["refs"] = [re.sub(r"^(?:[-*]|\d+\.)\s+", "", l.strip())
+                           for l in parse_markdown_lines(html_lists_to_bullets(rest))
+                           if re.match(r"^(?:[-*]|\d+\.)\s", l.strip())]
+            if grp["label"] or grp["refs"]:
+                sd.survey_groups.append(grp)
+        verdict = extract_div(content, "sv-verdict")
+        if verdict:
+            sd.bottom_text = text_with_breaks(verdict)
+
+    elif cls == "board":
+        from marp_pptx.board import parse_board
+        body = re.sub(r"^#{1,2}\s+.*$", "", content, flags=re.MULTILINE)
+        sd.board = parse_board(body)
+
+    elif cls == "excerpt":
+        # 原文抜粋＋読み: the paper's own words (ex-quote, optional ex-cite
+        # locator) with the author's reading under each.
+        for child in extract_child_divs(content):
+            item = {}
+            for key in ("quote", "cite", "read"):
+                m2 = re.search(rf'class="[^"]*ex-{key}[^"]*"[^>]*>(.*?)</span>',
+                               child, re.DOTALL)
+                item[key] = strip_html(m2.group(1)) if m2 else ""
+            if item["quote"]:
+                sd.excerpt_items.append(item)
+        verdict = extract_div(content, "ex-verdict")
+        if verdict:
+            sd.bottom_text = text_with_breaks(verdict)
+        src = extract_div(content, "ex-source")
+        if src:
+            sd.footnote = strip_html(src)
 
     elif cls == "takeaway":
         ta = extract_div(content, "ta-main")

@@ -1,0 +1,35 @@
+name: report
+title: Report — 紺×えんじの区画レイアウト
+description: 白地に紺の見出しと二色の罫線、青灰の区画パネル。定義帯・カード・コード・図・結論・出典を1枚に詰める研究報告向け。
+colors:
+  primary:   '#1A2744'
+  secondary: '#1F6FB5'
+  accent:    '#8A2E3B'
+  fg:        '#333F52'
+  bg:        '#ffffff'
+  muted:     '#6B7280'
+  hairline:  '#D8DCE3'
+  light:     '#EEF1F6'
+  border:    '#C7CEDA'
+fonts:
+  head: "'Helvetica Neue', 'Hiragino Sans', sans-serif"
+  body: "'Helvetica Neue', 'Hiragino Sans', sans-serif"
+layout:
+  h1_deco: rule2          # title, then a two-tone rule (thin full-width + short accent)
+  title_bg: white
+  title_align: left
+  divider_align: left
+  end_bg: white
+  box_style: soft-card
+  box_radius: 0.06
+  card_shadow: true
+  spacing: compact
+  vertical_align: center  # short slides sit mid-canvas; the board fills it anyway
+  kicker: false
+  accent_rule: none
+  table_header_style: rule
+  divider_number: false
+  title_scale: 0.93
+  marker_style: text      # ==x== as bold red text, not a highlight
+  footnote_style: rule    # source line under a full-width hairline
+  lead_style: plain       # the lead sentence reads as body text under the title

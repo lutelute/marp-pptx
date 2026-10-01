@@ -1,0 +1,23 @@
+/*!
+ * Report — distilled from a hand-built research-progress deck: navy ink,
+ * maroon accent, blue-gray zoning panels on white. Dense, zoned, evidence-
+ * first slides (definition band → cards / code / diagram → conclusion →
+ * source). Colors + fonts consumed by ThemeConfig.apply_palette().
+ * Layout tokens live in config-report.yaml alongside this file.
+ */
+:root {
+  --color-bg:        #ffffff;
+  --color-fg:        #333F52;
+  --color-primary:   #1A2744;
+  --color-secondary: #1F6FB5;
+  --color-accent:    #8A2E3B;
+  --color-accent-text: #8A2E3B;
+  --color-muted:     #6B7280;
+  --color-hairline:  #D8DCE3;
+  --color-light:     #EEF1F6;
+  --color-border:    #C7CEDA;
+
+  --font-head: 'Helvetica Neue', 'Hiragino Sans', sans-serif;
+  --font-body: 'Helvetica Neue', 'Hiragino Sans', sans-serif;
+  --font-ea:   'Hiragino Sans', 'Noto Sans JP', sans-serif;
+}

@@ -16,7 +16,8 @@ from pathlib import Path
 # Types that are intentionally minimal / centered — don't flag them as sparse.
 # references is here because its fill is citation-count-dependent: 3 refs on a
 # vertically centered list is a normal deck, not a layout bug.
-_MINIMAL = {"title", "divider", "statement", "big-statement", "dark", "end",
+_MINIMAL = {"title", "title-figure", "divider", "statement",
+            "big-statement", "dark", "end",
             "rq", "quote", "big-number", "big-number-dark", "takeaway", "section",
             "references"}
 

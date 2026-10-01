@@ -1,12 +1,15 @@
 # marp-pptx
 
 Marp Markdown を **編集可能な PowerPoint (.pptx)** に変換する Python ツール。
-52 種のセマンティックなスライド型・OMML 数式（PowerPoint でそのまま編集可）・
+64 種のセマンティックなスライド型・OMML 数式（PowerPoint でそのまま編集可）・
 洗練ミニマルなデザインを、`pip install` 一発で。
 
-> v0.2 で全面リニューアル: 上下中央バランス配置・細いアクセント線・small-caps ラベルに刷新。
-> 新デフォルトは `claude`（Anthropic ブランド: 温かいクリーム地＋クレイ accent）。
-> 白基調が好みなら `minimal`。タイトル/区切り/数式/カード/表を作り直しました。
+> **v0.5**: 図まわりを強化 — `graphical-abstract`（課題▶手法▶成果の一枚絵）/
+> `figure-full`（余白 0.25in まで使う論文図）/ `figure-story`（図＋横解説＋まとめ帯）/
+> `title-figure`（サムネで判別できる写真つき表紙）。
+> 関連研究向けに `survey`（手法→該当論文の分類）/ `excerpt`（原文抜粋＋読み。`_paper` で論文 PDF から引用部を切り抜き、引用は本文と逐語照合）。
+> デフォルトテーマは `claude`（Anthropic の温かいクリーム地＋クレイ accent、
+> ダーク表紙・結び＋カードシャドウ）。白基調が好みなら `minimal`。
 
 ## Quick Start
 
@@ -43,7 +46,7 @@ Markdown を覚えなくても、**型を選んでフォームに入力するだ
 
 ![型ギャラリーの操作](docs/demo-gallery.gif)
 
-- 52 種の型を**サムネ付き**で一覧。検索ボックスで「比較」「KPI」「□」などから絞り込み
+- 64 種の型を**サムネ付き**で一覧。検索ボックスで「比較」「KPI」「□」などから絞り込み
 - カードをクリックすると、その型のフォームを開いた状態で**エディタが起動**
 
 ### 2. プリセットから作って即プレビュー — `/editor`
@@ -87,6 +90,20 @@ marp: true
 <!-- note: ここは発表者ノート。PPTX のノート欄に入る -->
 - 内容は本文領域の上下中央にバランス配置される
 - **太字** / `コード` / $x^2$ のインライン記法に対応
+```
+
+表紙をサムネイルで判別したいときは `title-figure`。写真が半面フルブリードで入ります。
+
+```markdown
+<!-- _class: title-figure -->
+<!-- _side: bottom -->        <!-- bottom(既定) / top / left / right / full -->
+# 研究タイトル
+## サブタイトルがキッカーになる
+山田太郎 / 福井大学 / 2026
+
+![](figures/cover.png)
+
+<div class="caption">図: キャプションは写真の上に黒帯で敷かれる</div>
 ```
 
 各型ごとの HTML 構造（`kpi` / `zone-flow` / `equation` など）は
@@ -152,9 +169,11 @@ MCP クライアント設定（例: Claude Desktop / Claude Code）:
 公開ツール:
 - **取り込み**: `read_paper`（PDF/arXiv → title/節/図/**数値**を構造抽出）/ `read_repo`（README/構造/言語）
 - **グラウンディング**: **`check_deck_against_source`**（デッキの数値がソース論文に実在するか照合＝ハルシネ検出）
-- **生成**: `slide_types`（52型カタログ）/ `slide_template`（型の骨組み）/ `list_presets`・`get_preset` /
+- **生成**: `slide_types`（64型カタログ）/ `slide_template`（型の骨組み）/ `list_presets`・`get_preset` /
+  `list_themes`（テーマ・パレット一覧）/ `authoring_guide`（型選択と HTML 骨組みの手引き）/
   `build_pptx`（MD→編集可能.pptx ＋ lint ＋ 実測欠陥）
 - **検証**: **`check_deck`**（溢れ・重なり・コントラスト・破損を実測。**レンダラ不要**で数十 ms）/
+  `visual_lint`（レンダリング画像から余白・密度の偏りを検出）/
   **`preview_png`**（各スライドを画像で返す＝AI が下書きを見て直せる）
 
 これで「論文＋リポを渡す → 抽出 → ソースから下書き → 数値照合 → 生成 → **実測検証** → 画像で自己確認」のループが回る。
@@ -174,5 +193,5 @@ marp-pptx from-paper paper.pdf --repo . -o deck.pptx
 
 ## ドキュメント
 
-- 全機能・全 52 型の詳細は [USAGE.md](USAGE.md)
+- 全機能・全 64 型の詳細は [USAGE.md](USAGE.md)
 - 今後の計画は [ROADMAP.md](ROADMAP.md)
